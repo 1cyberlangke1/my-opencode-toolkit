@@ -1,0 +1,40 @@
+{
+  "name": "my-opencode-toolkit",
+  "version": "0.1.0",
+  "description": "My OpenCode Toolkit",
+  "type": "module",
+  "exports": {
+    "./server": "./dist/index.js",
+    "./tui": "./dist/tui.js"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "bundle": "tsx script/build.ts",
+    "deploy": "npm run bundle && node -e \"const fs=require('fs'),h=process.env.USERPROFILE,p=h+'/.config/opencode/plugins',t=h+'/.config/opencode/toolkit';fs.mkdirSync(p,{recursive:true});fs.mkdirSync(t,{recursive:true});fs.copyFileSync('dist/index.js',p+'/my-opencode-toolkit.js');fs.copyFileSync('dist/tui.js',t+'/tui.js')\"",
+    "lint": "eslint src/",
+    "format": "prettier --write src/",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@opencode-ai/plugin": "^1.18.10",
+    "@opentui/core": ">=0.4.5",
+    "@opentui/solid": ">=0.4.5",
+    "solid-js": ">=1.9.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@opencode-ai/plugin": "^1.18.10",
+    "@opentui/core": "^0.4.5",
+    "@opentui/solid": "^0.4.5",
+    "@types/node": "^26.1.0",
+    "esbuild-plugin-solid": "^0.6.0",
+    "eslint": "^10.6.0",
+    "globals": "^17.7.0",
+    "prettier": "^3.9.4",
+    "solid-js": "^1.9.12",
+    "tsx": "^4.22.5",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.62.1"
+  }
+}

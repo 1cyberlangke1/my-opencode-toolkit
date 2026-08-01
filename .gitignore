@@ -1,0 +1,19 @@
+# 通用忽略
+node_modules/
+dist/
+out/
+build/
+*.log
+.cache/
+.vscode/
+.idea/
+tmp/
+.venv/
+
+# 本地 AI 文档 + opencode 配置（不污染仓库）
+AGENTS.md
+CLAUDE.md
+HANDOFF.md
+PLAN*.md
+.claude/
+.opencode/
