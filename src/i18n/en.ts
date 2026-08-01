@@ -33,7 +33,6 @@ export interface TranslationDict {
   "config.complete": string;
   "config.question": string;
   "config.permission": string;
-  "config.sound": string;
   "config.todos": string;
   "config.mainonly": string;
   "config.delay": string;
@@ -59,7 +58,6 @@ export interface TranslationDict {
   "status.complete": string;
   "status.question": string;
   "status.permission": string;
-  "status.sound": string;
   "status.todos": string;
   "status.mainonly": string;
   "status.delay": string;
@@ -69,7 +67,6 @@ export interface TranslationDict {
   "help.complete": string;
   "help.question": string;
   "help.permission": string;
-  "help.sound": string;
   "help.todos": string;
   "help.mainonly": string;
   "help.sidebar": string;
@@ -138,7 +135,6 @@ export const en: TranslationDict = {
   "config.complete": "Notify on task complete",
   "config.question": "Notify on question",
   "config.permission": "Notify on permission",
-  "config.sound": "Play sound",
   "config.todos": "Skip if todos incomplete",
   "config.mainonly": "Main session only",
   "config.delay": "Idle confirmation delay",
@@ -164,7 +160,6 @@ export const en: TranslationDict = {
   "status.complete": "Complete notify",
   "status.question": "Question notify",
   "status.permission": "Permission notify",
-  "status.sound": "Sound",
   "status.todos": "Skip if todos incomplete",
   "status.mainonly": "Main session only",
   "status.delay": "Idle delay",
@@ -174,7 +169,6 @@ export const en: TranslationDict = {
   "help.complete": "Show a system notification when a task completes (session becomes idle).",
   "help.question": "Show a system notification when the agent asks you a question.",
   "help.permission": "Show a system notification when the agent needs your permission to continue.",
-  "help.sound": "Play a sound along with notifications.",
   "help.todos": "Skip the completion notification while there are unfinished todos.",
   "help.mainonly": "Only notify for the main session; ignore sub-agent completions.",
   "help.sidebar": "Master switch for the sidebar stats panel.",

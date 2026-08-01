@@ -9,8 +9,6 @@ export interface NotificationConfig {
   onQuestion: boolean;
   /** Notify when permission is requested (default: true) */
   onPermission: boolean;
-  /** Play a sound along with the notification (default: false) */
-  playSound: boolean;
   /** Delay in ms before sending to confirm the session is still idle (default: 1500) */
   idleConfirmationDelay: number;
   /** Skip notification when there are incomplete todos (default: true) */
@@ -48,7 +46,6 @@ export const DEFAULT_CONFIG: ToolkitConfig = {
     onComplete: true,
     onQuestion: true,
     onPermission: true,
-    playSound: false,
     idleConfirmationDelay: 1500,
     skipIfIncompleteTodos: true,
     onlyMainSession: true,

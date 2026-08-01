@@ -21,7 +21,6 @@ function parseNotification(value: unknown): NotificationConfig {
   if (isBoolean(raw.onComplete)) result.onComplete = raw.onComplete;
   if (isBoolean(raw.onQuestion)) result.onQuestion = raw.onQuestion;
   if (isBoolean(raw.onPermission)) result.onPermission = raw.onPermission;
-  if (isBoolean(raw.playSound)) result.playSound = raw.playSound;
   if (isNonNegativeNumber(raw.idleConfirmationDelay)) {
     result.idleConfirmationDelay = raw.idleConfirmationDelay;
   }

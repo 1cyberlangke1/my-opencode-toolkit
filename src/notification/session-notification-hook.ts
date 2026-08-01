@@ -55,13 +55,6 @@ export function createSessionNotificationHook(
 
   const sender: NotificationSender = createNotificationSender(platform);
 
-  async function sendWithSound(content: { title: string; message: string }, playSound: boolean): Promise<void> {
-    await sender.send(content);
-    if (playSound) {
-      await sender.playSound().catch(() => undefined);
-    }
-  }
-
   const hasPendingWork = async (sessionID: string): Promise<boolean> => {
     try {
       const todos = await ctx.client.session.todo(sessionID);
@@ -96,7 +89,7 @@ export function createSessionNotificationHook(
           t("notification.completed"),
           t,
         );
-        await sendWithSound(content, config.notification.playSound);
+        await sender.send(content);
       },
     },
   );
@@ -147,7 +140,7 @@ export function createSessionNotificationHook(
           scheduler.markSessionActivity(sessionID);
           const lang = resolveLang(config.lang, process.env);
           const t: Translator = createTranslator(lang);
-          await sendWithSound({ title: t("notification.title"), message: t("notification.permission") }, config.notification.playSound);
+          await sender.send({ title: t("notification.title"), message: t("notification.permission") });
           return;
         }
         case "tool.execute.before": {
@@ -161,7 +154,7 @@ export function createSessionNotificationHook(
               if (!config.notification.enabled || !config.notification.onQuestion) return;
               const lang = resolveLang(config.lang, process.env);
               const t: Translator = createTranslator(lang);
-              await sendWithSound({ title: t("notification.title"), message: t("notification.question") }, config.notification.playSound);
+              await sender.send({ title: t("notification.title"), message: t("notification.question") });
             }
           }
           return;

@@ -47,7 +47,6 @@ function showStatus(api: TuiPluginApi, config: ToolkitConfig, t: Translator): vo
     `${t("status.complete")}: ${onOff(n.onComplete)}`,
     `${t("status.question")}: ${onOff(n.onQuestion)}`,
     `${t("status.permission")}: ${onOff(n.onPermission)}`,
-    `${t("status.sound")}: ${onOff(n.playSound)}`,
     `${t("status.todos")}: ${onOff(n.skipIfIncompleteTodos)}`,
     `${t("status.mainonly")}: ${onOff(n.onlyMainSession)}`,
     `${t("status.delay")}: ${n.idleConfirmationDelay}ms`,
@@ -105,17 +104,6 @@ function buildMenu(t: Translator, store: ConfigStore): MenuItem[] {
         kind: "bool",
         get: () => store.get().notification.onPermission,
         apply: (v) => store.updateNotification({ onPermission: v }),
-      },
-    },
-    {
-      key: "sound",
-      title: t("config.sound"),
-      description: () => onOff(store.get().notification.playSound),
-      help: t("help.sound"),
-      action: {
-        kind: "bool",
-        get: () => store.get().notification.playSound,
-        apply: (v) => store.updateNotification({ playSound: v }),
       },
     },
     {

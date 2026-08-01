@@ -32,25 +32,3 @@ export async function sendLinuxNotification(title: string, message: string): Pro
   });
 }
 
-export async function playWindowsSound(): Promise<void> {
-  const script = "[System.Media.SystemSounds]::Asterisk.Play()";
-  await execFileAsync(POWERSHELL, ["-NoProfile", "-NonInteractive", "-Command", script], {
-    timeout: 10_000,
-    windowsHide: true,
-  });
-}
-
-export async function playMacosSound(): Promise<void> {
-  await execFileAsync("afplay", ["/System/Library/Sounds/Glass.aiff"], {
-    timeout: 10_000,
-    windowsHide: true,
-  });
-}
-
-export async function playLinuxSound(): Promise<void> {
-  await execFileAsync("paplay", ["/usr/share/sounds/freedesktop/stereo/complete.oga"], {
-    timeout: 10_000,
-    windowsHide: true,
-  });
-}
-

@@ -1,9 +1,6 @@
 import type { Platform } from "./platform";
 import { detectPlatform } from "./platform";
 import {
-  playLinuxSound,
-  playMacosSound,
-  playWindowsSound,
   sendLinuxNotification,
   sendMacosNotification,
   sendWindowsNotification,
@@ -16,7 +13,6 @@ export interface NotificationContent {
 
 export interface NotificationSender {
   send(content: NotificationContent): Promise<void>;
-  playSound(): Promise<void>;
 }
 
 export function createNotificationSender(platform: NodeJS.Platform): NotificationSender {
@@ -33,21 +29,6 @@ export function createNotificationSender(platform: NodeJS.Platform): Notificatio
           break;
         case "linux":
           await sendLinuxNotification(title, message);
-          break;
-        case "unsupported":
-          break;
-      }
-    },
-    async playSound(): Promise<void> {
-      switch (detected) {
-        case "win32":
-          await playWindowsSound();
-          break;
-        case "darwin":
-          await playMacosSound();
-          break;
-        case "linux":
-          await playLinuxSound();
           break;
         case "unsupported":
           break;
