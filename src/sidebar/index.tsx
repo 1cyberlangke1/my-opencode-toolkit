@@ -19,6 +19,7 @@ import {
 import { subscribeSidebarEvents, type SidebarEventSubscriptions } from "./events";
 import type { SubStatus, SubagentEntry, TokenBreakdown } from "./subagent";
 import { usePalette, rgb } from "./theme";
+import { applySidebarConfig, sidebarConfigSignal } from "./state";
 
 const ORDER = 70;
 
@@ -54,15 +55,11 @@ function SessionStatsPanel(props: PanelProps) {
   const [subagents, setSubagents] = createSignal<SubagentEntry[]>([]);
   const [expandedId, setExpandedId] = createSignal<string | undefined>(undefined);
   const [childStats, setChildStats] = createSignal<SessionStats | undefined>(undefined);
-  const [renderTick, setRenderTick] = createSignal(0);
-  const bump = (): void => {
-    setRenderTick((v) => v + 1);
-  };
 
   const [cacheOpen, setCacheOpen] = createSignal(persist.loadBool(KV_KEYS.cacheOpen, true));
   const [toolsOpen, setToolsOpen] = createSignal(persist.loadBool(KV_KEYS.toolsOpen, false));
   const [subOpen, setSubOpen] = createSignal(persist.loadBool(KV_KEYS.subOpen, false));
-  const [collapsed, setCollapsed] = createSignal(persist.loadBool(KV_KEYS.panelCollapsed, false));
+  const [collapsed, setCollapsed] = createSignal(sidebarConfigSignal().collapsed);
   const [childCacheOpen, setChildCacheOpen] = createSignal(persist.loadBool(KV_KEYS.childCacheOpen, true));
   const [childToolsOpen, setChildToolsOpen] = createSignal(persist.loadBool(KV_KEYS.childToolsOpen, true));
 
@@ -106,7 +103,6 @@ function SessionStatsPanel(props: PanelProps) {
     subscriptions?.tracker.updateEntry(entry.id, patch);
     // Sync the tracker back into the reactive signal so the expanded detail shows fresh data.
     setSubagents(Array.from(subscriptions?.tracker.entries.values() ?? []));
-    bump();
   }
 
   function readSessionTokens(sid: string): TokenBreakdown | undefined {
@@ -183,7 +179,6 @@ function SessionStatsPanel(props: PanelProps) {
   function backfillEntryMetrics(sid: string): void {
     fillEntryMetrics(sid, Array.from(subscriptions?.tracker.entries.keys() ?? []));
     setSubagents(Array.from(subscriptions?.tracker.entries.values() ?? []));
-    bump();
   }
 
   onMount(() => {
@@ -193,11 +188,11 @@ function SessionStatsPanel(props: PanelProps) {
 
     subscriptions = subscribeSidebarEvents(
       api.event,
+      api.state,
       {
         onUpdate: () => {
           refreshStats();
           setSubagents(Array.from(subscriptions?.tracker.entries.values() ?? []));
-          bump();
         },
         onSubagentDone: (sid) => {
           subscriptions?.tracker.resolveBySession(sid, "done");
@@ -238,7 +233,6 @@ function SessionStatsPanel(props: PanelProps) {
           subscriptions?.tracker.scanParts(getParts(message.id));
         }
         setSubagents(Array.from(subscriptions?.tracker.entries.values() ?? []));
-        bump();
       });
     }, 200);
     onCleanup(() => clearTimeout(timer));
@@ -257,26 +251,32 @@ function SessionStatsPanel(props: PanelProps) {
     const next = !get();
     set(next);
     persist.saveBool(key, next);
-    bump();
   };
 
   return (
-    <box flexDirection="column" gap={0}>
-      {/* ── panel header ── */}
-      <text onMouseUp={() => toggleBool(collapsed, setCollapsed, KV_KEYS.panelCollapsed)}>
-        <span style={{ fg: pal().muted }}>{renderTick() >= 0 && collapsed() ? "▶ " : "▼ "}</span>
-        <span style={{ fg: pal().primary }}>{t("sidebar.title")}</span>
-      </text>
+    <Show when={sidebarConfigSignal().enabled}>
+      <box flexDirection="column" gap={0}>
+        {/* ── panel header ── */}
+        <text
+          onMouseUp={() => {
+            const next = !collapsed();
+            setCollapsed(next);
+            applySidebarConfig({ collapsed: next });
+          }}
+        >
+          <span style={{ fg: pal().muted }}>{collapsed() ? "▶ " : "▼ "}</span>
+          <span style={{ fg: pal().primary }}>{t("sidebar.title")}</span>
+        </text>
 
-      <Show when={renderTick() >= 0 && !collapsed()}>
+      <Show when={!collapsed()}>
         <box paddingLeft={2} flexDirection="column" gap={0}>
           {/* ── cache section ── */}
-          <Show when={store.get().sidebar.showCache}>
+          <Show when={sidebarConfigSignal().showCache}>
             <text onMouseUp={() => toggleBool(cacheOpen, setCacheOpen, KV_KEYS.cacheOpen)}>
-              <span style={{ fg: pal().muted }}>{renderTick() >= 0 && cacheOpen() ? "▼ " : "▶ "}</span>
+              <span style={{ fg: pal().muted }}>{cacheOpen() ? "▼ " : "▶ "}</span>
               <span style={{ fg: pal().primary }}>{t("sidebar.cache.title")}</span>
             </text>
-            <Show when={renderTick() >= 0 && cacheOpen()}>
+            <Show when={cacheOpen()}>
               <box paddingLeft={2} flexDirection="column" gap={0}>
                 <text>
                   <span style={{ fg: pal().text }}>{padRight(`${t("sidebar.cache.hitRate")}:`, 14)}</span>
@@ -304,17 +304,21 @@ function SessionStatsPanel(props: PanelProps) {
           </Show>
 
           {/* ── tools section ── */}
-          <Show when={store.get().sidebar.showTools}>
+          <Show when={sidebarConfigSignal().showTools}>
             <text onMouseUp={() => toggleBool(toolsOpen, setToolsOpen, KV_KEYS.toolsOpen)}>
-              <span style={{ fg: pal().muted }}>{renderTick() >= 0 && toolsOpen() ? "▼ " : "▶ "}</span>
+              <span style={{ fg: pal().muted }}>{toolsOpen() ? "▼ " : "▶ "}</span>
               <span style={{ fg: pal().primary }}>
                 {t("sidebar.tools.title")} ({stats().tools.length})
               </span>
             </text>
-            <Show when={renderTick() >= 0 && toolsOpen()}>
+            <Show when={toolsOpen()}>
               <Show
                 when={stats().tools.length > 0}
-                fallback={<text style={{ fg: pal().muted }}>{t("sidebar.empty")}</text>}
+                fallback={
+                  <box paddingLeft={2}>
+                    <text style={{ fg: pal().muted }}>{t("sidebar.empty")}</text>
+                  </box>
+                }
               >
                 <box paddingLeft={2} flexDirection="column" gap={0}>
                   <For each={stats().tools}>
@@ -332,17 +336,21 @@ function SessionStatsPanel(props: PanelProps) {
           </Show>
 
           {/* ── subagents section ── */}
-          <Show when={store.get().sidebar.showSubagents}>
+          <Show when={sidebarConfigSignal().showSubagents}>
             <text onMouseUp={() => toggleBool(subOpen, setSubOpen, KV_KEYS.subOpen)}>
-              <span style={{ fg: pal().muted }}>{renderTick() >= 0 && subOpen() ? "▼ " : "▶ "}</span>
+              <span style={{ fg: pal().muted }}>{subOpen() ? "▼ " : "▶ "}</span>
               <span style={{ fg: pal().primary }}>
                 {t("sidebar.subagents.title")} ({subagents().length})
               </span>
             </text>
-            <Show when={renderTick() >= 0 && subOpen()}>
+            <Show when={subOpen()}>
               <Show
                 when={subagents().length > 0}
-                fallback={<text style={{ fg: pal().muted }}>{t("sidebar.empty")}</text>}
+                fallback={
+                  <box paddingLeft={2}>
+                    <text style={{ fg: pal().muted }}>{t("sidebar.empty")}</text>
+                  </box>
+                }
               >
                 <box paddingLeft={2} flexDirection="column" gap={0}>
                   <For each={subagents()}>
@@ -353,15 +361,14 @@ function SessionStatsPanel(props: PanelProps) {
                             const next = expandedId() === entry.id ? undefined : entry.id;
                             setExpandedId(next);
                             if (next) refreshChildStats(entry);
-                            bump();
                           }}
                         >
-                          <span style={{ fg: pal().muted }}>{renderTick() >= 0 && expandedId() === entry.id ? "▼ " : "▶ "}</span>
+                          <span style={{ fg: pal().muted }}>{expandedId() === entry.id ? "▼ " : "▶ "}</span>
                           <span style={{ fg: statusColor(entry.status) }}>{statusDot()}</span>
                           <span style={{ fg: pal().text }}> {truncate(entry.title, 20)}</span>
                         </text>
 
-                        <Show when={renderTick() >= 0 && expandedId() === entry.id}>
+                        <Show when={expandedId() === entry.id}>
                           <box paddingLeft={2} flexDirection="column" gap={0}>
                             <text>
                               <span style={{ fg: pal().primary }}>{t("sidebar.subagents.field.agent")}: </span>
@@ -412,12 +419,12 @@ function SessionStatsPanel(props: PanelProps) {
 
                             {/* child cache section (collapsible) */}
                             <text onMouseUp={() => toggleBool(childCacheOpen, setChildCacheOpen, KV_KEYS.childCacheOpen)}>
-                              <span style={{ fg: pal().muted }}>{renderTick() >= 0 && childCacheOpen() ? "▼ " : "▶ "}</span>
+                              <span style={{ fg: pal().muted }}>{childCacheOpen() ? "▼ " : "▶ "}</span>
                               <span style={{ fg: pal().primary }}>
                                 {t("sidebar.cache.title")} {childHitRate() ? `(${childHitRate()})` : ""}
                               </span>
                             </text>
-                            <Show when={renderTick() >= 0 && childCacheOpen() && childStats() !== undefined}>
+                            <Show when={childCacheOpen() && childStats() !== undefined}>
                               <box paddingLeft={2} flexDirection="column" gap={0}>
                                 <text>
                                   <span style={{ fg: pal().text }}>{padRight(`${t("sidebar.cache.input")}:`, 14)}</span>
@@ -440,14 +447,13 @@ function SessionStatsPanel(props: PanelProps) {
 
                             {/* child tools section (collapsible) */}
                             <text onMouseUp={() => toggleBool(childToolsOpen, setChildToolsOpen, KV_KEYS.childToolsOpen)}>
-                              <span style={{ fg: pal().muted }}>{renderTick() >= 0 && childToolsOpen() ? "▼ " : "▶ "}</span>
+                              <span style={{ fg: pal().muted }}>{childToolsOpen() ? "▼ " : "▶ "}</span>
                               <span style={{ fg: pal().primary }}>
                                 {t("sidebar.subagents.field.tools")} ({childStats()?.tools.length ?? 0})
                               </span>
                             </text>
                             <Show
                               when={
-                                renderTick() >= 0 &&
                                 childToolsOpen() &&
                                 childStats() !== undefined &&
                                 childStats()!.tools.length > 0
@@ -491,7 +497,8 @@ function SessionStatsPanel(props: PanelProps) {
           </Show>
         </box>
       </Show>
-    </box>
+      </box>
+    </Show>
   );
 
   function statusDot(): string {

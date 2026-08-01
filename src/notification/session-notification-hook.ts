@@ -55,6 +55,13 @@ export function createSessionNotificationHook(
 
   const sender: NotificationSender = createNotificationSender(platform);
 
+  async function sendWithSound(content: { title: string; message: string }, playSound: boolean): Promise<void> {
+    await sender.send(content);
+    if (playSound) {
+      await sender.playSound().catch(() => undefined);
+    }
+  }
+
   const hasPendingWork = async (sessionID: string): Promise<boolean> => {
     try {
       const todos = await ctx.client.session.todo(sessionID);
@@ -67,8 +74,8 @@ export function createSessionNotificationHook(
 
   const scheduler: IdleNotificationScheduler = createIdleNotificationScheduler(
     {
-      idleConfirmationDelay: 1500,
-      skipIfIncompleteTodos: true,
+      idleConfirmationDelay: loadConfigFn().notification.idleConfirmationDelay,
+      skipIfIncompleteTodos: loadConfigFn().notification.skipIfIncompleteTodos,
       maxTrackedSessions: 100,
     },
     {
@@ -89,7 +96,7 @@ export function createSessionNotificationHook(
           t("notification.completed"),
           t,
         );
-        await sender.send(content);
+        await sendWithSound(content, config.notification.playSound);
       },
     },
   );
@@ -140,7 +147,7 @@ export function createSessionNotificationHook(
           scheduler.markSessionActivity(sessionID);
           const lang = resolveLang(config.lang, process.env);
           const t: Translator = createTranslator(lang);
-          await sender.send({ title: t("notification.title"), message: t("notification.permission") });
+          await sendWithSound({ title: t("notification.title"), message: t("notification.permission") }, config.notification.playSound);
           return;
         }
         case "tool.execute.before": {
@@ -154,7 +161,7 @@ export function createSessionNotificationHook(
               if (!config.notification.enabled || !config.notification.onQuestion) return;
               const lang = resolveLang(config.lang, process.env);
               const t: Translator = createTranslator(lang);
-              await sender.send({ title: t("notification.title"), message: t("notification.question") });
+              await sendWithSound({ title: t("notification.title"), message: t("notification.question") }, config.notification.playSound);
             }
           }
           return;

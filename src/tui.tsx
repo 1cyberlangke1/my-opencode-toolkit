@@ -6,6 +6,7 @@ import { createConfigStore, type ConfigStore } from "./config/store";
 import type { ToolkitConfig } from "./config/types";
 import { createTranslator, resolveLang, type Lang, type Translator } from "./i18n";
 import { createSidebarSlot } from "./sidebar";
+import { applySidebarConfig, sidebarConfigSignal } from "./sidebar/state";
 
 const ID = "my-opencode-toolkit";
 
@@ -23,6 +24,8 @@ interface MenuItem {
   key: string;
   title: string;
   description?: () => string;
+  /** Help text shown inside the on/off dialog for this item. */
+  help?: string;
   action: MenuAction;
 }
 
@@ -64,6 +67,7 @@ function buildMenu(t: Translator, store: ConfigStore): MenuItem[] {
       key: "notify",
       title: t("config.notify"),
       description: () => onOff(store.get().notification.enabled),
+      help: t("help.notify"),
       action: {
         kind: "bool",
         get: () => store.get().notification.enabled,
@@ -74,6 +78,7 @@ function buildMenu(t: Translator, store: ConfigStore): MenuItem[] {
       key: "complete",
       title: t("config.complete"),
       description: () => onOff(store.get().notification.onComplete),
+      help: t("help.complete"),
       action: {
         kind: "bool",
         get: () => store.get().notification.onComplete,
@@ -84,6 +89,7 @@ function buildMenu(t: Translator, store: ConfigStore): MenuItem[] {
       key: "question",
       title: t("config.question"),
       description: () => onOff(store.get().notification.onQuestion),
+      help: t("help.question"),
       action: {
         kind: "bool",
         get: () => store.get().notification.onQuestion,
@@ -94,6 +100,7 @@ function buildMenu(t: Translator, store: ConfigStore): MenuItem[] {
       key: "permission",
       title: t("config.permission"),
       description: () => onOff(store.get().notification.onPermission),
+      help: t("help.permission"),
       action: {
         kind: "bool",
         get: () => store.get().notification.onPermission,
@@ -104,6 +111,7 @@ function buildMenu(t: Translator, store: ConfigStore): MenuItem[] {
       key: "sound",
       title: t("config.sound"),
       description: () => onOff(store.get().notification.playSound),
+      help: t("help.sound"),
       action: {
         kind: "bool",
         get: () => store.get().notification.playSound,
@@ -114,6 +122,7 @@ function buildMenu(t: Translator, store: ConfigStore): MenuItem[] {
       key: "todos",
       title: t("config.todos"),
       description: () => onOff(store.get().notification.skipIfIncompleteTodos),
+      help: t("help.todos"),
       action: {
         kind: "bool",
         get: () => store.get().notification.skipIfIncompleteTodos,
@@ -124,6 +133,7 @@ function buildMenu(t: Translator, store: ConfigStore): MenuItem[] {
       key: "mainonly",
       title: t("config.mainonly"),
       description: () => onOff(store.get().notification.onlyMainSession),
+      help: t("help.mainonly"),
       action: {
         kind: "bool",
         get: () => store.get().notification.onlyMainSession,
@@ -142,51 +152,56 @@ function buildMenu(t: Translator, store: ConfigStore): MenuItem[] {
     {
       key: "sidebar",
       title: t("config.sidebar"),
-      description: () => onOff(store.get().sidebar.enabled),
+      description: () => onOff(sidebarConfigSignal().enabled),
+      help: t("help.sidebar"),
       action: {
         kind: "bool",
-        get: () => store.get().sidebar.enabled,
-        apply: (v) => store.updateSidebar({ enabled: v }),
+        get: () => sidebarConfigSignal().enabled,
+        apply: (v) => applySidebarConfig({ enabled: v }),
       },
     },
     {
       key: "sidebarCache",
       title: t("config.sidebarCache"),
-      description: () => onOff(store.get().sidebar.showCache),
+      description: () => onOff(sidebarConfigSignal().showCache),
+      help: t("help.sidebarCache"),
       action: {
         kind: "bool",
-        get: () => store.get().sidebar.showCache,
-        apply: (v) => store.updateSidebar({ showCache: v }),
+        get: () => sidebarConfigSignal().showCache,
+        apply: (v) => applySidebarConfig({ showCache: v }),
       },
     },
     {
       key: "sidebarTools",
       title: t("config.sidebarTools"),
-      description: () => onOff(store.get().sidebar.showTools),
+      description: () => onOff(sidebarConfigSignal().showTools),
+      help: t("help.sidebarTools"),
       action: {
         kind: "bool",
-        get: () => store.get().sidebar.showTools,
-        apply: (v) => store.updateSidebar({ showTools: v }),
+        get: () => sidebarConfigSignal().showTools,
+        apply: (v) => applySidebarConfig({ showTools: v }),
       },
     },
     {
       key: "sidebarSubagents",
       title: t("config.sidebarSubagents"),
-      description: () => onOff(store.get().sidebar.showSubagents),
+      description: () => onOff(sidebarConfigSignal().showSubagents),
+      help: t("help.sidebarSubagents"),
       action: {
         kind: "bool",
-        get: () => store.get().sidebar.showSubagents,
-        apply: (v) => store.updateSidebar({ showSubagents: v }),
+        get: () => sidebarConfigSignal().showSubagents,
+        apply: (v) => applySidebarConfig({ showSubagents: v }),
       },
     },
     {
       key: "sidebarCollapsed",
       title: t("config.sidebarCollapsed"),
-      description: () => onOff(store.get().sidebar.collapsed),
+      description: () => onOff(sidebarConfigSignal().collapsed),
+      help: t("help.sidebarCollapsed"),
       action: {
         kind: "bool",
-        get: () => store.get().sidebar.collapsed,
-        apply: (v) => store.updateSidebar({ collapsed: v }),
+        get: () => sidebarConfigSignal().collapsed,
+        apply: (v) => applySidebarConfig({ collapsed: v }),
       },
     },
   ];
@@ -202,6 +217,7 @@ function buildMenu(t: Translator, store: ConfigStore): MenuItem[] {
       key: "toggle",
       title: t("config.toggle"),
       description: () => onOff(store.get().enabled),
+      help: t("help.toggle"),
       action: {
         kind: "bool",
         get: () => store.get().enabled,
@@ -311,6 +327,21 @@ function handleSelect(nav: MenuNav, value: string): void {
 // Sub-dialogs (bool / lang / delay) — return to current menu after applying
 // ---------------------------------------------------------------------------
 
+const HELP_MAX_LINES = 2;
+const HELP_MAX_CHARS = 40;
+
+/** Truncate a help text to at most HELP_MAX_LINES lines of HELP_MAX_CHARS. */
+function formatHelpText(help: string): string {
+  const lines = help.split("\n").slice(0, HELP_MAX_LINES);
+  const truncated = lines.map((line) =>
+    line.length > HELP_MAX_CHARS ? `${line.slice(0, HELP_MAX_CHARS - 1)}…` : line,
+  );
+  if (help.split("\n").length > HELP_MAX_LINES) {
+    truncated[truncated.length - 1] = `${truncated[truncated.length - 1] ?? ""}…`;
+  }
+  return truncated.join("\n");
+}
+
 function openBoolDialog(
   nav: MenuNav,
   item: MenuItem,
@@ -320,13 +351,15 @@ function openBoolDialog(
   const { api, store } = nav;
   const t = translatorFor(store.get());
 
+  const boolOptions = [
+    { title: t("misc.on"), value: true },
+    { title: t("misc.off"), value: false },
+  ];
+
   api.ui.dialog.replace(() => (
     <api.ui.DialogSelect
-      title={item.title}
-      options={[
-        { title: t("misc.on"), value: true },
-        { title: t("misc.off"), value: false },
-      ]}
+      title={item.help !== undefined ? `${item.title}\n${formatHelpText(item.help)}` : item.title}
+      options={boolOptions}
       current={current}
       onSelect={(option) => {
         const v = option.value === true;

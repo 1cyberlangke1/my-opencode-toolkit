@@ -15,10 +15,14 @@ export interface ConfigStore {
   updateNotification(patch: Partial<NotificationConfig>): ToolkitConfig;
   /** Update only the sidebar section. Returns the new config. */
   updateSidebar(patch: Partial<SidebarConfig>): ToolkitConfig;
+  /** Subscribe to config changes. Returns an unsubscribe function. */
+  subscribe(listener: (config: ToolkitConfig) => void): () => void;
   path: string;
 }
 
 export function createConfigStore(path: string = configFilePath()): ConfigStore {
+  const listeners = new Set<(config: ToolkitConfig) => void>();
+
   function read(): ToolkitConfig {
     try {
       const content = readFileSync(path, "utf8");
@@ -35,26 +39,42 @@ export function createConfigStore(path: string = configFilePath()): ConfigStore 
     renameSync(tmpPath, path);
   }
 
+  function notify(config: ToolkitConfig): void {
+    for (const listener of listeners) listener(config);
+  }
+
   return {
     path,
     get: read,
-    set: write,
+    set(config) {
+      write(config);
+      notify(config);
+    },
     update(patch) {
       const next: ToolkitConfig = { ...read(), ...patch };
       write(next);
+      notify(next);
       return next;
     },
     updateNotification(patch) {
       const next: ToolkitConfig = read();
       next.notification = { ...next.notification, ...patch };
       write(next);
+      notify(next);
       return next;
     },
     updateSidebar(patch) {
       const next: ToolkitConfig = read();
       next.sidebar = { ...next.sidebar, ...patch };
       write(next);
+      notify(next);
       return next;
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
     },
   };
 }

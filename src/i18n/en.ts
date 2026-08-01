@@ -63,6 +63,20 @@ export interface TranslationDict {
   "status.todos": string;
   "status.mainonly": string;
   "status.delay": string;
+  // Help texts shown in the on/off dialogs
+  "help.toggle": string;
+  "help.notify": string;
+  "help.complete": string;
+  "help.question": string;
+  "help.permission": string;
+  "help.sound": string;
+  "help.todos": string;
+  "help.mainonly": string;
+  "help.sidebar": string;
+  "help.sidebarCache": string;
+  "help.sidebarTools": string;
+  "help.sidebarSubagents": string;
+  "help.sidebarCollapsed": string;
   // Misc
   "misc.on": string;
   "misc.off": string;
@@ -154,6 +168,20 @@ export const en: TranslationDict = {
   "status.todos": "Skip if todos incomplete",
   "status.mainonly": "Main session only",
   "status.delay": "Idle delay",
+
+  "help.toggle": "Master switch for the whole plugin. Turn off to disable all features.",
+  "help.notify": "Master switch for notifications. When off, no completion/question/permission toasts are sent.",
+  "help.complete": "Show a system notification when a task completes (session becomes idle).",
+  "help.question": "Show a system notification when the agent asks you a question.",
+  "help.permission": "Show a system notification when the agent needs your permission to continue.",
+  "help.sound": "Play a sound along with notifications.",
+  "help.todos": "Skip the completion notification while there are unfinished todos.",
+  "help.mainonly": "Only notify for the main session; ignore sub-agent completions.",
+  "help.sidebar": "Master switch for the sidebar stats panel.",
+  "help.sidebarCache": "Show the cache-hit-rate section in the sidebar panel.",
+  "help.sidebarTools": "Show the tool-usage counts in the sidebar panel.",
+  "help.sidebarSubagents": "Show the sub-agent tracking section in the sidebar panel.",
+  "help.sidebarCollapsed": "Start the sidebar panel collapsed (click the header to toggle).",
 
   "misc.on": "On",
   "misc.off": "Off",

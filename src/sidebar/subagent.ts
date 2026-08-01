@@ -29,12 +29,20 @@ export interface SubagentEntry {
 /** Tool names that spawn sub-agents or delegate tasks. */
 const SUBAGENT_TOOLS = new Set(["task", "delegate", "call_omo_agent"]);
 
+function normalize(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9-]/g, "");
+}
+
 /**
  * Track sub-agent invocations in a session, derived from the live part stream.
- * A sub-agent is introduced by a `subtask` part or by a `task`/`delegate`
- * tool call; its completion is resolved via child-session idle/error events.
+ *
+ * A sub-agent is introduced by a `subtask` part (its `sessionID` is the PARENT
+ * session, not the child) or by a `task`/`delegate` tool call (the child
+ * session id lives in `ToolState.metadata.session_id`). Completion is resolved
+ * via child-session idle/error events, matched by exact sessionId first, then
+ * by agent name, then by time proximity — mirroring opencode-subagent-magazine.
  */
-export function createSubagentTracker() {
+export function createSubagentTracker(getSessionAgent?: (sessionID: string) => string | undefined) {
   const entries = new Map<string, SubagentEntry>();
 
   function upsert(id: string, partial: Partial<SubagentEntry> & { agent: string }): SubagentEntry {
@@ -60,11 +68,13 @@ export function createSubagentTracker() {
   function scanParts(parts: readonly Part[]): void {
     for (const part of parts) {
       if (part.type === "subtask") {
+        // SubtaskPart.sessionID is the PARENT session, not the child.
+        // The real child session id is discovered later via tool metadata or
+        // matched through agent-name fallback on session.idle/error.
         upsert(`sub:${part.id}`, {
           agent: part.agent,
           title: part.description || part.agent,
           status: "running",
-          sessionId: part.sessionID,
         });
         continue;
       }
@@ -81,6 +91,8 @@ export function createSubagentTracker() {
           part.state.status === "completed" || part.state.status === "running"
             ? (part.state.metadata as Record<string, unknown> | undefined)
             : undefined;
+        // Child session id lives in state-level metadata (ToolStateCompleted.metadata),
+        // injected by the tool executor. ToolPart.sessionID is the parent session.
         const sessionId =
           typeof meta?.session_id === "string"
             ? meta.session_id
@@ -105,10 +117,51 @@ export function createSubagentTracker() {
 
   /** Resolve a sub-agent entry to done/error when a child session ends. */
   function resolveBySession(sessionID: string, status: "done" | "error"): void {
-    for (const entry of entries.values()) {
+    const nowTs = Date.now();
+
+    // Phase 1: exact sessionId match.
+    let matchedId: string | undefined;
+    for (const [id, entry] of entries) {
       if (entry.sessionId === sessionID && entry.status === "running") {
+        matchedId = id;
+        break;
+      }
+    }
+
+    // Phase 2: agent-name match (session agent vs entry agent overlap).
+    if (matchedId === undefined && getSessionAgent) {
+      const sessionAgent = getSessionAgent(sessionID);
+      if (sessionAgent) {
+        const saNorm = normalize(sessionAgent);
+        let best: { id: string; gap: number } | null = null;
+        for (const [id, entry] of entries) {
+          if (entry.status !== "running") continue;
+          const eaNorm = normalize(entry.agent);
+          if (!eaNorm || !saNorm) continue;
+          if (!eaNorm.includes(saNorm) && !saNorm.includes(eaNorm)) continue;
+          const gap = nowTs - (entry.startedAt || 0);
+          if (!best || gap > best.gap) best = { id, gap };
+        }
+        // Fallback: time proximity for entries with no sessionId yet.
+        if (!best) {
+          for (const [id, entry] of entries) {
+            if (entry.status !== "running") continue;
+            if (entry.sessionId) continue;
+            const gap = nowTs - (entry.startedAt || 0);
+            if (!best || gap > best.gap) best = { id, gap };
+          }
+        }
+        matchedId = best?.id;
+      }
+    }
+
+    if (matchedId !== undefined) {
+      const entry = entries.get(matchedId);
+      if (entry) {
         entry.status = status;
-        entry.endedAt = Date.now();
+        entry.endedAt = nowTs;
+        // Backfill the real child session id so later reads target the child.
+        entry.sessionId = sessionID;
       }
     }
   }

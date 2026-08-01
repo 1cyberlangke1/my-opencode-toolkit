@@ -1,4 +1,4 @@
-import type { TuiEventBus } from "@opencode-ai/plugin/tui";
+import type { TuiEventBus, TuiState } from "@opencode-ai/plugin/tui";
 
 import { createSubagentTracker, type SubagentTracker } from "./subagent";
 
@@ -22,9 +22,17 @@ export interface SidebarEventSubscriptions {
  */
 export function subscribeSidebarEvents(
   event: TuiEventBus,
+  state: TuiState,
   handlers: SidebarEventHandlers,
 ): SidebarEventSubscriptions {
-  const tracker = createSubagentTracker();
+  const tracker = createSubagentTracker((sessionID) => {
+    try {
+      const session = state.session.get(sessionID);
+      return session?.agent;
+    } catch {
+      return undefined;
+    }
+  });
 
   const unsubPart = event.on("message.part.updated", (e) => {
     const part = e.properties.part;

@@ -65,6 +65,20 @@ export const zh: TranslationDict = {
   "status.mainonly": "只通知主会话",
   "status.delay": "空闲延迟",
 
+  "help.toggle": "插件总开关。关闭后所有功能失效。",
+  "help.notify": "通知功能总开关。关闭后不再发送完成/提问/权限通知。",
+  "help.complete": "任务完成（会话空闲）时发送系统通知。",
+  "help.question": "智能体向你提问时发送系统通知。",
+  "help.permission": "智能体需要权限才能继续时发送系统通知。",
+  "help.sound": "通知时同时播放提示音。",
+  "help.todos": "有未完成的任务时跳过完成通知。",
+  "help.mainonly": "只通知主会话，忽略子代理的完成事件。",
+  "help.sidebar": "侧边栏统计面板总开关。",
+  "help.sidebarCache": "在侧边栏面板显示缓存命中率区块。",
+  "help.sidebarTools": "在侧边栏面板显示工具使用次数区块。",
+  "help.sidebarSubagents": "在侧边栏面板显示子代理追踪区块。",
+  "help.sidebarCollapsed": "侧边栏面板默认折叠（点击标题可切换）。",
+
   "misc.on": "开启",
   "misc.off": "关闭",
 
