@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { readFileSync } from "node:fs";
 
 import { DEFAULT_CONFIG, type NotificationConfig, type SidebarConfig, type ToolkitConfig } from "./types";
-import { isBoolean, isLang, isNonNegativeNumber } from "./types";
+import { isBoolean, isLang } from "./types";
 
 /** Global config file path shared between server and TUI plugins. */
 export function configFilePath(): string {
@@ -21,9 +21,6 @@ function parseNotification(value: unknown): NotificationConfig {
   if (isBoolean(raw.onComplete)) result.onComplete = raw.onComplete;
   if (isBoolean(raw.onQuestion)) result.onQuestion = raw.onQuestion;
   if (isBoolean(raw.onPermission)) result.onPermission = raw.onPermission;
-  if (isNonNegativeNumber(raw.idleConfirmationDelay)) {
-    result.idleConfirmationDelay = raw.idleConfirmationDelay;
-  }
   if (isBoolean(raw.skipIfIncompleteTodos)) result.skipIfIncompleteTodos = raw.skipIfIncompleteTodos;
   if (isBoolean(raw.onlyMainSession)) result.onlyMainSession = raw.onlyMainSession;
   return result;

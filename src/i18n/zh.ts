@@ -36,7 +36,6 @@ export const zh: TranslationDict = {
   "config.permission": "权限通知",
   "config.todos": "有未完成任务时跳过",
   "config.mainonly": "只通知主会话",
-  "config.delay": "空闲确认延迟",
 
   "dialog.select.title": "选择",
   "dialog.select.on": "开启",
@@ -45,13 +44,9 @@ export const zh: TranslationDict = {
   "dialog.lang.auto": "自动",
   "dialog.lang.zh": "中文",
   "dialog.lang.en": "English",
-  "dialog.delay.title": "空闲确认延迟（毫秒）",
-  "dialog.delay.description": "输入延迟毫秒数",
 
   "toast.changed": "已改为",
   "toast.lang": "语言已设为",
-  "toast.delay": "延迟已设为",
-  "toast.delayInvalid": "无效的延迟值",
 
   "status.plugin": "插件",
   "status.lang": "语言",
@@ -61,7 +56,6 @@ export const zh: TranslationDict = {
   "status.permission": "权限通知",
   "status.todos": "有未完成任务时跳过",
   "status.mainonly": "只通知主会话",
-  "status.delay": "空闲延迟",
 
   "help.toggle": "插件总开关。关闭后所有功能失效。",
   "help.notify": "通知功能总开关。关闭后不再发送完成/提问/权限通知。",

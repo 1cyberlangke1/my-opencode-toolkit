@@ -15,8 +15,8 @@ interface MessageEntry {
 
 function extractMessageText(message: MessageEntry | undefined): string {
   return (message?.parts ?? [])
-    .filter((part) => part.type === "text")
-    .map((part) => (part.text ?? "").trim())
+    .filter((part) => part.type === "text" && typeof part.text === "string")
+    .map((part) => part.text?.trim() ?? "")
     .filter(Boolean)
     .join("\n");
 }

@@ -9,8 +9,6 @@ export interface NotificationConfig {
   onQuestion: boolean;
   /** Notify when permission is requested (default: true) */
   onPermission: boolean;
-  /** Delay in ms before sending to confirm the session is still idle (default: 1500) */
-  idleConfirmationDelay: number;
   /** Skip notification when there are incomplete todos (default: true) */
   skipIfIncompleteTodos: boolean;
   /** Only notify for main (non-subagent) sessions (default: true) */
@@ -46,7 +44,6 @@ export const DEFAULT_CONFIG: ToolkitConfig = {
     onComplete: true,
     onQuestion: true,
     onPermission: true,
-    idleConfirmationDelay: 1500,
     skipIfIncompleteTodos: true,
     onlyMainSession: true,
   },
@@ -65,8 +62,4 @@ export function isLang(value: unknown): value is Lang {
 
 export function isBoolean(value: unknown): value is boolean {
   return typeof value === "boolean";
-}
-
-export function isNonNegativeNumber(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }

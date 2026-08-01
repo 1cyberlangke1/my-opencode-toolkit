@@ -35,7 +35,6 @@ export interface TranslationDict {
   "config.permission": string;
   "config.todos": string;
   "config.mainonly": string;
-  "config.delay": string;
   // Dialog labels
   "dialog.select.title": string;
   "dialog.select.on": string;
@@ -44,13 +43,9 @@ export interface TranslationDict {
   "dialog.lang.auto": string;
   "dialog.lang.zh": string;
   "dialog.lang.en": string;
-  "dialog.delay.title": string;
-  "dialog.delay.description": string;
   // Toast messages
   "toast.changed": string;
   "toast.lang": string;
-  "toast.delay": string;
-  "toast.delayInvalid": string;
   // Status summary
   "status.plugin": string;
   "status.lang": string;
@@ -60,7 +55,6 @@ export interface TranslationDict {
   "status.permission": string;
   "status.todos": string;
   "status.mainonly": string;
-  "status.delay": string;
   // Help texts shown in the on/off dialogs
   "help.toggle": string;
   "help.notify": string;
@@ -137,7 +131,6 @@ export const en: TranslationDict = {
   "config.permission": "Notify on permission",
   "config.todos": "Skip if todos incomplete",
   "config.mainonly": "Main session only",
-  "config.delay": "Idle confirmation delay",
 
   "dialog.select.title": "Select",
   "dialog.select.on": "On",
@@ -146,13 +139,9 @@ export const en: TranslationDict = {
   "dialog.lang.auto": "Auto",
   "dialog.lang.zh": "中文 (Simplified)",
   "dialog.lang.en": "English",
-  "dialog.delay.title": "Idle Confirmation Delay (ms)",
-  "dialog.delay.description": "Enter delay in milliseconds",
 
   "toast.changed": "changed to",
   "toast.lang": "Language set to",
-  "toast.delay": "Delay set to",
-  "toast.delayInvalid": "Invalid delay value",
 
   "status.plugin": "Plugin",
   "status.lang": "Language",
@@ -162,7 +151,6 @@ export const en: TranslationDict = {
   "status.permission": "Permission notify",
   "status.todos": "Skip if todos incomplete",
   "status.mainonly": "Main session only",
-  "status.delay": "Idle delay",
 
   "help.toggle": "Master switch for the whole plugin. Turn off to disable all features.",
   "help.notify": "Master switch for notifications. When off, no completion/question/permission toasts are sent.",

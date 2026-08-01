@@ -20,18 +20,24 @@ export function createNotificationSender(platform: NodeJS.Platform): Notificatio
 
   return {
     async send({ title, message }): Promise<void> {
-      switch (detected) {
-        case "win32":
-          await sendWindowsNotification(title, message);
-          break;
-        case "darwin":
-          await sendMacosNotification(title, message);
-          break;
-        case "linux":
-          await sendLinuxNotification(title, message);
-          break;
-        case "unsupported":
-          break;
+      try {
+        switch (detected) {
+          case "win32":
+            await sendWindowsNotification(title, message);
+            break;
+          case "darwin":
+            await sendMacosNotification(title, message);
+            break;
+          case "linux":
+            await sendLinuxNotification(title, message);
+            break;
+          case "unsupported":
+            break;
+        }
+      } catch (error) {
+        console.log(
+          `[mot] notification send failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
     },
   };

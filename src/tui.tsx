@@ -17,8 +17,7 @@ const ID = "my-opencode-toolkit";
 type MenuAction =
   | { kind: "submenu"; items: MenuItem[] }
   | { kind: "bool"; get: () => boolean; apply: (value: boolean) => void }
-  | { kind: "lang" }
-  | { kind: "delay" };
+  | { kind: "lang" };
 
 interface MenuItem {
   key: string;
@@ -49,7 +48,6 @@ function showStatus(api: TuiPluginApi, config: ToolkitConfig, t: Translator): vo
     `${t("status.permission")}: ${onOff(n.onPermission)}`,
     `${t("status.todos")}: ${onOff(n.skipIfIncompleteTodos)}`,
     `${t("status.mainonly")}: ${onOff(n.onlyMainSession)}`,
-    `${t("status.delay")}: ${n.idleConfirmationDelay}ms`,
   ];
   api.ui.toast({ message: lines.join("\n"), duration: 6000 });
 }
@@ -127,12 +125,6 @@ function buildMenu(t: Translator, store: ConfigStore): MenuItem[] {
         get: () => store.get().notification.onlyMainSession,
         apply: (v) => store.updateNotification({ onlyMainSession: v }),
       },
-    },
-    {
-      key: "delay",
-      title: t("config.delay"),
-      description: () => `${store.get().notification.idleConfirmationDelay}ms`,
-      action: { kind: "delay" },
     },
   ];
 
@@ -304,15 +296,11 @@ function handleSelect(nav: MenuNav, value: string): void {
       openLangDialog(nav);
       return;
     }
-    case "delay": {
-      openDelayDialog(nav);
-      return;
-    }
   }
 }
 
 // ---------------------------------------------------------------------------
-// Sub-dialogs (bool / lang / delay) — return to current menu after applying
+// Sub-dialogs (bool / lang) — return to current menu after applying
 // ---------------------------------------------------------------------------
 
 const HELP_MAX_LINES = 2;
@@ -379,28 +367,6 @@ function openLangDialog(nav: MenuNav, onLangChange?: () => void): void {
         // Rebuild root menu with the new language.
         nav.stack = [buildMenu(nextT, store)];
         onLangChange?.();
-        renderCurrent(nav);
-      }}
-    />
-  ));
-}
-
-function openDelayDialog(nav: MenuNav): void {
-  const { api, store } = nav;
-  const t = translatorFor(store.get());
-
-  api.ui.dialog.replace(() => (
-    <api.ui.DialogPrompt
-      title={t("dialog.delay.title")}
-      description={() => <text>{t("dialog.delay.description")}</text>}
-      onConfirm={(value) => {
-        const ms = Number.parseInt(value, 10);
-        if (Number.isNaN(ms) || ms < 0) {
-          api.ui.toast({ message: t("toast.delayInvalid"), variant: "error" });
-          return;
-        }
-        store.updateNotification({ idleConfirmationDelay: ms });
-        api.ui.toast({ message: `${t("toast.delay")} ${ms}ms` });
         renderCurrent(nav);
       }}
     />
