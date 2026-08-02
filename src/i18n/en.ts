@@ -40,6 +40,9 @@ export interface TranslationDict {
   "config.mainonly": string;
   "config.todoReminder": string;
   "config.todoReminderMax": string;
+  "config.todoReminderCountdown": string;
+  "config.goal": string;
+  "config.goalCooldown": string;
   // Dialog labels
   "dialog.select.title": string;
   "dialog.select.on": string;
@@ -62,6 +65,9 @@ export interface TranslationDict {
   "status.mainonly": string;
   "status.todoReminder": string;
   "status.todoReminderMax": string;
+  "status.todoReminderCountdown": string;
+  "status.goal": string;
+  "status.goalCooldown": string;
   // Help texts shown in the on/off dialogs
   "help.toggle": string;
   "help.notify": string;
@@ -72,8 +78,14 @@ export interface TranslationDict {
   "help.mainonly": string;
   "help.todoReminder": string;
   "help.todoReminderMax": string;
+  "help.todoReminderCountdown": string;
+  "help.goal": string;
+  "help.goalCooldown": string;
   // Dialog labels
+  "dialog.goalCooldown": string;
+  "dialog.goalCooldownInvalid": string;
   "dialog.todoReminderMax": string;
+  "dialog.todoReminderCountdown": string;
   "dialog.todoReminderInvalid": string;
   "help.sidebar": string;
   "help.sidebarCache": string;
@@ -85,6 +97,16 @@ export interface TranslationDict {
   "misc.off": string;
   // Sidebar panel
   "sidebar.title": string;
+  "sidebar.goal.title": string;
+  "sidebar.goal.status.active": string;
+  "sidebar.goal.status.paused": string;
+  "sidebar.goal.status.blocked": string;
+  "sidebar.goal.status.budget_limited": string;
+  "sidebar.goal.status.complete": string;
+  "sidebar.goal.objective": string;
+  "sidebar.goal.tokens": string;
+  "sidebar.goal.time": string;
+  "sidebar.goal.empty": string;
   "sidebar.cache.title": string;
   "sidebar.cache.hitRate": string;
   "sidebar.cache.input": string;
@@ -148,6 +170,9 @@ export const en: TranslationDict = {
   "config.mainonly": "Main session only",
   "config.todoReminder": "Todo auto-continue",
   "config.todoReminderMax": "Max injections",
+  "config.todoReminderCountdown": "Countdown seconds",
+  "config.goal": "Goal",
+  "config.goalCooldown": "Retry cooldown (ms)",
 
   "dialog.select.title": "Select",
   "dialog.select.on": "On",
@@ -170,6 +195,9 @@ export const en: TranslationDict = {
   "status.mainonly": "Main session only",
   "status.todoReminder": "Todo auto-continue",
   "status.todoReminderMax": "Max injections",
+  "status.todoReminderCountdown": "Countdown seconds",
+  "status.goal": "Goal",
+  "status.goalCooldown": "Retry cooldown (ms)",
 
   "help.toggle": "Master switch for the whole plugin. Turn off to disable all features.",
   "help.notify": "Master switch for notifications. When off, no completion/question/permission toasts are sent.",
@@ -180,7 +208,13 @@ export const en: TranslationDict = {
   "help.mainonly": "Only notify for the main session; ignore sub-agent completions.",
   "help.todoReminder": "When a session becomes idle with unfinished todos, automatically inject a continuation message so the agent keeps working.",
   "help.todoReminderMax": "Maximum number of continuation injections per session before pausing. Reset when todos make progress.",
+  "help.todoReminderCountdown": "Seconds to wait before injecting the continuation message, shown as a countdown toast.",
+  "help.goal": "Persistent per-session goal. When active, the agent auto-continues toward it on idle. Disabling also removes the goal tools.",
+  "help.goalCooldown": "Maximum cooldown (ms) before retrying after an LLM failure (exponential backoff caps here).",
+  "dialog.goalCooldown": "Enter max retry cooldown in ms (positive integer)",
+  "dialog.goalCooldownInvalid": "Please enter a positive integer",
   "dialog.todoReminderMax": "Enter max injections (positive integer)",
+  "dialog.todoReminderCountdown": "Enter countdown seconds (positive integer)",
   "dialog.todoReminderInvalid": "Please enter a positive integer",
   "help.sidebar": "Master switch for the sidebar stats panel.",
   "help.sidebarCache": "Show the cache-hit-rate section in the sidebar panel.",
@@ -192,6 +226,16 @@ export const en: TranslationDict = {
   "misc.off": "Off",
 
   "sidebar.title": "Session Stats",
+  "sidebar.goal.title": "Goal",
+  "sidebar.goal.status.active": "active",
+  "sidebar.goal.status.paused": "paused",
+  "sidebar.goal.status.blocked": "blocked",
+  "sidebar.goal.status.budget_limited": "budget limited",
+  "sidebar.goal.status.complete": "complete",
+  "sidebar.goal.objective": "objective",
+  "sidebar.goal.tokens": "tokens",
+  "sidebar.goal.time": "time",
+  "sidebar.goal.empty": "No active goal",
   "sidebar.cache.title": "Cache Hit Rate",
   "sidebar.cache.hitRate": "hit rate",
   "sidebar.cache.input": "input",

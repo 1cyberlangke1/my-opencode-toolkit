@@ -2,7 +2,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { readFileSync } from "node:fs";
 
-import { DEFAULT_CONFIG, type NotificationConfig, type SidebarConfig, type TodoReminderConfig, type ToolkitConfig } from "./types";
+import { DEFAULT_CONFIG, type GoalConfig, type NotificationConfig, type SidebarConfig, type TodoReminderConfig, type ToolkitConfig } from "./types";
 import { isBoolean, isLang, isPositiveNumber } from "./types";
 
 /** Global config file path shared between server and TUI plugins. */
@@ -36,7 +36,20 @@ function parseTodoReminder(value: unknown): TodoReminderConfig {
   if (isBoolean(raw.enabled)) result.enabled = raw.enabled;
   if (isBoolean(raw.onlyMainSession)) result.onlyMainSession = raw.onlyMainSession;
   if (isPositiveNumber(raw.maxInjections)) result.maxInjections = raw.maxInjections;
+  if (isPositiveNumber(raw.countdownSeconds)) result.countdownSeconds = raw.countdownSeconds;
   if (typeof raw.message === "string" && raw.message.length > 0) result.message = raw.message;
+  return result;
+}
+
+function parseGoal(value: unknown): GoalConfig {
+  if (typeof value !== "object" || value === null) {
+    return { ...DEFAULT_CONFIG.goal };
+  }
+
+  const raw = value as Record<string, unknown>;
+  const result: GoalConfig = { ...DEFAULT_CONFIG.goal };
+  if (isBoolean(raw.enabled)) result.enabled = raw.enabled;
+  if (isPositiveNumber(raw.maxRetryCooldownMs)) result.maxRetryCooldownMs = raw.maxRetryCooldownMs;
   return result;
 }
 
@@ -66,6 +79,7 @@ export function parseConfig(raw: unknown): ToolkitConfig {
   if (isBoolean(obj.enabled)) result.enabled = obj.enabled;
   result.notification = parseNotification(obj.notification);
   result.todoReminder = parseTodoReminder(obj.todoReminder);
+  result.goal = parseGoal(obj.goal);
   result.sidebar = parseSidebar(obj.sidebar);
   return result;
 }

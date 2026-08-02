@@ -1,6 +1,8 @@
 /** @jsxImportSource @opentui/solid */
 
 import { createSignal, onCleanup, onMount, untrack, Show, For } from "solid-js";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { TuiPluginApi, TuiSlotContext, TuiSlotPlugin, TuiThemeCurrent } from "@opencode-ai/plugin/tui";
 import type { Message } from "@opencode-ai/sdk/v2";
 
@@ -20,6 +22,71 @@ import { subscribeSidebarEvents, type SidebarEventSubscriptions } from "./events
 import type { SubStatus, SubagentEntry, TokenBreakdown } from "./subagent";
 import { usePalette, rgb } from "./theme";
 import { applySidebarConfig, sidebarConfigSignal } from "./state";
+
+type GoalStatus = "active" | "paused" | "blocked" | "budget_limited" | "complete";
+
+interface GoalTuiSnapshot {
+  version: 1;
+  sessionID: string;
+  goal: {
+    goalId: string;
+    objective: string;
+    status: GoalStatus;
+    tokensUsed: number;
+    timeUsedSeconds: number;
+    tokenBudget?: number;
+  } | null;
+}
+
+function readGoalSnapshot(worktree: string, sessionId: string): GoalTuiSnapshot | null {
+  try {
+    const path = join(worktree, ".opencode-toolkit", "goal-tui", `${encodeURIComponent(sessionId)}.json`);
+    const raw = readFileSync(path, "utf8");
+    return JSON.parse(raw) as GoalTuiSnapshot;
+  } catch {
+    return null;
+  }
+}
+
+function goalStatusColor(status: GoalStatus, now: number, pal: { muted: string; success: string; warning: string; error: string; primary: string }): string {
+  if (status === "active") {
+    const t = (Math.sin(((now % 2000) / 2000) * Math.PI * 2 - Math.PI / 2) + 1) / 2;
+    const a = rgb(pal.muted);
+    const b = rgb(pal.success);
+    if (!a || !b) return pal.success;
+    const r = Math.round(a.r + (b.r - a.r) * t);
+    const g = Math.round(a.g + (b.g - a.g) * t);
+    const bl = Math.round(a.b + (b.b - a.b) * t);
+    return `#${[r, g, bl].map((v) => Math.max(0, Math.min(255, v)).toString(16).padStart(2, "0")).join("")}`;
+  }
+  switch (status) {
+    case "paused":
+      return pal.warning;
+    case "blocked":
+      return pal.error;
+    case "budget_limited":
+      return pal.warning;
+    case "complete":
+      return pal.primary;
+    default:
+      return pal.muted;
+  }
+}
+
+function goalStatusLabel(status: GoalStatus, tr: Translator): string {
+  switch (status) {
+    case "active":
+      return tr("sidebar.goal.status.active");
+    case "paused":
+      return tr("sidebar.goal.status.paused");
+    case "blocked":
+      return tr("sidebar.goal.status.blocked");
+    case "budget_limited":
+      return tr("sidebar.goal.status.budget_limited");
+    case "complete":
+      return tr("sidebar.goal.status.complete");
+  }
+}
 
 const ORDER = 70;
 
@@ -55,6 +122,8 @@ function SessionStatsPanel(props: PanelProps) {
   const [subagents, setSubagents] = createSignal<SubagentEntry[]>([]);
   const [expandedId, setExpandedId] = createSignal<string | undefined>(undefined);
   const [childStats, setChildStats] = createSignal<SessionStats | undefined>(undefined);
+  const [goal, setGoal] = createSignal<GoalTuiSnapshot["goal"] | undefined>(undefined);
+  const [goalOpen, setGoalOpen] = createSignal(persist.loadBool(KV_KEYS.goalOpen, true));
 
   const [cacheOpen, setCacheOpen] = createSignal(persist.loadBool(KV_KEYS.cacheOpen, true));
   const [toolsOpen, setToolsOpen] = createSignal(persist.loadBool(KV_KEYS.toolsOpen, false));
@@ -78,6 +147,20 @@ function SessionStatsPanel(props: PanelProps) {
 
   const getParts = (messageID: string) => api.state.part(messageID);
   const getMessages = (sid: string): readonly Message[] => api.state.session.messages(sid);
+
+  function refreshGoal(): void {
+    try {
+      const worktree = api.state.path.worktree || api.state.path.directory;
+      if (!worktree) {
+        setGoal(undefined);
+        return;
+      }
+      const snapshot = readGoalSnapshot(worktree, sessionId);
+      setGoal(snapshot?.goal ?? undefined);
+    } catch {
+      setGoal(undefined);
+    }
+  }
 
   function refreshStats(): void {
     const messages = getMessages(sessionId);
@@ -185,6 +268,7 @@ function SessionStatsPanel(props: PanelProps) {
     // Restore cached stats immediately (survives restart).
     const cached = persist.loadStats(sessionId);
     if (cached) setStatsRaw(cached);
+    refreshGoal();
 
     subscriptions = subscribeSidebarEvents(
       api.event,
@@ -192,6 +276,7 @@ function SessionStatsPanel(props: PanelProps) {
       {
         onUpdate: () => {
           refreshStats();
+          refreshGoal();
           setSubagents(Array.from(subscriptions?.tracker.entries.values() ?? []));
         },
         onSubagentDone: (sid) => {
@@ -270,6 +355,45 @@ function SessionStatsPanel(props: PanelProps) {
 
       <Show when={!collapsed()}>
         <box paddingLeft={2} flexDirection="column" gap={0}>
+          {/* ── goal section ── */}
+          <Show when={goal() !== undefined || goalOpen()}>
+            <text onMouseUp={() => toggleBool(goalOpen, setGoalOpen, KV_KEYS.goalOpen)}>
+              <Show when={goal() !== undefined} fallback={<span style={{ fg: pal().muted }}>▶ </span>}>
+                <span style={{ fg: pal().muted }}>{goalOpen() ? "▼ " : "▶ "}</span>
+              </Show>
+              <span style={{ fg: pal().primary }}>{t("sidebar.goal.title")}</span>
+              <Show when={goal() !== undefined}>
+                <span style={{ fg: goalStatusColor(goal()!.status, now(), pal()) }}> ● ({goalStatusLabel(goal()!.status, t)})</span>
+              </Show>
+            </text>
+            <Show when={goalOpen()}>
+              <Show when={goal() !== undefined} fallback={
+                <box paddingLeft={2}>
+                  <text style={{ fg: pal().muted }}>{t("sidebar.goal.empty")}</text>
+                </box>
+              }>
+                <box paddingLeft={2} flexDirection="column" gap={0}>
+                  <text>
+                    <span style={{ fg: pal().text }}>{padRight(`${t("sidebar.goal.objective")}:`, 14)}</span>
+                    <span style={{ fg: pal().muted }}>{truncate(goal()!.objective, 40)}</span>
+                  </text>
+                  <text>
+                    <span style={{ fg: pal().text }}>{padRight(`${t("sidebar.goal.tokens")}:`, 14)}</span>
+                    <span style={{ fg: pal().muted }}>
+                      {formatTokens(goal()!.tokensUsed)}
+                      {goal()!.tokenBudget !== undefined ? ` / ${formatTokens(goal()!.tokenBudget as number)}` : " / unbounded"}
+                    </span>
+                  </text>
+                  <text>
+                    <span style={{ fg: pal().text }}>{padRight(`${t("sidebar.goal.time")}:`, 14)}</span>
+                    <span style={{ fg: pal().muted }}>{formatDuration(goal()!.timeUsedSeconds * 1000)}</span>
+                  </text>
+                </box>
+              </Show>
+              <text style={{ fg: pal().border }}>{sep()}</text>
+            </Show>
+          </Show>
+
           {/* ── cache section ── */}
           <Show when={sidebarConfigSignal().showCache}>
             <text onMouseUp={() => toggleBool(cacheOpen, setCacheOpen, KV_KEYS.cacheOpen)}>

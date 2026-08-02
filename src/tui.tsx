@@ -26,6 +26,10 @@ interface MenuItem {
   description?: () => string;
   /** Help text shown inside the on/off dialog for this item. */
   help?: string;
+  /** Custom dialog placeholder for number items (defaults to a generic label). */
+  dialogPlaceholder?: string;
+  /** Custom invalid-input message for number items. */
+  dialogInvalid?: string;
   action: MenuAction;
 }
 
@@ -51,6 +55,9 @@ function showStatus(api: TuiPluginApi, config: ToolkitConfig, t: Translator): vo
     `${t("status.mainonly")}: ${onOff(n.onlyMainSession)}`,
     `${t("status.todoReminder")}: ${onOff(config.todoReminder.enabled)}`,
     `${t("status.todoReminderMax")}: ${config.todoReminder.maxInjections}`,
+    `${t("status.todoReminderCountdown")}: ${config.todoReminder.countdownSeconds}`,
+    `${t("status.goal")}: ${onOff(config.goal.enabled)}`,
+    `${t("status.goalCooldown")}: ${config.goal.maxRetryCooldownMs}`,
   ];
   api.ui.toast({ message: lines.join("\n"), duration: 6000 });
 }
@@ -212,6 +219,45 @@ function buildMenu(t: Translator, store: ConfigStore): MenuItem[] {
         apply: (v) => store.updateTodoReminder({ maxInjections: v }),
       },
     },
+    {
+      key: "todoReminderCountdown",
+      title: t("config.todoReminderCountdown"),
+      description: () => String(store.get().todoReminder.countdownSeconds),
+      help: t("help.todoReminderCountdown"),
+      dialogPlaceholder: t("dialog.todoReminderCountdown"),
+      action: {
+        kind: "number",
+        get: () => store.get().todoReminder.countdownSeconds,
+        apply: (v) => store.updateTodoReminder({ countdownSeconds: v }),
+      },
+    },
+  ];
+
+  const goalItems: MenuItem[] = [
+    {
+      key: "goal",
+      title: t("config.goal"),
+      description: () => onOff(store.get().goal.enabled),
+      help: t("help.goal"),
+      action: {
+        kind: "bool",
+        get: () => store.get().goal.enabled,
+        apply: (v) => store.updateGoal({ enabled: v }),
+      },
+    },
+    {
+      key: "goalCooldown",
+      title: t("config.goalCooldown"),
+      description: () => String(store.get().goal.maxRetryCooldownMs),
+      help: t("help.goalCooldown"),
+      dialogPlaceholder: t("dialog.goalCooldown"),
+      dialogInvalid: t("dialog.goalCooldownInvalid"),
+      action: {
+        kind: "number",
+        get: () => store.get().goal.maxRetryCooldownMs,
+        apply: (v) => store.updateGoal({ maxRetryCooldownMs: v }),
+      },
+    },
   ];
 
   return [
@@ -236,6 +282,11 @@ function buildMenu(t: Translator, store: ConfigStore): MenuItem[] {
       key: "notificationGroup",
       title: t("config.notificationGroup"),
       action: { kind: "submenu", items: notificationItems },
+    },
+    {
+      key: "goalGroup",
+      title: t("config.goal"),
+      action: { kind: "submenu", items: goalItems },
     },
     {
       key: "todoReminderGroup",
@@ -396,12 +447,12 @@ function openNumberDialog(
   api.ui.dialog.replace(() => (
     <api.ui.DialogPrompt
       title={item.help !== undefined ? `${item.title}\n${formatHelpText(item.help)}` : item.title}
-      placeholder={t("dialog.todoReminderMax")}
+      placeholder={item.dialogPlaceholder ?? t("dialog.todoReminderMax")}
       value={String(current)}
       onConfirm={(raw) => {
         const parsed = Number(raw.trim());
         if (!Number.isFinite(parsed) || parsed <= 0 || !Number.isInteger(parsed)) {
-          api.ui.toast({ message: `${item.title}: ${t("dialog.todoReminderInvalid")}` });
+          api.ui.toast({ message: `${item.title}: ${item.dialogInvalid ?? t("dialog.todoReminderInvalid")}` });
           renderCurrent(nav);
           return;
         }

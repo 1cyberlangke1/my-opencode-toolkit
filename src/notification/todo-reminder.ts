@@ -46,14 +46,10 @@ interface EventInput {
 const COMPLETED_STATUSES = new Set(["completed", "cancelled", "blocked", "deleted"]);
 /** Marker appended to injected continuation text so it can be told apart from real user input. */
 const CONTINUATION_MARKER = "<!-- TODO_CONTINUATION -->";
-/** Countdown seconds before injecting the continuation message. */
-const COUNTDOWN_SECONDS = 2;
 const TOAST_DURATION_MS = 900;
 const ABORT_WINDOW_MS = 3_000;
-const CONTINUATION_COOLDOWN_MS = 5_000;
 const MAX_CONSECUTIVE_FAILURES = 5;
 const FAILURE_RESET_WINDOW_MS = 5 * 60_000;
-const MAX_STAGNATION_COUNT = 3;
 
 /** Render the remaining todo items as a markdown list ("- [status] content"). */
 function renderTodoList(todos: TodoItem[]): string {
@@ -152,25 +148,31 @@ export function createTodoReminder(ctx: TodoReminderContext): (input: EventInput
   ): void => {
     const state = stateStore.getState(sessionID);
     stateStore.cancelCountdown(sessionID);
-    state.countdownStartedAt = Date.now();
 
-    void showCountdownToast(COUNTDOWN_SECONDS, incompleteCount, cfg);
+    // Countdown toast ticks down from the configured seconds (e.g. 5 → 1).
+    const totalSeconds = Math.max(1, cfg.todoReminder.countdownSeconds);
+    let remaining = totalSeconds;
+    void showCountdownToast(remaining, incompleteCount, cfg);
 
     state.countdownInterval = setInterval(() => {
-      void showCountdownToast(COUNTDOWN_SECONDS, incompleteCount, cfg);
+      remaining -= 1;
+      if (remaining <= 0) {
+        stateStore.cancelCountdown(sessionID);
+        return;
+      }
+      void showCountdownToast(remaining, incompleteCount, cfg);
     }, 1000);
 
     state.countdownTimer = setTimeout(() => {
       stateStore.cancelCountdown(sessionID);
       void injectContinuation(sessionID, cfg);
-    }, COUNTDOWN_SECONDS * 1000);
+    }, totalSeconds * 1000);
   };
 
   const injectContinuation = async (sessionID: string, cfg: ToolkitConfig): Promise<void> => {
     const state = stateStore.getState(sessionID);
     if (state.wasCancelled) return;
     if (state.inFlight) return;
-    if (state.continuationBlockReason) return;
 
     const todos = await ctx.client.session.todo(sessionID).catch(() => undefined);
     if (!todos) return;
@@ -189,10 +191,6 @@ export function createTodoReminder(ctx: TodoReminderContext): (input: EventInput
       });
       state.inFlight = false;
       state.lastInjectedAt = Date.now();
-      state.awaitingPostInjectionProgressCheck = true;
-      state.continuationResponseObserved = false;
-      state.continuationBlockReason = undefined;
-      state.pendingUserMessageID = undefined;
       state.consecutiveFailures = 0;
       injectionCounts.set(sessionID, (injectionCounts.get(sessionID) ?? 0) + 1);
     } catch {
@@ -214,7 +212,6 @@ export function createTodoReminder(ctx: TodoReminderContext): (input: EventInput
 
     const state = stateStore.getState(sessionID);
 
-    if (state.allTodosCompletedAt) return;
     if (state.wasCancelled) return;
     if (state.tokenLimitDetected) return;
 
@@ -228,17 +225,26 @@ export function createTodoReminder(ctx: TodoReminderContext): (input: EventInput
 
     const todos = await ctx.client.session.todo(sessionID).catch(() => undefined);
     if (!todos || todos.length === 0) {
-      stateStore.resetContinuationProgress(sessionID);
+      stateStore.resetState(sessionID);
+      injectionCounts.delete(sessionID);
       return;
     }
 
     const incompleteCount = todos.filter((todo) => !COMPLETED_STATUSES.has(todo.status)).length;
     if (incompleteCount === 0) {
-      state.allTodosCompletedAt = Date.now();
-      stateStore.resetContinuationProgress(sessionID);
+      // All current todos are done: do not remind, and do not leave a stale
+      // "previously completed" flag that would block reminders for new todos.
       injectionCounts.delete(sessionID);
+      state.lastIncompleteCount = 0;
       return;
     }
+
+    // Todos made progress since the last idle: reset the injection budget.
+    const prevIncomplete = state.lastIncompleteCount;
+    if (prevIncomplete !== undefined && incompleteCount < prevIncomplete) {
+      injectionCounts.set(sessionID, 0);
+    }
+    state.lastIncompleteCount = incompleteCount;
 
     if (state.inFlight) return;
 
@@ -259,86 +265,21 @@ export function createTodoReminder(ctx: TodoReminderContext): (input: EventInput
       }
     }
 
-    const effectiveCooldown =
-      CONTINUATION_COOLDOWN_MS * 2 ** Math.min(state.consecutiveFailures, 5);
-    if (state.lastInjectedAt && Date.now() - state.lastInjectedAt < effectiveCooldown) {
-      return;
-    }
-
-    const progressUpdate = stateStore.trackContinuationProgress(sessionID, incompleteCount, todos);
-    if (progressUpdate.hasProgressed) {
-      injectionCounts.set(sessionID, 0);
-    }
-    if (state.continuationBlockReason) return;
-    if (state.stagnationCount >= MAX_STAGNATION_COUNT) {
-      if (progressUpdate.hasProgressed) {
-        state.stagnationCount = 0;
-      } else {
-        return;
-      }
-    }
-
     startCountdown(sessionID, incompleteCount, todos.length, cfg);
   };
 
+  /** Reset transient flags and cancel any in-flight countdown when the session becomes active again. */
   const handleNonIdleEvent = (eventType: string, props: Record<string, unknown> | undefined): void => {
-    const sessionID = getSessionID(props);
-    if (!sessionID) return;
-    const state = stateStore.getExistingState(sessionID);
-    if (!state) return;
-
-    const markObserved = (): void => {
-      if (state.awaitingPostInjectionProgressCheck === true) {
-        state.continuationResponseObserved = true;
-      }
-    };
-
-    if (eventType === "message.updated") {
-      const info = props?.info as Record<string, unknown> | undefined;
-      const role = info?.role;
-      if (role === "user") {
-        const parts = (props?.parts as Array<{ type?: string; text?: string; metadata?: Record<string, unknown> }> | undefined) ?? [];
-        const isInternal = parts.some(
-          (part) =>
-            part.type === "text" &&
-            typeof part.text === "string" &&
-            part.text.includes(CONTINUATION_MARKER),
-        );
-        if (isInternal) return;
-        if (
-          state.awaitingPostInjectionProgressCheck === true ||
-          state.continuationResponseObserved === true ||
-          state.continuationBlockReason === "directive-response"
-        ) {
-          state.continuationBlockReason = "user-interruption";
-          state.continuationResponseObserved = false;
-          state.pendingUserMessageID = undefined;
-          stateStore.cancelCountdown(sessionID);
-        } else {
-          stateStore.cancelCountdown(sessionID);
-        }
-        return;
-      }
-      if (role === "assistant") {
-        markObserved();
-        stateStore.cancelCountdown(sessionID);
-      }
-      return;
-    }
-
-    if (eventType === "message.part.updated" || eventType === "message.part.delta") {
-      const info = props?.info as Record<string, unknown> | undefined;
-      if (info?.role === "assistant") {
-        markObserved();
+    if (eventType === "message.updated" || eventType === "message.part.updated" || eventType === "message.part.delta" || eventType === "tool.execute.before" || eventType === "tool.execute.after") {
+      const sessionID = getSessionID(props);
+      if (!sessionID) return;
+      const state = stateStore.getExistingState(sessionID);
+      if (state) {
+        state.abortDetectedAt = undefined;
+        state.wasCancelled = false;
+        state.tokenLimitDetected = false;
       }
       stateStore.cancelCountdown(sessionID);
-      return;
-    }
-
-    if (eventType === "tool.execute.before" || eventType === "tool.execute.after") {
-      markObserved();
-      stateStore.cancelCountdown(sessionID);
-      return;
     }
   };
 
@@ -358,13 +299,7 @@ export function createTodoReminder(ctx: TodoReminderContext): (input: EventInput
       if (errorName === "MessageAbortedError" || errorName === "AbortError") {
         state.wasCancelled = true;
         state.abortDetectedAt = Date.now();
-        state.lastIncompleteCount = undefined;
         state.lastInjectedAt = undefined;
-        state.awaitingPostInjectionProgressCheck = false;
-        state.continuationResponseObserved = false;
-        state.continuationBlockReason = undefined;
-        state.pendingUserMessageID = undefined;
-        state.stagnationCount = 0;
         state.consecutiveFailures = 0;
         stateStore.cancelCountdown(sessionID);
       } else if (isTokenLimitError(error)) {

@@ -1,5 +1,9 @@
 import type { Plugin, PluginModule } from "@opencode-ai/plugin";
 
+import { loadConfig } from "./config/load";
+import { createGoalContinuation } from "./goal/continuation";
+import { createGoalController } from "./goal/controller";
+import { createGoalTools } from "./goal/tools";
 import { createEventHandler } from "./notification/event";
 import { createSessionNotification } from "./notification/session-notification";
 import { createTodoReminder } from "./notification/todo-reminder";
@@ -40,15 +44,33 @@ const server: Plugin = (input) => {
   const sessionNotification = createSessionNotification(ctx);
   const todoReminder = createTodoReminder(ctx);
 
+  const goalController = createGoalController({ projectDir: input.directory });
+  const goalContinuation = createGoalContinuation({
+    controller: goalController,
+    ctx,
+  });
+
   const event = createEventHandler({
     ctx,
     sessionNotification,
     todoReminder,
+    goal: goalContinuation,
+    hasActiveGoal: (sessionID) => {
+      const goal = goalController.getGoal(sessionID);
+      return goal !== null && goal.status === "active";
+    },
   });
 
-  const hooks = {
+  const config = loadConfig();
+  const hooks: Record<string, unknown> = {
     event,
   };
+  if (config.goal.enabled) {
+    hooks.tool = createGoalTools({
+      controller: goalController,
+      getSessionID: () => undefined,
+    });
+  }
   return Promise.resolve(hooks);
 };
 

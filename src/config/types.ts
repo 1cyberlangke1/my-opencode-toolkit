@@ -22,8 +22,17 @@ export interface TodoReminderConfig {
   onlyMainSession: boolean;
   /** Max injections per session before pausing (reset when todos progress) (default: 3) */
   maxInjections: number;
+  /** Countdown seconds before injecting the continuation message (default: 5) */
+  countdownSeconds: number;
   /** Injection message template; {todos} is replaced with the remaining todo list (default: English) */
   message: string;
+}
+
+export interface GoalConfig {
+  /** Master toggle for the goal feature (default: true). When off, goal tools are not registered. */
+  enabled: boolean;
+  /** Max cooldown (ms) for LLM-failure retries (default: 60000). */
+  maxRetryCooldownMs: number;
 }
 
 export interface SidebarConfig {
@@ -45,6 +54,7 @@ export interface ToolkitConfig {
   enabled: boolean;
   notification: NotificationConfig;
   todoReminder: TodoReminderConfig;
+  goal: GoalConfig;
   sidebar: SidebarConfig;
 }
 
@@ -74,7 +84,12 @@ export const DEFAULT_CONFIG: ToolkitConfig = {
     enabled: true,
     onlyMainSession: true,
     maxInjections: 3,
+    countdownSeconds: 5,
     message: DEFAULT_TODO_REMINDER_MESSAGE,
+  },
+  goal: {
+    enabled: true,
+    maxRetryCooldownMs: 60000,
   },
   sidebar: {
     enabled: true,

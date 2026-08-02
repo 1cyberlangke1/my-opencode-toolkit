@@ -9,6 +9,7 @@ export const KV_KEYS = {
   cacheOpen: `${KV_PREFIX}.cacheOpen`,
   toolsOpen: `${KV_PREFIX}.toolsOpen`,
   subOpen: `${KV_PREFIX}.subOpen`,
+  goalOpen: `${KV_PREFIX}.goalOpen`,
   panelCollapsed: `${KV_PREFIX}.panelCollapsed`,
   childCacheOpen: `${KV_PREFIX}.childCacheOpen`,
   childToolsOpen: `${KV_PREFIX}.childToolsOpen`,

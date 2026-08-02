@@ -17,10 +17,12 @@ interface EventHandlerArgs {
   ctx: SessionNotificationContext;
   sessionNotification: ((input: EventInput) => Promise<void>) | null;
   todoReminder?: ((input: EventInput) => Promise<void>) | null;
+  goal?: ((input: EventInput) => Promise<void>) | null;
+  hasActiveGoal?: (sessionID: string) => boolean;
 }
 
 export function createEventHandler(args: EventHandlerArgs): (input: EventInput) => Promise<void> {
-  const { sessionNotification, todoReminder } = args;
+  const { sessionNotification, todoReminder, goal, hasActiveGoal } = args;
 
   const runEventHookSafely = async (
     handler: ((input: EventInput) => Promise<void>) | null,
@@ -36,12 +38,26 @@ export function createEventHandler(args: EventHandlerArgs): (input: EventInput) 
 
   return async (input): Promise<void> => {
     const syntheticIdle = normalizeSessionStatusToIdle(input);
-    if (syntheticIdle) {
-      await runEventHookSafely(sessionNotification, syntheticIdle);
-      await runEventHookSafely(todoReminder ?? null, syntheticIdle);
-    } else {
-      await runEventHookSafely(sessionNotification, input);
-      await runEventHookSafely(todoReminder ?? null, input);
+    const effective = syntheticIdle ?? input;
+
+    await runEventHookSafely(sessionNotification, effective);
+    await runEventHookSafely(goal ?? null, effective);
+
+    const isIdle = effective.event.type === "session.idle";
+    if (isIdle && hasActiveGoal) {
+      const sessionID = getSessionIDFromProps(effective.event.properties);
+      if (sessionID !== undefined && hasActiveGoal(sessionID)) {
+        return;
+      }
     }
+    await runEventHookSafely(todoReminder ?? null, effective);
   };
+}
+
+function getSessionIDFromProps(properties: unknown): string | undefined {
+  if (typeof properties !== "object" || properties === null) return undefined;
+  const props = properties as Record<string, unknown>;
+  const sessionID = props.sessionID ?? props.sessionId;
+  if (typeof sessionID === "string" && sessionID.length > 0) return sessionID;
+  return undefined;
 }
