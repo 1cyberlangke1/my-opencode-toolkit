@@ -46,7 +46,13 @@ export function createSessionNotification(ctx: SessionNotificationContext) {
     try {
       const todos = await ctx.client.session.todo(sessionID);
       if (!todos || todos.length === 0) return false;
-      return todos.some((todo) => todo.status !== "completed" && todo.status !== "cancelled");
+      return todos.some(
+        (todo) =>
+          todo.status !== "completed" &&
+          todo.status !== "cancelled" &&
+          todo.status !== "blocked" &&
+          todo.status !== "deleted",
+      );
     } catch {
       return false;
     }
