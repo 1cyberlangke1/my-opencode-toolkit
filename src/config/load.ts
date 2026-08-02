@@ -49,7 +49,6 @@ function parseGoal(value: unknown): GoalConfig {
   const raw = value as Record<string, unknown>;
   const result: GoalConfig = { ...DEFAULT_CONFIG.goal };
   if (isBoolean(raw.enabled)) result.enabled = raw.enabled;
-  if (isPositiveNumber(raw.maxRetryCooldownMs)) result.maxRetryCooldownMs = raw.maxRetryCooldownMs;
   return result;
 }
 

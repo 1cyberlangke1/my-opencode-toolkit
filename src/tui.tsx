@@ -57,7 +57,6 @@ function showStatus(api: TuiPluginApi, config: ToolkitConfig, t: Translator): vo
     `${t("status.todoReminderMax")}: ${config.todoReminder.maxInjections}`,
     `${t("status.todoReminderCountdown")}: ${config.todoReminder.countdownSeconds}`,
     `${t("status.goal")}: ${onOff(config.goal.enabled)}`,
-    `${t("status.goalCooldown")}: ${config.goal.maxRetryCooldownMs}`,
   ];
   api.ui.toast({ message: lines.join("\n"), duration: 6000 });
 }
@@ -243,19 +242,6 @@ function buildMenu(t: Translator, store: ConfigStore): MenuItem[] {
         kind: "bool",
         get: () => store.get().goal.enabled,
         apply: (v) => store.updateGoal({ enabled: v }),
-      },
-    },
-    {
-      key: "goalCooldown",
-      title: t("config.goalCooldown"),
-      description: () => String(store.get().goal.maxRetryCooldownMs),
-      help: t("help.goalCooldown"),
-      dialogPlaceholder: t("dialog.goalCooldown"),
-      dialogInvalid: t("dialog.goalCooldownInvalid"),
-      action: {
-        kind: "number",
-        get: () => store.get().goal.maxRetryCooldownMs,
-        apply: (v) => store.updateGoal({ maxRetryCooldownMs: v }),
       },
     },
   ];

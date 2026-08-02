@@ -8,7 +8,7 @@ import type { Message } from "@opencode-ai/sdk/v2";
 
 import type { ConfigStore } from "../config/store";
 import { createTranslator, resolveLang, type Translator } from "../i18n";
-import { formatDuration, padRight, truncate } from "./format";
+import { formatDuration, formatGoalElapsedSeconds, padRight, truncate } from "./format";
 import { createSidebarPersist, KV_KEYS } from "./persist";
 import {
   cacheHitRate,
@@ -34,6 +34,7 @@ interface GoalTuiSnapshot {
     status: GoalStatus;
     tokensUsed: number;
     timeUsedSeconds: number;
+    updatedAt?: number;
     tokenBudget?: number;
   } | null;
 }
@@ -161,6 +162,16 @@ function SessionStatsPanel(props: PanelProps) {
       setGoal(undefined);
     }
   }
+
+  /** Live elapsed ms while the goal is active (paused/completed stays frozen). */
+  const goalElapsedMs = (): number => {
+    const g = goal();
+    if (!g) return 0;
+    const base = g.timeUsedSeconds * 1000;
+    if (g.status !== "active" || g.updatedAt === undefined) return base;
+    const liveSeconds = Math.floor(now() / 1000) - g.updatedAt;
+    return base + Math.max(0, liveSeconds) * 1000;
+  };
 
   function refreshStats(): void {
     const messages = getMessages(sessionId);
@@ -341,7 +352,46 @@ function SessionStatsPanel(props: PanelProps) {
   return (
     <Show when={sidebarConfigSignal().enabled}>
       <box flexDirection="column" gap={0}>
-        {/* ── panel header ── */}
+        {/* ── Goal 面板（独立，同级别，不受会话统计折叠影响；无目标时不显示）── */}
+        <Show when={goal() !== undefined}>
+          <text onMouseUp={() => toggleBool(goalOpen, setGoalOpen, KV_KEYS.goalOpen)}>
+            <Show when={goal() !== undefined} fallback={<span style={{ fg: pal().muted }}>▶ </span>}>
+              <span style={{ fg: pal().muted }}>{goalOpen() ? "▼ " : "▶ "}</span>
+            </Show>
+            <span style={{ fg: pal().primary }}>{t("sidebar.goal.title")}</span>
+            <Show when={goal() !== undefined}>
+              <span style={{ fg: goalStatusColor(goal()!.status, now(), pal()) }}> ● ({goalStatusLabel(goal()!.status, t)})</span>
+            </Show>
+          </text>
+          <Show when={goalOpen()}>
+            <Show when={goal() !== undefined} fallback={
+              <box paddingLeft={2}>
+                <text style={{ fg: pal().muted }}>{t("sidebar.goal.empty")}</text>
+              </box>
+            }>
+              <box paddingLeft={2} flexDirection="column" gap={0}>
+                <text>
+                  <span style={{ fg: pal().text }}>{padRight(`${t("sidebar.goal.objective")}:`, 14)}</span>
+                  <span style={{ fg: pal().muted }}>{truncate(goal()!.objective, 40)}</span>
+                </text>
+                <text>
+                  <span style={{ fg: pal().text }}>{padRight(`${t("sidebar.goal.tokens")}:`, 14)}</span>
+                  <span style={{ fg: pal().muted }}>
+                    {formatTokens(goal()!.tokensUsed)}
+                    {goal()!.tokenBudget !== undefined ? ` / ${formatTokens(goal()!.tokenBudget as number)}` : " / unbounded"}
+                  </span>
+                </text>
+                <text>
+                  <span style={{ fg: pal().text }}>{padRight(`${t("sidebar.goal.time")}:`, 14)}</span>
+                  <span style={{ fg: pal().muted }}>{formatGoalElapsedSeconds(Math.floor(goalElapsedMs() / 1000))}</span>
+                </text>
+              </box>
+            </Show>
+          </Show>
+        </Show>
+        <text style={{ fg: pal().border }}>{sep()}</text>
+
+        {/* ── 会话统计面板 ── */}
         <text
           onMouseUp={() => {
             const next = !collapsed();
@@ -355,45 +405,6 @@ function SessionStatsPanel(props: PanelProps) {
 
       <Show when={!collapsed()}>
         <box paddingLeft={2} flexDirection="column" gap={0}>
-          {/* ── goal section ── */}
-          <Show when={goal() !== undefined || goalOpen()}>
-            <text onMouseUp={() => toggleBool(goalOpen, setGoalOpen, KV_KEYS.goalOpen)}>
-              <Show when={goal() !== undefined} fallback={<span style={{ fg: pal().muted }}>▶ </span>}>
-                <span style={{ fg: pal().muted }}>{goalOpen() ? "▼ " : "▶ "}</span>
-              </Show>
-              <span style={{ fg: pal().primary }}>{t("sidebar.goal.title")}</span>
-              <Show when={goal() !== undefined}>
-                <span style={{ fg: goalStatusColor(goal()!.status, now(), pal()) }}> ● ({goalStatusLabel(goal()!.status, t)})</span>
-              </Show>
-            </text>
-            <Show when={goalOpen()}>
-              <Show when={goal() !== undefined} fallback={
-                <box paddingLeft={2}>
-                  <text style={{ fg: pal().muted }}>{t("sidebar.goal.empty")}</text>
-                </box>
-              }>
-                <box paddingLeft={2} flexDirection="column" gap={0}>
-                  <text>
-                    <span style={{ fg: pal().text }}>{padRight(`${t("sidebar.goal.objective")}:`, 14)}</span>
-                    <span style={{ fg: pal().muted }}>{truncate(goal()!.objective, 40)}</span>
-                  </text>
-                  <text>
-                    <span style={{ fg: pal().text }}>{padRight(`${t("sidebar.goal.tokens")}:`, 14)}</span>
-                    <span style={{ fg: pal().muted }}>
-                      {formatTokens(goal()!.tokensUsed)}
-                      {goal()!.tokenBudget !== undefined ? ` / ${formatTokens(goal()!.tokenBudget as number)}` : " / unbounded"}
-                    </span>
-                  </text>
-                  <text>
-                    <span style={{ fg: pal().text }}>{padRight(`${t("sidebar.goal.time")}:`, 14)}</span>
-                    <span style={{ fg: pal().muted }}>{formatDuration(goal()!.timeUsedSeconds * 1000)}</span>
-                  </text>
-                </box>
-              </Show>
-              <text style={{ fg: pal().border }}>{sep()}</text>
-            </Show>
-          </Show>
-
           {/* ── cache section ── */}
           <Show when={sidebarConfigSignal().showCache}>
             <text onMouseUp={() => toggleBool(cacheOpen, setCacheOpen, KV_KEYS.cacheOpen)}>

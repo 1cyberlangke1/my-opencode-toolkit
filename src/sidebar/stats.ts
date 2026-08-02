@@ -73,8 +73,12 @@ export function cacheHitRate(cache: CacheStats): number {
 /** Format a token count as a compact human string (e.g. 5200 → "5.2k"). */
 export function formatTokens(n: number): string {
   if (n < 1000) return `${n}`;
-  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}k`;
-  return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n < 1_000_000) {
+    const k = n / 1000;
+    return Number.isInteger(k) ? `${k}K` : `${k.toFixed(1)}K`;
+  }
+  const m = n / 1_000_000;
+  return Number.isInteger(m) ? `${m}M` : `${m.toFixed(1)}M`;
 }
 
 /** Format a ratio in [0,1] as a percentage string (e.g. 0.625 → "62.5%"). */

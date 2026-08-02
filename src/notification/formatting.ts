@@ -6,9 +6,20 @@ export function escapeAppleScriptText(input: string): string {
   return input.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
+/** Escape XML-reserved characters before inserting into a toast XML template. */
+export function escapeXmlText(input: string): string {
+  return input
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
 export function buildWindowsToastScript(title: string, message: string): string {
-  const psTitle = escapePowerShellSingleQuotedText(title);
-  const psMessage = escapePowerShellSingleQuotedText(message);
+  // XML-escape first (for the toast XML), then PowerShell single-quote escape (for the -Command string).
+  const psTitle = escapePowerShellSingleQuotedText(escapeXmlText(title));
+  const psMessage = escapePowerShellSingleQuotedText(escapeXmlText(message));
 
   return `
 [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null

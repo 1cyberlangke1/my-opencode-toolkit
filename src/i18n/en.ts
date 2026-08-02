@@ -9,6 +9,19 @@ export interface TranslationDict {
   // Todo reminder toast
   "todoReminder.title": string;
   "todoReminder.countdown": string;
+  // Goal command feedback
+  "goalCommand.title": string;
+  "goalCommand.set": string;
+  "goalCommand.paused": string;
+  "goalCommand.resumed": string;
+  "goalCommand.cleared": string;
+  "goalCommand.showNone": string;
+  "goalCommand.show": string;
+  "goalCommand.injected": string;
+  "goalCommand.description": string;
+  "goalCommand.usage": string;
+  "goalCommand.example": string;
+  "goalCommand.editPrompt": string;
   // Commands
   "cmd.mot.title": string;
   "cmd.mot.desc": string;
@@ -42,7 +55,6 @@ export interface TranslationDict {
   "config.todoReminderMax": string;
   "config.todoReminderCountdown": string;
   "config.goal": string;
-  "config.goalCooldown": string;
   // Dialog labels
   "dialog.select.title": string;
   "dialog.select.on": string;
@@ -67,7 +79,6 @@ export interface TranslationDict {
   "status.todoReminderMax": string;
   "status.todoReminderCountdown": string;
   "status.goal": string;
-  "status.goalCooldown": string;
   // Help texts shown in the on/off dialogs
   "help.toggle": string;
   "help.notify": string;
@@ -80,10 +91,7 @@ export interface TranslationDict {
   "help.todoReminderMax": string;
   "help.todoReminderCountdown": string;
   "help.goal": string;
-  "help.goalCooldown": string;
   // Dialog labels
-  "dialog.goalCooldown": string;
-  "dialog.goalCooldownInvalid": string;
   "dialog.todoReminderMax": string;
   "dialog.todoReminderCountdown": string;
   "dialog.todoReminderInvalid": string;
@@ -140,6 +148,19 @@ export const en: TranslationDict = {
   "todoReminder.title": "Todo continuation",
   "todoReminder.countdown": "Resuming in {seconds}s... ({remaining} tasks left)",
 
+  "goalCommand.title": "Goal",
+  "goalCommand.set": "Goal set: {objective}",
+  "goalCommand.paused": "Goal paused",
+  "goalCommand.resumed": "Goal resumed",
+  "goalCommand.cleared": "Goal cleared",
+  "goalCommand.showNone": "No active goal",
+  "goalCommand.show": "Goal ({status}): {objective}",
+  "goalCommand.injected": "Goal continuation injected",
+  "goalCommand.description": "set or view the goal for a long-running task",
+  "goalCommand.usage": "Usage: /goal [<objective>|clear|edit|pause|resume]",
+  "goalCommand.example": "Example: /goal improve benchmark coverage",
+  "goalCommand.editPrompt": "Current goal: {objective}. Edit with /goal <new objective>.",
+
   "cmd.mot.title": "My OpenCode Toolkit: Settings",
   "cmd.mot.desc": "Open toolkit settings",
   "cmd.status.title": "My OpenCode Toolkit: Status",
@@ -150,11 +171,11 @@ export const en: TranslationDict = {
   "config.title": "My OpenCode Toolkit",
   "config.general": "General",
   "config.notificationGroup": "Notifications",
-  "config.sidebarGroup": "Sidebar",
+  "config.sidebarGroup": "Session Stats",
   "config.return": "← Back",
   "config.closed": "Settings closed",
 
-  "config.sidebar": "Sidebar panel",
+  "config.sidebar": "Session stats panel",
   "config.sidebarCache": "Cache section",
   "config.sidebarTools": "Tools section",
   "config.sidebarSubagents": "Subagents section",
@@ -172,7 +193,6 @@ export const en: TranslationDict = {
   "config.todoReminderMax": "Max injections",
   "config.todoReminderCountdown": "Countdown seconds",
   "config.goal": "Goal",
-  "config.goalCooldown": "Retry cooldown (ms)",
 
   "dialog.select.title": "Select",
   "dialog.select.on": "On",
@@ -197,7 +217,6 @@ export const en: TranslationDict = {
   "status.todoReminderMax": "Max injections",
   "status.todoReminderCountdown": "Countdown seconds",
   "status.goal": "Goal",
-  "status.goalCooldown": "Retry cooldown (ms)",
 
   "help.toggle": "Master switch for the whole plugin. Turn off to disable all features.",
   "help.notify": "Master switch for notifications. When off, no completion/question/permission toasts are sent.",
@@ -210,17 +229,14 @@ export const en: TranslationDict = {
   "help.todoReminderMax": "Maximum number of continuation injections per session before pausing. Reset when todos make progress.",
   "help.todoReminderCountdown": "Seconds to wait before injecting the continuation message, shown as a countdown toast.",
   "help.goal": "Persistent per-session goal. When active, the agent auto-continues toward it on idle. Disabling also removes the goal tools.",
-  "help.goalCooldown": "Maximum cooldown (ms) before retrying after an LLM failure (exponential backoff caps here).",
-  "dialog.goalCooldown": "Enter max retry cooldown in ms (positive integer)",
-  "dialog.goalCooldownInvalid": "Please enter a positive integer",
   "dialog.todoReminderMax": "Enter max injections (positive integer)",
   "dialog.todoReminderCountdown": "Enter countdown seconds (positive integer)",
   "dialog.todoReminderInvalid": "Please enter a positive integer",
-  "help.sidebar": "Master switch for the sidebar stats panel.",
-  "help.sidebarCache": "Show the cache-hit-rate section in the sidebar panel.",
-  "help.sidebarTools": "Show the tool-usage counts in the sidebar panel.",
-  "help.sidebarSubagents": "Show the sub-agent tracking section in the sidebar panel.",
-  "help.sidebarCollapsed": "Start the sidebar panel collapsed (click the header to toggle).",
+  "help.sidebar": "Master switch for the session stats panel.",
+  "help.sidebarCache": "Show the cache-hit-rate section in the session stats panel.",
+  "help.sidebarTools": "Show the tool-usage counts in the session stats panel.",
+  "help.sidebarSubagents": "Show the sub-agent tracking section in the session stats panel.",
+  "help.sidebarCollapsed": "Start the session stats panel collapsed (click the header to toggle).",
 
   "misc.on": "On",
   "misc.off": "Off",

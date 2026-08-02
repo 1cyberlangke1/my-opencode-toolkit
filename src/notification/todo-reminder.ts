@@ -210,6 +210,10 @@ export function createTodoReminder(ctx: TodoReminderContext): (input: EventInput
       if (subagentSessions.has(sessionID)) return;
     }
 
+    // Plan mode: do not auto-continue while the agent is planning.
+    const agent = await resolveSessionAgent(ctx, sessionID);
+    if (agent === "plan") return;
+
     const state = stateStore.getState(sessionID);
 
     if (state.wasCancelled) return;

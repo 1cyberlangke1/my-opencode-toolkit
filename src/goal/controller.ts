@@ -6,8 +6,6 @@ import type { Goal, GoalStatus } from "./types";
 
 export interface GoalControllerOptions {
   projectDir: string;
-  /** Max LLM-failure cooldown in ms (default 60000). */
-  maxRetryCooldownMs?: number;
 }
 
 export interface TokenUsageSnapshot {
@@ -24,6 +22,7 @@ export interface GoalTuiSnapshot {
     status: GoalStatus;
     tokensUsed: number;
     timeUsedSeconds: number;
+    updatedAt: number;
     tokenBudget?: number;
   } | null;
 }
@@ -53,6 +52,7 @@ export function createGoalController(options: GoalControllerOptions) {
               status: goal.status,
               tokensUsed: goal.tokensUsed,
               timeUsedSeconds: goal.timeUsedSeconds,
+              updatedAt: goal.updatedAt,
               ...(goal.tokenBudget !== undefined ? { tokenBudget: goal.tokenBudget } : {}),
             },
     };

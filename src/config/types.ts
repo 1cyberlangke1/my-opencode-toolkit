@@ -31,8 +31,6 @@ export interface TodoReminderConfig {
 export interface GoalConfig {
   /** Master toggle for the goal feature (default: true). When off, goal tools are not registered. */
   enabled: boolean;
-  /** Max cooldown (ms) for LLM-failure retries (default: 60000). */
-  maxRetryCooldownMs: number;
 }
 
 export interface SidebarConfig {
@@ -89,7 +87,6 @@ export const DEFAULT_CONFIG: ToolkitConfig = {
   },
   goal: {
     enabled: true,
-    maxRetryCooldownMs: 60000,
   },
   sidebar: {
     enabled: true,

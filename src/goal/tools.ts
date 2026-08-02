@@ -5,6 +5,7 @@ import type { GoalController } from "./controller";
 export interface GoalToolsDeps {
   controller: GoalController;
   getSessionID: () => string | undefined;
+  isSubagent: (sessionID: string) => Promise<boolean>;
 }
 
 function formatGoal(goal: ReturnType<GoalController["getGoal"]>): string {
@@ -27,17 +28,20 @@ The objective should be concise and describe the desired outcome, not a single a
         .optional()
         .describe("Optional token budget; the goal becomes budget_limited when tokensUsed reaches it"),
     },
-    execute: (args, context) => {
+    execute: async (args, context) => {
       const sessionID = deps.getSessionID() ?? context.sessionID;
+      if (await deps.isSubagent(sessionID)) {
+        return "Error: goal tools are not available to subagents.";
+      }
       const existing = deps.controller.getGoal(sessionID);
       if (existing !== null && existing.status !== "complete" && existing.status !== "blocked") {
-        return Promise.resolve("Error: this thread has an unfinished goal; complete or clear it before creating a new one.");
+        return "Error: this thread has an unfinished goal; complete or clear it before creating a new one.";
       }
       deps.controller.setGoal(sessionID, args.objective);
       if (args.token_budget !== undefined) {
         deps.controller.setGoalTokenBudget(sessionID, args.token_budget);
       }
-      return Promise.resolve(formatGoal(deps.controller.getGoal(sessionID)));
+      return formatGoal(deps.controller.getGoal(sessionID));
     },
   });
 }
@@ -48,9 +52,12 @@ export function getGoalTool(deps: GoalToolsDeps): ToolDefinition {
 
 Returns the current objective, status, token budget and usage accounting. Returns null if no goal is set.`,
     args: {},
-    execute: (_args, context) => {
+    execute: async (_args, context) => {
       const sessionID = deps.getSessionID() ?? context.sessionID;
-      return Promise.resolve(formatGoal(deps.controller.getGoal(sessionID)));
+      if (await deps.isSubagent(sessionID)) {
+        return "Error: goal tools are not available to subagents.";
+      }
+      return formatGoal(deps.controller.getGoal(sessionID));
     },
   });
 }
@@ -71,20 +78,23 @@ When you believe the goal has been achieved, first perform a completion audit ag
         .optional()
         .describe("Required when status is blocked; describes the blocking condition"),
     },
-    execute: (args, context) => {
+    execute: async (args, context) => {
       const sessionID = deps.getSessionID() ?? context.sessionID;
+      if (await deps.isSubagent(sessionID)) {
+        return "Error: goal tools are not available to subagents.";
+      }
       if (args.status === "complete") {
         const goal = deps.controller.markComplete(sessionID);
-        if (goal === null) return Promise.resolve("Error: no goal set for this session.");
-        return Promise.resolve(formatGoal(goal));
+        if (goal === null) return "Error: no goal set for this session.";
+        return formatGoal(goal);
       }
       const reason = args.block_reason?.trim() ?? "";
       if (reason.length === 0) {
-        return Promise.resolve("Error: block_reason is required when status is blocked.");
+        return "Error: block_reason is required when status is blocked.";
       }
       const goal = deps.controller.markBlocked(sessionID, reason);
-      if (goal === null) return Promise.resolve("Error: no goal set for this session.");
-      return Promise.resolve(formatGoal(goal));
+      if (goal === null) return "Error: no goal set for this session.";
+      return formatGoal(goal);
     },
   });
 }

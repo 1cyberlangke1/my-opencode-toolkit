@@ -38,6 +38,14 @@ function getLastNonEmptyLine(text: string): string {
   return lines.at(-1) ?? "";
 }
 
+/** Max length for a single notification text fragment (Windows toast has size limits). */
+const NOTIFICATION_TEXT_MAX = 200;
+
+/** Truncate long text to avoid oversized Windows toast notifications. */
+function truncateForNotification(text: string, max = NOTIFICATION_TEXT_MAX): string {
+  return text.length > max ? `${text.slice(0, max)}...` : text;
+}
+
 function findLastMessage(
   messages: MessageEntry[],
   role: "user" | "assistant",
@@ -70,11 +78,11 @@ export function buildSessionContent(
   t: Translator,
 ): NotificationContent {
   const sessionTitle = input.session?.title.trim() ?? "";
-  const lastUserText = collapseWhitespace(
-    extractMessageText(findLastMessage(input.messages ?? [], "user")),
+  const lastUserText = truncateForNotification(
+    collapseWhitespace(extractMessageText(findLastMessage(input.messages ?? [], "user"))),
   );
-  const lastAssistantLine = getLastNonEmptyLine(
-    extractMessageText(findLastMessage(input.messages ?? [], "assistant")),
+  const lastAssistantLine = truncateForNotification(
+    getLastNonEmptyLine(extractMessageText(findLastMessage(input.messages ?? [], "assistant"))),
   );
 
   const detailLines = [

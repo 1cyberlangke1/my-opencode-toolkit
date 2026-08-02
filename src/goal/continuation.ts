@@ -1,6 +1,8 @@
 import type { ToolkitConfig } from "../config/types";
 import { loadConfig } from "../config/load";
+import { createTranslator, resolveLang } from "../i18n";
 import { getSessionID } from "../notification/event-properties";
+import { createGoalAccounting } from "./accounting";
 import { classifyGoalFailure } from "./error";
 import { buildBudgetLimitPrompt, buildContinuationPrompt, buildObjectiveUpdatedPrompt } from "./prompts";
 import type { GoalController } from "./controller";
@@ -12,7 +14,7 @@ interface GoalContinuationContext {
       messages(id: string): Promise<
         Array<{
           info: Record<string, unknown>;
-          parts?: Array<{ type?: string; text?: string; metadata?: Record<string, unknown> }>;
+          parts?: Array<{ type?: string; text?: string; state?: { status?: string } }>;
         }> | undefined
       >;
       prompt(
@@ -23,6 +25,14 @@ interface GoalContinuationContext {
         },
       ): Promise<unknown>;
     };
+    tui: {
+      showToast(body: {
+        title?: string;
+        message: string;
+        variant: "info" | "success" | "warning" | "error";
+        duration?: number;
+      }): Promise<unknown>;
+    };
   };
   loadConfigOverride?: () => ToolkitConfig;
 }
@@ -32,11 +42,9 @@ interface EventInput {
 }
 
 const GOAL_MARKER = "<!-- GOAL_CONTINUATION -->";
-const BASE_COOLDOWN_MS = 5_000;
 
 interface SessionRunState {
   consecutiveFailures: number;
-  lastInjectedAt?: number;
   wasCancelled?: boolean;
   tokenLimitDetected?: boolean;
   insufficientFundsDetected?: boolean;
@@ -65,6 +73,14 @@ function createGoalRunStateStore(): GoalRunStateStore {
   };
 }
 
+/** True when the last message is a user message (previous continuation not yet answered, or waiting on the user). */
+async function lastMessageIsUser(ctx: GoalContinuationContext, sessionID: string): Promise<boolean> {
+  const messages = await ctx.client.session.messages(sessionID).catch(() => undefined);
+  if (!messages || messages.length === 0) return false;
+  const last = messages.at(-1);
+  return last?.info.role === "user";
+}
+
 export function createGoalContinuation(args: {
   controller: GoalController;
   ctx: GoalContinuationContext;
@@ -72,6 +88,7 @@ export function createGoalContinuation(args: {
   const { controller, ctx } = args;
   const loadConfigFn = ctx.loadConfigOverride ?? loadConfig;
   const runStates = createGoalRunStateStore();
+  const accounting = createGoalAccounting();
   const inFlight = new Set<string>();
 
   const promptForKind = (goal: Goal, kind: "continuation" | "budget_limit" | "objective_updated"): string => {
@@ -92,6 +109,7 @@ export function createGoalContinuation(args: {
       await ctx.client.session.prompt(sessionID, {
         parts: [{ type: "text", text, metadata: { goalContinuation: true } }],
       });
+      showInjectedToast();
       return true;
     } catch {
       return false;
@@ -100,13 +118,40 @@ export function createGoalContinuation(args: {
     }
   };
 
-  const effectiveCooldown = (state: SessionRunState, maxMs: number): number => {
-    return Math.min(BASE_COOLDOWN_MS * 2 ** Math.min(state.consecutiveFailures, 6), maxMs);
+  /** Toast shown right after a goal continuation is injected. */
+  const showInjectedToast = (): void => {
+    const cfg = loadConfigFn();
+    const lang = resolveLang(cfg.lang, process.env);
+    const t = createTranslator(lang);
+    void ctx.client.tui
+      .showToast({
+        title: t("goalCommand.title"),
+        message: t("goalCommand.injected"),
+        variant: "info",
+      })
+      .catch(() => undefined);
+  };
+
+  /** Notify the user whenever the goal becomes paused (any path). */
+  const showPausedToast = (): void => {
+    const cfg = loadConfigFn();
+    const lang = resolveLang(cfg.lang, process.env);
+    const t = createTranslator(lang);
+    void ctx.client.tui
+      .showToast({
+        title: t("goalCommand.title"),
+        message: t("goalCommand.paused"),
+        variant: "warning",
+      })
+      .catch(() => undefined);
   };
 
   const handleSessionIdle = async (sessionID: string): Promise<void> => {
     const cfg = loadConfigFn();
     if (!cfg.enabled || !cfg.goal.enabled) return;
+
+    // Charge token/time usage first (controller only accrues while active).
+    await accounting.account(ctx, sessionID, controller);
 
     const state = runStates.get(sessionID);
     if (state.wasCancelled || state.tokenLimitDetected || state.insufficientFundsDetected) return;
@@ -114,14 +159,12 @@ export function createGoalContinuation(args: {
     const goal = controller.getGoal(sessionID);
     if (goal === null || goal.status !== "active") return;
 
-    if (state.lastInjectedAt && Date.now() - state.lastInjectedAt < effectiveCooldown(state, cfg.goal.maxRetryCooldownMs)) {
-      return;
-    }
+    // Skip if the last message is a user message (previous continuation not yet answered).
+    if (await lastMessageIsUser(ctx, sessionID)) return;
 
     const text = promptForKind(goal, "continuation");
     const ok = await inject(sessionID, text);
     if (ok) {
-      state.lastInjectedAt = Date.now();
       state.consecutiveFailures = 0;
     } else {
       state.consecutiveFailures += 1;
@@ -140,10 +183,14 @@ export function createGoalContinuation(args: {
     if (kind === "insufficient_funds") {
       state.insufficientFundsDetected = true;
       controller.pauseGoal(sessionID);
+      showPausedToast();
       return;
     }
     if (kind === "abort") {
+      // User interrupted the run: pause the goal (codex-style), resume via /goal resume.
       state.wasCancelled = true;
+      controller.pauseGoal(sessionID);
+      showPausedToast();
       return;
     }
     if (kind === "token_limit") {
@@ -174,7 +221,24 @@ export function createGoalContinuation(args: {
 
     if (event.type === "session.deleted") {
       const sessionID = getSessionID(props);
-      if (sessionID) runStates.clear(sessionID);
+      if (sessionID) {
+        runStates.clear(sessionID);
+        accounting.clear(sessionID);
+      }
+      return;
+    }
+
+    // Fallback: activity events release the in-flight flag (todo-style), so a
+    // hanging synchronous prompt does not block the next idle continuation.
+    if (
+      event.type === "message.updated" ||
+      event.type === "message.part.updated" ||
+      event.type === "message.part.delta" ||
+      event.type === "tool.execute.before" ||
+      event.type === "tool.execute.after"
+    ) {
+      const sessionID = getSessionID(props);
+      if (sessionID) inFlight.delete(sessionID);
       return;
     }
   };

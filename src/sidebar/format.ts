@@ -54,3 +54,18 @@ export function formatDuration(ms: number): string {
   const s = Math.round((ms % 60_000) / 1000);
   return `${m}m${s}s`;
 }
+
+/** Goal elapsed, e.g. 45s / 9m 30s / 10h 12m / 1d 3h. */
+export function formatGoalElapsedSeconds(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const rs = s % 60;
+  if (m < 60) return `${m}m ${rs}s`;
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  if (h < 24) return `${h}h ${rm}m`;
+  const d = Math.floor(h / 24);
+  const rh = h % 24;
+  return `${d}d ${rh}h`;
+}
