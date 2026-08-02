@@ -182,15 +182,15 @@ export function createGoalContinuation(args: {
 
     if (kind === "insufficient_funds") {
       state.insufficientFundsDetected = true;
-      controller.pauseGoal(sessionID);
-      showPausedToast();
+      const paused = controller.pauseGoal(sessionID);
+      if (paused !== null) showPausedToast();
       return;
     }
     if (kind === "abort") {
       // User interrupted the run: pause the goal (codex-style), resume via /goal resume.
       state.wasCancelled = true;
-      controller.pauseGoal(sessionID);
-      showPausedToast();
+      const paused = controller.pauseGoal(sessionID);
+      if (paused !== null) showPausedToast();
       return;
     }
     if (kind === "token_limit") {
