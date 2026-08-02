@@ -8,6 +8,9 @@ export const zh: TranslationDict = {
   "notification.user": "用户",
   "notification.assistant": "智能体",
 
+  "todoReminder.title": "待办续作",
+  "todoReminder.countdown": "即将继续，{seconds} 秒后...（剩余 {remaining} 个任务）",
+
   "cmd.mot.title": "My OpenCode Toolkit：设置",
   "cmd.mot.desc": "打开工具箱设置",
   "cmd.status.title": "My OpenCode Toolkit：状态",
@@ -36,6 +39,8 @@ export const zh: TranslationDict = {
   "config.permission": "权限通知",
   "config.todos": "有未完成任务时跳过",
   "config.mainonly": "只通知主会话",
+  "config.todoReminder": "待办自动续作",
+  "config.todoReminderMax": "最大注入次数",
 
   "dialog.select.title": "选择",
   "dialog.select.on": "开启",
@@ -56,6 +61,8 @@ export const zh: TranslationDict = {
   "status.permission": "权限通知",
   "status.todos": "有未完成任务时跳过",
   "status.mainonly": "只通知主会话",
+  "status.todoReminder": "待办自动续作",
+  "status.todoReminderMax": "最大注入次数",
 
   "help.toggle": "插件总开关。关闭后所有功能失效。",
   "help.notify": "通知功能总开关。关闭后不再发送完成/提问/权限通知。",
@@ -64,6 +71,10 @@ export const zh: TranslationDict = {
   "help.permission": "智能体需要权限才能继续时发送系统通知。",
   "help.todos": "有未完成的任务时跳过完成通知。",
   "help.mainonly": "只通知主会话，忽略子代理的完成事件。",
+  "help.todoReminder": "会话空闲但还有未完成的待办时，自动注入一条续作消息，让智能体继续干活。",
+  "help.todoReminderMax": "每个会话在暂停前的最大续作注入次数。待办有进展时重置。",
+  "dialog.todoReminderMax": "输入最大注入次数（正整数）",
+  "dialog.todoReminderInvalid": "请输入正整数",
   "help.sidebar": "侧边栏统计面板总开关。",
   "help.sidebarCache": "在侧边栏面板显示缓存命中率区块。",
   "help.sidebarTools": "在侧边栏面板显示工具使用次数区块。",

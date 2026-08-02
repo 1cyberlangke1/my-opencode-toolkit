@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 import { configFilePath, parseConfig } from "./load";
-import { DEFAULT_CONFIG, type NotificationConfig, type SidebarConfig, type ToolkitConfig } from "./types";
+import { DEFAULT_CONFIG, type NotificationConfig, type SidebarConfig, type TodoReminderConfig, type ToolkitConfig } from "./types";
 
 export interface ConfigStore {
   /** Read the current persisted config. */
@@ -13,6 +13,8 @@ export interface ConfigStore {
   update(patch: Partial<ToolkitConfig>): ToolkitConfig;
   /** Update only the notification section. Returns the new config. */
   updateNotification(patch: Partial<NotificationConfig>): ToolkitConfig;
+  /** Update only the todo-reminder section. Returns the new config. */
+  updateTodoReminder(patch: Partial<TodoReminderConfig>): ToolkitConfig;
   /** Update only the sidebar section. Returns the new config. */
   updateSidebar(patch: Partial<SidebarConfig>): ToolkitConfig;
   /** Subscribe to config changes. Returns an unsubscribe function. */
@@ -59,6 +61,13 @@ export function createConfigStore(path: string = configFilePath()): ConfigStore 
     updateNotification(patch) {
       const next: ToolkitConfig = read();
       next.notification = { ...next.notification, ...patch };
+      write(next);
+      notify(next);
+      return next;
+    },
+    updateTodoReminder(patch) {
+      const next: ToolkitConfig = read();
+      next.todoReminder = { ...next.todoReminder, ...patch };
       write(next);
       notify(next);
       return next;

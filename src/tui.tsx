@@ -17,6 +17,7 @@ const ID = "my-opencode-toolkit";
 type MenuAction =
   | { kind: "submenu"; items: MenuItem[] }
   | { kind: "bool"; get: () => boolean; apply: (value: boolean) => void }
+  | { kind: "number"; get: () => number; apply: (value: number) => void }
   | { kind: "lang" };
 
 interface MenuItem {
@@ -48,6 +49,8 @@ function showStatus(api: TuiPluginApi, config: ToolkitConfig, t: Translator): vo
     `${t("status.permission")}: ${onOff(n.onPermission)}`,
     `${t("status.todos")}: ${onOff(n.skipIfIncompleteTodos)}`,
     `${t("status.mainonly")}: ${onOff(n.onlyMainSession)}`,
+    `${t("status.todoReminder")}: ${onOff(config.todoReminder.enabled)}`,
+    `${t("status.todoReminderMax")}: ${config.todoReminder.maxInjections}`,
   ];
   api.ui.toast({ message: lines.join("\n"), duration: 6000 });
 }
@@ -186,6 +189,31 @@ function buildMenu(t: Translator, store: ConfigStore): MenuItem[] {
     },
   ];
 
+  const todoReminderItems: MenuItem[] = [
+    {
+      key: "todoReminder",
+      title: t("config.todoReminder"),
+      description: () => onOff(store.get().todoReminder.enabled),
+      help: t("help.todoReminder"),
+      action: {
+        kind: "bool",
+        get: () => store.get().todoReminder.enabled,
+        apply: (v) => store.updateTodoReminder({ enabled: v }),
+      },
+    },
+    {
+      key: "todoReminderMax",
+      title: t("config.todoReminderMax"),
+      description: () => String(store.get().todoReminder.maxInjections),
+      help: t("help.todoReminderMax"),
+      action: {
+        kind: "number",
+        get: () => store.get().todoReminder.maxInjections,
+        apply: (v) => store.updateTodoReminder({ maxInjections: v }),
+      },
+    },
+  ];
+
   return [
     {
       key: "lang",
@@ -208,6 +236,11 @@ function buildMenu(t: Translator, store: ConfigStore): MenuItem[] {
       key: "notificationGroup",
       title: t("config.notificationGroup"),
       action: { kind: "submenu", items: notificationItems },
+    },
+    {
+      key: "todoReminderGroup",
+      title: t("config.todoReminder"),
+      action: { kind: "submenu", items: todoReminderItems },
     },
     {
       key: "sidebarGroup",
@@ -292,6 +325,10 @@ function handleSelect(nav: MenuNav, value: string): void {
       openBoolDialog(nav, item, item.action.get(), item.action.apply);
       return;
     }
+    case "number": {
+      openNumberDialog(nav, item, item.action.get(), item.action.apply);
+      return;
+    }
     case "lang": {
       openLangDialog(nav);
       return;
@@ -341,6 +378,38 @@ function openBoolDialog(
         const v = option.value === true;
         apply(v);
         api.ui.toast({ message: `${item.title}: ${t(v ? "misc.on" : "misc.off")}` });
+        renderCurrent(nav);
+      }}
+    />
+  ));
+}
+
+function openNumberDialog(
+  nav: MenuNav,
+  item: MenuItem,
+  current: number,
+  apply: (value: number) => void,
+): void {
+  const { api, store } = nav;
+  const t = translatorFor(store.get());
+
+  api.ui.dialog.replace(() => (
+    <api.ui.DialogPrompt
+      title={item.help !== undefined ? `${item.title}\n${formatHelpText(item.help)}` : item.title}
+      placeholder={t("dialog.todoReminderMax")}
+      value={String(current)}
+      onConfirm={(raw) => {
+        const parsed = Number(raw.trim());
+        if (!Number.isFinite(parsed) || parsed <= 0 || !Number.isInteger(parsed)) {
+          api.ui.toast({ message: `${item.title}: ${t("dialog.todoReminderInvalid")}` });
+          renderCurrent(nav);
+          return;
+        }
+        apply(parsed);
+        api.ui.toast({ message: `${item.title}: ${parsed}` });
+        renderCurrent(nav);
+      }}
+      onCancel={() => {
         renderCurrent(nav);
       }}
     />

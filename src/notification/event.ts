@@ -16,10 +16,11 @@ interface SessionNotificationContext {
 interface EventHandlerArgs {
   ctx: SessionNotificationContext;
   sessionNotification: ((input: EventInput) => Promise<void>) | null;
+  todoReminder?: ((input: EventInput) => Promise<void>) | null;
 }
 
 export function createEventHandler(args: EventHandlerArgs): (input: EventInput) => Promise<void> {
-  const { sessionNotification } = args;
+  const { sessionNotification, todoReminder } = args;
 
   const runEventHookSafely = async (
     handler: ((input: EventInput) => Promise<void>) | null,
@@ -37,8 +38,10 @@ export function createEventHandler(args: EventHandlerArgs): (input: EventInput) 
     const syntheticIdle = normalizeSessionStatusToIdle(input);
     if (syntheticIdle) {
       await runEventHookSafely(sessionNotification, syntheticIdle);
+      await runEventHookSafely(todoReminder ?? null, syntheticIdle);
     } else {
       await runEventHookSafely(sessionNotification, input);
+      await runEventHookSafely(todoReminder ?? null, input);
     }
   };
 }

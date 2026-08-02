@@ -6,6 +6,9 @@ export interface TranslationDict {
   "notification.title": string;
   "notification.user": string;
   "notification.assistant": string;
+  // Todo reminder toast
+  "todoReminder.title": string;
+  "todoReminder.countdown": string;
   // Commands
   "cmd.mot.title": string;
   "cmd.mot.desc": string;
@@ -35,6 +38,8 @@ export interface TranslationDict {
   "config.permission": string;
   "config.todos": string;
   "config.mainonly": string;
+  "config.todoReminder": string;
+  "config.todoReminderMax": string;
   // Dialog labels
   "dialog.select.title": string;
   "dialog.select.on": string;
@@ -55,6 +60,8 @@ export interface TranslationDict {
   "status.permission": string;
   "status.todos": string;
   "status.mainonly": string;
+  "status.todoReminder": string;
+  "status.todoReminderMax": string;
   // Help texts shown in the on/off dialogs
   "help.toggle": string;
   "help.notify": string;
@@ -63,6 +70,11 @@ export interface TranslationDict {
   "help.permission": string;
   "help.todos": string;
   "help.mainonly": string;
+  "help.todoReminder": string;
+  "help.todoReminderMax": string;
+  // Dialog labels
+  "dialog.todoReminderMax": string;
+  "dialog.todoReminderInvalid": string;
   "help.sidebar": string;
   "help.sidebarCache": string;
   "help.sidebarTools": string;
@@ -103,6 +115,9 @@ export const en: TranslationDict = {
   "notification.user": "User",
   "notification.assistant": "Assistant",
 
+  "todoReminder.title": "Todo continuation",
+  "todoReminder.countdown": "Resuming in {seconds}s... ({remaining} tasks left)",
+
   "cmd.mot.title": "My OpenCode Toolkit: Settings",
   "cmd.mot.desc": "Open toolkit settings",
   "cmd.status.title": "My OpenCode Toolkit: Status",
@@ -131,6 +146,8 @@ export const en: TranslationDict = {
   "config.permission": "Notify on permission",
   "config.todos": "Skip if todos incomplete",
   "config.mainonly": "Main session only",
+  "config.todoReminder": "Todo auto-continue",
+  "config.todoReminderMax": "Max injections",
 
   "dialog.select.title": "Select",
   "dialog.select.on": "On",
@@ -151,6 +168,8 @@ export const en: TranslationDict = {
   "status.permission": "Permission notify",
   "status.todos": "Skip if todos incomplete",
   "status.mainonly": "Main session only",
+  "status.todoReminder": "Todo auto-continue",
+  "status.todoReminderMax": "Max injections",
 
   "help.toggle": "Master switch for the whole plugin. Turn off to disable all features.",
   "help.notify": "Master switch for notifications. When off, no completion/question/permission toasts are sent.",
@@ -159,6 +178,10 @@ export const en: TranslationDict = {
   "help.permission": "Show a system notification when the agent needs your permission to continue.",
   "help.todos": "Skip the completion notification while there are unfinished todos.",
   "help.mainonly": "Only notify for the main session; ignore sub-agent completions.",
+  "help.todoReminder": "When a session becomes idle with unfinished todos, automatically inject a continuation message so the agent keeps working.",
+  "help.todoReminderMax": "Maximum number of continuation injections per session before pausing. Reset when todos make progress.",
+  "dialog.todoReminderMax": "Enter max injections (positive integer)",
+  "dialog.todoReminderInvalid": "Please enter a positive integer",
   "help.sidebar": "Master switch for the sidebar stats panel.",
   "help.sidebarCache": "Show the cache-hit-rate section in the sidebar panel.",
   "help.sidebarTools": "Show the tool-usage counts in the sidebar panel.",

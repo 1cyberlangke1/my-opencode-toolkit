@@ -15,6 +15,17 @@ export interface NotificationConfig {
   onlyMainSession: boolean;
 }
 
+export interface TodoReminderConfig {
+  /** Master toggle for auto-continue on idle with incomplete todos (default: true) */
+  enabled: boolean;
+  /** Only inject into the main (non-subagent) session (default: true) */
+  onlyMainSession: boolean;
+  /** Max injections per session before pausing (reset when todos progress) (default: 3) */
+  maxInjections: number;
+  /** Injection message template; {todos} is replaced with the remaining todo list (default: English) */
+  message: string;
+}
+
 export interface SidebarConfig {
   /** Master toggle for the sidebar panel (default: true) */
   enabled: boolean;
@@ -33,8 +44,20 @@ export interface ToolkitConfig {
   /** Master toggle for the whole plugin (default: true) */
   enabled: boolean;
   notification: NotificationConfig;
+  todoReminder: TodoReminderConfig;
   sidebar: SidebarConfig;
 }
+
+export const DEFAULT_TODO_REMINDER_MESSAGE = `> **[SYSTEM] Todo continuation**
+>
+> Incomplete tasks remain in your todo list. Continue working on the next pending task.
+>
+> - Proceed without asking for permission.
+> - Mark each task complete when finished.
+> - **Do not stop until all tasks are done.**
+>
+> Remaining tasks:
+> {todos}`;
 
 export const DEFAULT_CONFIG: ToolkitConfig = {
   lang: "auto",
@@ -46,6 +69,12 @@ export const DEFAULT_CONFIG: ToolkitConfig = {
     onPermission: true,
     skipIfIncompleteTodos: true,
     onlyMainSession: true,
+  },
+  todoReminder: {
+    enabled: true,
+    onlyMainSession: true,
+    maxInjections: 3,
+    message: DEFAULT_TODO_REMINDER_MESSAGE,
   },
   sidebar: {
     enabled: true,
@@ -62,4 +91,8 @@ export function isLang(value: unknown): value is Lang {
 
 export function isBoolean(value: unknown): value is boolean {
   return typeof value === "boolean";
+}
+
+export function isPositiveNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
 }

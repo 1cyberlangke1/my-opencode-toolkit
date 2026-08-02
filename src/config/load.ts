@@ -2,8 +2,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { readFileSync } from "node:fs";
 
-import { DEFAULT_CONFIG, type NotificationConfig, type SidebarConfig, type ToolkitConfig } from "./types";
-import { isBoolean, isLang } from "./types";
+import { DEFAULT_CONFIG, type NotificationConfig, type SidebarConfig, type TodoReminderConfig, type ToolkitConfig } from "./types";
+import { isBoolean, isLang, isPositiveNumber } from "./types";
 
 /** Global config file path shared between server and TUI plugins. */
 export function configFilePath(): string {
@@ -23,6 +23,20 @@ function parseNotification(value: unknown): NotificationConfig {
   if (isBoolean(raw.onPermission)) result.onPermission = raw.onPermission;
   if (isBoolean(raw.skipIfIncompleteTodos)) result.skipIfIncompleteTodos = raw.skipIfIncompleteTodos;
   if (isBoolean(raw.onlyMainSession)) result.onlyMainSession = raw.onlyMainSession;
+  return result;
+}
+
+function parseTodoReminder(value: unknown): TodoReminderConfig {
+  if (typeof value !== "object" || value === null) {
+    return { ...DEFAULT_CONFIG.todoReminder };
+  }
+
+  const raw = value as Record<string, unknown>;
+  const result: TodoReminderConfig = { ...DEFAULT_CONFIG.todoReminder };
+  if (isBoolean(raw.enabled)) result.enabled = raw.enabled;
+  if (isBoolean(raw.onlyMainSession)) result.onlyMainSession = raw.onlyMainSession;
+  if (isPositiveNumber(raw.maxInjections)) result.maxInjections = raw.maxInjections;
+  if (typeof raw.message === "string" && raw.message.length > 0) result.message = raw.message;
   return result;
 }
 
@@ -51,6 +65,7 @@ export function parseConfig(raw: unknown): ToolkitConfig {
   if (isLang(obj.lang)) result.lang = obj.lang;
   if (isBoolean(obj.enabled)) result.enabled = obj.enabled;
   result.notification = parseNotification(obj.notification);
+  result.todoReminder = parseTodoReminder(obj.todoReminder);
   result.sidebar = parseSidebar(obj.sidebar);
   return result;
 }
