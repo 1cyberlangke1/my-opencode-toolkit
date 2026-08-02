@@ -352,8 +352,8 @@ function SessionStatsPanel(props: PanelProps) {
   return (
     <Show when={sidebarConfigSignal().enabled}>
       <box flexDirection="column" gap={0}>
-        {/* ── Goal 面板（独立，同级别，不受会话统计折叠影响；无目标时不显示）── */}
-        <Show when={goal() !== undefined}>
+        {/* ── Goal 面板（独立，同级别，不受会话统计折叠影响；goal 关闭或无目标时不显示）── */}
+        <Show when={store.get().goal.enabled && goal() !== undefined}>
           <text onMouseUp={() => toggleBool(goalOpen, setGoalOpen, KV_KEYS.goalOpen)}>
             <Show when={goal() !== undefined} fallback={<span style={{ fg: pal().muted }}>▶ </span>}>
               <span style={{ fg: pal().muted }}>{goalOpen() ? "▼ " : "▶ "}</span>
@@ -388,8 +388,8 @@ function SessionStatsPanel(props: PanelProps) {
               </box>
             </Show>
           </Show>
+          <text style={{ fg: pal().border }}>{sep()}</text>
         </Show>
-        <text style={{ fg: pal().border }}>{sep()}</text>
 
         {/* ── 会话统计面板 ── */}
         <text

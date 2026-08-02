@@ -36,9 +36,32 @@ export function createEventHandler(args: EventHandlerArgs): (input: EventInput) 
     }
   };
 
+  // Dedupe the same idle edge: opencode emits both `session.status: idle`
+  // (normalized here) and the native `session.idle` for the same idle, which
+  // would otherwise fire notifications/continuations twice.
+  const recentIdles = new Map<string, number>();
+  const IDLE_DEDUPE_MS = 1_000;
+
   return async (input): Promise<void> => {
     const syntheticIdle = normalizeSessionStatusToIdle(input);
     const effective = syntheticIdle ?? input;
+
+    if (effective.event.type === "session.idle") {
+      const sessionID = getSessionIDFromProps(effective.event.properties);
+      if (sessionID !== undefined) {
+        const now = Date.now();
+        const last = recentIdles.get(sessionID);
+        if (last !== undefined && now - last < IDLE_DEDUPE_MS) {
+          return;
+        }
+        recentIdles.set(sessionID, now);
+        if (recentIdles.size > 100) {
+          for (const [sid, at] of recentIdles) {
+            if (now - at >= IDLE_DEDUPE_MS) recentIdles.delete(sid);
+          }
+        }
+      }
+    }
 
     await runEventHookSafely(sessionNotification, effective);
     await runEventHookSafely(goal ?? null, effective);
