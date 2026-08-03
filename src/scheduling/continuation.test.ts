@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { DEFAULT_CONFIG } from "../config/types";
-import { createSchedulingContinuation } from "./continuation";
+import { createSchedulingContinuation, type SchedulingContinuation } from "./continuation";
 import { createSchedulingStore } from "./store";
 
 let dir = "";
@@ -17,7 +17,7 @@ let store: ReturnType<typeof createSchedulingStore>;
 let prompts: Array<{ sessionID: string; text: string }>;
 let messages: Array<{ info: { role?: string } }>;
 let promptImpl: (id: string, body: { parts: Array<{ text: string }> }) => Promise<unknown>;
-let handler: (input: { event: { type: string; properties?: unknown } }) => Promise<boolean>;
+let handler: SchedulingContinuation;
 
 beforeEach(async () => {
   vi.useFakeTimers();
@@ -154,7 +154,7 @@ describe("cron idle fire", () => {
 });
 
 describe("inFlight 兜底", () => {
-  test("同步 prompt 挂起时活动事件释放，下次 idle 可再 fire", async () => {
+  test("同步 prompt 挂起时活动事件释放，注入完成且不重复 fire", async () => {
     let resolvePrompt: (v: unknown) => void = () => undefined;
     const pending = new Promise<unknown>((resolve) => {
       resolvePrompt = resolve;
@@ -175,18 +175,62 @@ describe("inFlight 兜底", () => {
     await addDueRecurring();
     advanceToNextRun();
 
-    const p1 = fire("session.idle", "s1"); // inject 调 prompt（pending）→ inFlight 占用
-    const p2 = fire("session.idle", "s1"); // inFlight 占用 → 跳过
-    await p2;
-    expect(prompts).toHaveLength(0);
+    const p1 = fire("session.idle", "s1"); // handleCronFire：先重排 nextRunAt → inject 挂起
+    await vi.advanceTimersByTimeAsync(0); // 推进微任务到注入开始
+    expect(promptMock).toHaveBeenCalledTimes(1); // 注入已开始
 
-    await fire("message.updated", "s1"); // 活动事件清 inFlight
-    const p3 = fire("session.idle", "s1"); // 可再 fire
+    await fire("message.updated", "s1"); // 活动事件清 inFlight（挂起期间不锁死）
     resolvePrompt(undefined);
-    await p1;
-    await p3;
+    await p1; // 注入 resolve 完成
 
-    expect(promptMock).toHaveBeenCalledTimes(2);
+    await fire("session.idle", "s1"); // 到点已重排 → 不再重复 fire
+    expect(promptMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("cron timer 触发与 toast", () => {
+  test("armTimers 后到点 timer fire（不依赖 idle 事件）", async () => {
+    const promptMock = vi.fn(() => Promise.resolve());
+    handler = createSchedulingContinuation({
+      store,
+      ctx: {
+        client: {
+          session: {
+            messages: vi.fn(() => Promise.resolve(messages)),
+            prompt: promptMock,
+          },
+        },
+      },
+    });
+    await addDueRecurring();
+    handler.armTimers();
+
+    const job = store.listJobs("s1")[0]!;
+    const delay = job.nextRunAt! - Date.now();
+    await vi.advanceTimersByTimeAsync(Math.max(0, delay)); // 到点 → timer fire
+
+    expect(promptMock).toHaveBeenCalledTimes(1); // 不依赖 idle 也触发
+  });
+
+  test("注入成功后弹多语言 toast", async () => {
+    const toast = vi.fn(() => Promise.resolve());
+    handler = createSchedulingContinuation({
+      store,
+      ctx: {
+        client: {
+          session: {
+            messages: vi.fn(() => Promise.resolve(messages)),
+            prompt: vi.fn(() => Promise.resolve()),
+          },
+          tui: { showToast: toast },
+        },
+      },
+    });
+    await addDueRecurring();
+    advanceToNextRun();
+    await fire("session.idle", "s1");
+
+    expect(toast).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -7,6 +7,8 @@
 
 import { randomUUID } from "node:crypto";
 import { getSessionID } from "../notification/event-properties";
+import { loadConfig } from "../config/load";
+import { createTranslator, resolveLang } from "../i18n";
 import type { SchedulingContext } from "./continuation";
 import { DEFAULT_MAX_AGE_DAYS, type Loop } from "./types";
 
@@ -48,6 +50,7 @@ export function createSchedulingScheduler(args: {
   const loops = new Map<string, Loop>();
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
   const inFlight = new Set<string>();
+  const loadConfigFn = ctx.loadConfigOverride ?? loadConfig;
   let onChanged: ((sessionID: string) => void) | undefined;
 
   const findLoop = (sessionID: string, prompt: string): Loop | undefined =>
@@ -77,6 +80,19 @@ export function createSchedulingScheduler(args: {
     }
   };
 
+  /** loop 注入成功后的多语言 toast。 */
+  const showLoopInjectedToast = (): void => {
+    const cfg = loadConfigFn();
+    if (!cfg.enabled || !cfg.scheduling.enabled) return;
+    const lang = resolveLang(cfg.lang, process.env);
+    const t = createTranslator(lang);
+    void ctx.client.tui?.showToast({
+      title: t("schedulingCommand.title"),
+      message: t("schedulingCommand.loopInjected"),
+      variant: "info",
+    }).catch(() => undefined);
+  };
+
   const fireLoop = async (loop: Loop): Promise<void> => {
     // 优先级：goal active 时 loop 让路（goal > loop > todo），loop 保留等下次。
     if (shouldDeferFire !== undefined && (await shouldDeferFire(loop.sessionID))) {
@@ -84,7 +100,8 @@ export function createSchedulingScheduler(args: {
     }
     loop.fires += 1;
     onChanged?.(loop.sessionID);
-    void inject(loop.sessionID, `${loop.prompt}\n\n${LOOP_MARKER}`);
+    const ok = await inject(loop.sessionID, `${loop.prompt}\n\n${LOOP_MARKER}`);
+    if (ok) showLoopInjectedToast();
   };
 
   const armLoop = (loop: Loop, delayMs: number): void => {

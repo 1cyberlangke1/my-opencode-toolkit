@@ -1,11 +1,13 @@
-// cron 任务 idle 触发（对齐 Claude Code cronScheduler + useScheduledTasks 语义）：
-// - 只在 session idle 时 fire（openCode 的 idle 事件等价 Claude 的 isLoading gate + 轮间 drain）。
-// - recurring fire 后从 now 重排（无 catch-up）；one-shot fire 后自删；7 天过期最后火一次。
-// - 复用 goal 续作的注入模式：同步 prompt + inFlight + 活动事件清 inFlight（勿改 promptAsync）。
-// - 注入带哨兵 marker（<!-- CRON_AUTONOMOUS -->），模型知道自己在无人值守循环里。
+// cron 任务触发（timer 为主 + idle 兜底，对齐 Claude Code cronScheduler 语义）：
+// - 到点（nextRunAt）由 setTimeout 触发，即使会话静止也 fire；idle 事件兜底补查。
+// - 到点「先无条件重排/删除」——无论注入成败时间都重置（倒计时不卡 0）。
+// - 注入尽力而为：goal active 让路（shouldDeferFire）/ 末条 user 防叠加 / inFlight 防重。
+// - 复用 goal 续作的注入模式：同步 prompt + 活动事件清 inFlight（勿改 promptAsync）。
+// - 注入带哨兵 marker（<!-- CRON_AUTONOMOUS -->）+ 多语言 toast。
 
 import type { ToolkitConfig } from "../config/types";
 import { loadConfig } from "../config/load";
+import { createTranslator, resolveLang } from "../i18n";
 import { getSessionID } from "../notification/event-properties";
 import { isRecurringTaskAged, type SchedulingStore } from "./store";
 import type { ScheduledJob } from "./types";
@@ -28,6 +30,14 @@ export interface SchedulingContext {
           parts: Array<{ type: "text"; text: string; metadata?: Record<string, unknown> }>;
         },
       ): Promise<unknown>;
+    };
+    tui?: {
+      showToast(body: {
+        title?: string;
+        message: string;
+        variant: "info" | "success" | "warning" | "error";
+        duration?: number;
+      }): Promise<unknown>;
     };
   };
   loadConfigOverride?: () => ToolkitConfig;
@@ -62,13 +72,21 @@ async function lastMessageIsUser(ctx: SchedulingContext, sessionID: string): Pro
   return last?.info?.role === "user";
 }
 
+export type SchedulingContinuation = ((input: EventInput) => Promise<boolean>) & {
+  /** 为所有未到期的 cron 重新武装到点 timer（addJob/load 后调用）。 */
+  armTimers: () => void;
+};
+
 export function createSchedulingContinuation(args: {
   store: SchedulingStore;
   ctx: SchedulingContext;
-}): (input: EventInput) => Promise<boolean> {
-  const { store, ctx } = args;
+  /** 返回 true 时本轮注入让路（如 goal active 优先），但到点重排仍执行。 */
+  shouldDeferFire?: (sessionID: string) => boolean | Promise<boolean>;
+}): SchedulingContinuation {
+  const { store, ctx, shouldDeferFire } = args;
   const loadConfigFn = ctx.loadConfigOverride ?? loadConfig;
   const inFlight = new Set<string>();
+  const cronTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   const inject = async (sessionID: string, text: string): Promise<boolean> => {
     if (inFlight.has(sessionID)) return false;
@@ -85,39 +103,79 @@ export function createSchedulingContinuation(args: {
     }
   };
 
-  /** 返回 true = 本次 idle 注入了一条续作（协调层据此跳过 todo）。 */
+  /** 注入成功后的多语言 toast（对齐 goal 的 showInjectedToast）。 */
+  const showInjectedToast = (): void => {
+    const cfg = loadConfigFn();
+    if (!cfg.enabled || !cfg.scheduling.enabled) return;
+    const lang = resolveLang(cfg.lang, process.env);
+    const t = createTranslator(lang);
+    void ctx.client.tui?.showToast({
+      title: t("schedulingCommand.title"),
+      message: t("schedulingCommand.injected"),
+      variant: "info",
+    }).catch(() => undefined);
+  };
+
+  /**
+   * 处理一次到点：① 先无条件重排/删除（倒计时立即恢复，不依赖注入结果）② 再尽力注入。
+   * 返回是否注入了（协调层据此跳过 todo）。
+   */
+  const handleCronFire = async (job: ScheduledJob): Promise<boolean> => {
+    const now = Date.now();
+    const aged = isRecurringTaskAged(job, now);
+    // ① 先重排/删除——到 0 无论成败都重置（主人要求），不被同步 prompt 挂起阻塞。
+    if (aged || !job.recurring) {
+      await store.removeJobs([job.id]);
+    } else {
+      await store.markFired([job.id], now);
+    }
+    armCronTimers();
+    // ② 尽力注入：goal active 让路 / 末条 user 防叠加 / inFlight 防重。
+    if (shouldDeferFire !== undefined && (await shouldDeferFire(job.sessionID))) return false;
+    if (await lastMessageIsUser(ctx, job.sessionID)) return false;
+    const ok = await inject(job.sessionID, buildFirePrompt(job, new Date(now)));
+    if (ok) showInjectedToast();
+    return ok;
+  };
+
+  /** 为所有未到期的 cron 武装 setTimeout（到点触发 handleCronFire；不依赖 idle 事件）。 */
+  const armCronTimers = (): void => {
+    for (const job of store.listJobs()) {
+      if (job.nextRunAt === undefined) continue;
+      const delay = job.nextRunAt - Date.now();
+      if (delay <= 0) continue; // 已到点：由 idle 兜底处理
+      if (cronTimers.has(job.id)) continue;
+      const handle = setTimeout(() => {
+        cronTimers.delete(job.id);
+        const fresh = store.getJob(job.id);
+        if (fresh !== undefined) void handleCronFire(fresh);
+      }, delay);
+      handle.unref();
+      cronTimers.set(job.id, handle);
+    }
+  };
+
+  const clearTimers = (): void => {
+    for (const timer of cronTimers.values()) clearTimeout(timer);
+    cronTimers.clear();
+  };
+
+  /** idle 兜底：到点任务处理；无到点则 arm 未来 timer。 */
   const handleIdle = async (sessionID: string): Promise<boolean> => {
     const cfg = loadConfigFn();
     if (!cfg.enabled || !cfg.scheduling.enabled) return false;
-
     const now = Date.now();
     const due = store
       .listJobs(sessionID)
       .filter((job) => job.nextRunAt !== undefined && job.nextRunAt <= now)
       .sort((a, b) => (a.nextRunAt ?? Infinity) - (b.nextRunAt ?? Infinity));
     const job = due[0];
-    if (!job) return false;
-
-    // 上次注入还没被 AI 回复 → 不重复 fire。
-    if (await lastMessageIsUser(ctx, sessionID)) return false;
-
-    const ok = await inject(sessionID, buildFirePrompt(job, new Date(now)));
-    if (!ok) return false;
-
-    if (isRecurringTaskAged(job, now)) {
-      // 7 天过期：最后 fire 一次后删除。
-      await store.removeJobs([job.id]);
-    } else if (job.recurring) {
-      // recurring：从 now 重排（无 catch-up），锚点持久化。
-      await store.markFired([job.id], now);
-    } else {
-      // one-shot：fire 后自删。
-      await store.removeJobs([job.id]);
-    }
-    return true;
+    if (job) return await handleCronFire(job);
+    armCronTimers();
+    return false;
   };
 
-  return async (input: EventInput): Promise<boolean> => {
+  const handler = async (input: EventInput): Promise<boolean> => {
     const { event } = input;
     const props = event.properties as Record<string, unknown> | undefined;
 
@@ -134,6 +192,7 @@ export function createSchedulingContinuation(args: {
         await store.removeJobs(jobs.map((job) => job.id));
         inFlight.delete(sessionID);
       }
+      clearTimers();
       return false;
     }
 
@@ -151,4 +210,6 @@ export function createSchedulingContinuation(args: {
     }
     return false;
   };
+
+  return Object.assign(handler, { armTimers: armCronTimers });
 }

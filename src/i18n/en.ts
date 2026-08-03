@@ -28,6 +28,9 @@ export interface TranslationDict {
   "schedulingCommand.loopStart": string;
   "schedulingCommand.loopStopDone": string;
   "schedulingCommand.loopStopNone": string;
+  "schedulingCommand.title": string;
+  "schedulingCommand.injected": string;
+  "schedulingCommand.loopInjected": string;
   "config.scheduling": string;
   "help.scheduling": string;
   "status.scheduling": string;
@@ -193,6 +196,9 @@ export const en: TranslationDict = {
   "schedulingCommand.loopStart": "Loop started: {prompt} ({mode})",
   "schedulingCommand.loopStopDone": "Loop stopped",
   "schedulingCommand.loopStopNone": "No active loop to stop",
+  "schedulingCommand.title": "Scheduled task",
+  "schedulingCommand.injected": "Scheduled task injected",
+  "schedulingCommand.loopInjected": "Loop injected",
   "config.scheduling": "Scheduled tasks",
 
   "help.scheduling": "Scheduled tasks (cron/loop). When off, cron_create/cron_list/cron_delete and the /loop commands are unavailable and no scheduled prompts fire.",
