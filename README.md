@@ -1,6 +1,6 @@
 # my-opencode-toolkit
 
-一个开源项目（OpenCode 插件）——在 OpenCode 中提供系统通知、待办自动续作、持久化会话目标（Goal）等功能。
+一个开源项目（OpenCode 插件）——在 OpenCode 中提供系统通知、待办自动续作、持久化会话目标（Goal）、定时任务与循环（cron/loop）等功能。
 
 ## 功能
 
@@ -26,13 +26,29 @@
 - **工具**：`create_goal` / `get_goal` / `update_goal`（goal 工具对子代理不可用）
 - **命令**：`/goal <objective>` 设置目标、`/goal pause|resume|clear|edit` 控制、裸 `/goal` 显示当前目标（对齐 codex，直接改状态不经 LLM）
 - **续作**：goal active 时会话空闲自动注入续作消息（每次注入一条，末条是 user 时防重复）；Plan 模式不注入
-- **记账**：自动累计 token 消耗与工作时间（暂停期间不记录）
+- **记账**：自动累计 token 消耗与工作时间（暂停期间不记录；token 按速率实时外推显示）
 - **打断自动暂停**：用户打断 AI 时 goal 自动变 paused（弹 toast 提示）
 - 目标文件持久化在 `{projectDir}/.opencode-toolkit/goal/`
+
+### 定时任务与循环（Scheduled Tasks & Loop）
+
+- **定时任务（cron）**：`cron_create` / `cron_list` / `cron_delete` 工具，5 字段 cron 表达式（如 `*/5 * * * *` = 每 5 分钟、`0 9 * * 1-5` = 工作日 9 点）定时注入提示
+  - durable 可持久化（重启恢复）、每会话 50 上限、7 天自动过期
+  - 到点用 timer 主动触发（不依赖 idle 事件，静止会话也会 fire）；到点先无条件重排 nextRunAt（倒计时不卡 0）
+  - 注入带 `<!-- CRON_AUTONOMOUS -->` 哨兵 + 多语言 toast（消息发送即弹）
+- **循环（loop）**：`/loop <prompt>` 命令，两种模式
+  - **固定间隔**：`/loop 5m <prompt>` 每 5 分钟注入一次
+  - **动态/自定速**：`/loop <prompt>`（省略间隔），模型每轮用 `schedule_wakeup` 决定下次唤醒（60~3600s 钳制，到分钟边界）
+  - `/loop-stop` 停止；模型也可 `schedule_wakeup(stop: true)` 自停
+  - 注入带 `<!-- LOOP_AUTONOMOUS -->` 哨兵 + 多语言 toast
+- **协调优先级**：goal active > loop > todo，一个触发只注入一条；**Plan 模式（agent=plan）不注入**（cron/loop 让路但到点仍重排）
+- **侧边栏 Scheduled 面板**：实时显示定时任务/循环 + 触发倒计时递减（无任务时隐藏）
+- **重启清理**：重启后内存态任务（loop/session 任务）自动丢失并清空镜像，不残留幽灵任务
 
 ### 侧边栏统计面板
 
 - **Goal 面板**（独立，与会话统计同级别）：显示目标、状态（active 绿色呼吸）、token 消耗（紧凑 K/M 格式）、实时时间（秒级）；无目标时不显示
+- **Scheduled 面板**：显示定时任务（⏰ [cron]）与循环（🔁 [loop]），标注类型 + 触发倒计时实时递减；无任务时不显示
 - **会话统计面板**：缓存命中率、工具使用统计、子代理追踪，可折叠、可配置显示项
 
 ## 安装
@@ -89,6 +105,9 @@ npm run deploy      # 打包并复制到全局插件目录
   "goal": {
     "enabled": true          // goal 功能总开关（关闭后 goal 工具不注册）
   },
+  "scheduling": {
+    "enabled": true          // 定时任务/循环总开关（关闭后 cron/loop 工具与命令不可用）
+  },
   "sidebar": {
     "enabled": true,
     "showCache": true,
@@ -103,13 +122,13 @@ npm run deploy      # 打包并复制到全局插件目录
 
 ### TUI 菜单
 
-在 opencode TUI 中输入 `/mot` 可打开配置菜单（待办自动续作、goal、通知、会话统计等），`/mot-status` 查看当前状态。
+在 opencode TUI 中输入 `/mot` 可打开配置菜单（定时任务、goal、待办续作、通知、会话统计等），`/mot-status` 查看当前状态。
 
 ## 架构
 
 ```
 src/
-├── index.ts                     # server 插件入口：event hook + config/command hook（/goal）+ goal 工具
+├── index.ts                     # server 插件入口：event hook + config/command hook（/goal /loop）+ 工具注册
 ├── tui.tsx                      # TUI 插件：侧边栏 + /mot 菜单
 ├── config/
 │   ├── types.ts                 # 配置类型与默认值
@@ -119,7 +138,7 @@ src/
 │   ├── en.ts / zh.ts            # 翻译表
 │   └── index.ts                 # createTranslator / resolveLang
 ├── notification/
-│   ├── event.ts                 # 事件分发：session.status idle → session.idle 归一化；goal 优先协调
+│   ├── event.ts                 # 事件分发：session.status idle → session.idle 归一化；goal > cron/loop > todo 协调
 │   ├── session-notification.ts  # 完成/提问/权限通知
 │   ├── todo-reminder.ts         # 待办自动续作：门控链 + 倒计时 + 注入 + plan 特判
 │   ├── todo-reminder-state.ts   # 会话状态存储
@@ -132,7 +151,16 @@ src/
 │   ├── parse-command.ts         # /goal 命令参数解析（对齐 codex）
 │   ├── prompts.ts               # 续作提示词（对齐 omo）
 │   └── ...                      # store / types / error 等
-└── sidebar/                     # TUI 侧边栏（Goal 面板 + 会话统计面板）
+├── scheduling/                  # 定时任务与循环（cron/loop）
+│   ├── cron.ts                  # 5 字段 cron 解析 + next-run + jitter + i18n 描述
+│   ├── store.ts                 # 定时任务存储（durable 写盘/恢复/7 天过期/50 上限）
+│   ├── continuation.ts          # cron 到点 timer 触发 + 注入（toast/plan 特判/防叠加）
+│   ├── scheduler.ts             # loop 运行时（fixed/dynamic + schedule_wakeup + fallback）
+│   ├── tools.ts                 # cron_create / cron_list / cron_delete / schedule_wakeup
+│   ├── command.ts               # /loop 命令解析
+│   ├── mirror.ts                # TUI 镜像（侧边栏 Scheduled 面板）
+│   └── types.ts                 # ScheduledJob / Loop / Wakeup
+└── sidebar/                     # TUI 侧边栏（Goal 面板 + Scheduled 面板 + 会话统计面板）
 ```
 
 ## 参考项目
