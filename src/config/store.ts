@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 import { configFilePath, parseConfig } from "./load";
-import { DEFAULT_CONFIG, type GoalConfig, type NotificationConfig, type SidebarConfig, type TodoReminderConfig, type ToolkitConfig } from "./types";
+import { DEFAULT_CONFIG, type GoalConfig, type NotificationConfig, type SchedulingConfig, type SidebarConfig, type TodoReminderConfig, type ToolkitConfig } from "./types";
 
 export interface ConfigStore {
   /** Read the current persisted config. */
@@ -17,6 +17,8 @@ export interface ConfigStore {
   updateTodoReminder(patch: Partial<TodoReminderConfig>): ToolkitConfig;
   /** Update only the goal section. Returns the new config. */
   updateGoal(patch: Partial<GoalConfig>): ToolkitConfig;
+  /** Update only the scheduling section. Returns the new config. */
+  updateScheduling(patch: Partial<SchedulingConfig>): ToolkitConfig;
   /** Update only the sidebar section. Returns the new config. */
   updateSidebar(patch: Partial<SidebarConfig>): ToolkitConfig;
   /** Subscribe to config changes. Returns an unsubscribe function. */
@@ -77,6 +79,13 @@ export function createConfigStore(path: string = configFilePath()): ConfigStore 
     updateGoal(patch) {
       const next: ToolkitConfig = read();
       next.goal = { ...next.goal, ...patch };
+      write(next);
+      notify(next);
+      return next;
+    },
+    updateScheduling(patch) {
+      const next: ToolkitConfig = read();
+      next.scheduling = { ...next.scheduling, ...patch };
       write(next);
       notify(next);
       return next;

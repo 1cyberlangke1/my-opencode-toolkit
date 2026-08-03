@@ -29,6 +29,18 @@ export interface TranslationDict {
   "schedulingCommand.loopStopDone": string;
   "schedulingCommand.loopStopNone": string;
   "config.scheduling": string;
+  "help.scheduling": string;
+  "status.scheduling": string;
+  // Cron human-readable description
+  "cron.everyMinute": string;
+  "cron.everyNMinutes": string;
+  "cron.everyHour": string;
+  "cron.everyHourAt": string;
+  "cron.everyNHours": string;
+  "cron.everyNHoursAt": string;
+  "cron.daily": string;
+  "cron.weekly": string;
+  "cron.weekdays": string;
   // Commands
   "cmd.mot.title": string;
   "cmd.mot.desc": string;
@@ -122,6 +134,14 @@ export interface TranslationDict {
   "sidebar.goal.tokens": string;
   "sidebar.goal.time": string;
   "sidebar.goal.empty": string;
+  "sidebar.scheduling.title": string;
+  "sidebar.scheduling.cron": string;
+  "sidebar.scheduling.loop": string;
+  "sidebar.scheduling.recurring": string;
+  "sidebar.scheduling.oneShot": string;
+  "sidebar.scheduling.dynamic": string;
+  "sidebar.scheduling.fixed": string;
+  "sidebar.scheduling.empty": string;
   "sidebar.cache.title": string;
   "sidebar.cache.hitRate": string;
   "sidebar.cache.input": string;
@@ -174,6 +194,19 @@ export const en: TranslationDict = {
   "schedulingCommand.loopStopDone": "Loop stopped",
   "schedulingCommand.loopStopNone": "No active loop to stop",
   "config.scheduling": "Scheduled tasks",
+
+  "help.scheduling": "Scheduled tasks (cron/loop). When off, cron_create/cron_list/cron_delete and the /loop commands are unavailable and no scheduled prompts fire.",
+  "status.scheduling": "Scheduled tasks",
+
+  "cron.everyMinute": "Every minute",
+  "cron.everyNMinutes": "Every {n} minutes",
+  "cron.everyHour": "Every hour",
+  "cron.everyHourAt": "Every hour at :{minute}",
+  "cron.everyNHours": "Every {n} hours",
+  "cron.everyNHoursAt": "Every {n} hours at :{minute}",
+  "cron.daily": "Every day at {time}",
+  "cron.weekly": "Every {day} at {time}",
+  "cron.weekdays": "Weekdays at {time}",
 
   "cmd.mot.title": "My OpenCode Toolkit: Settings",
   "cmd.mot.desc": "Open toolkit settings",
@@ -266,6 +299,14 @@ export const en: TranslationDict = {
   "sidebar.goal.tokens": "tokens",
   "sidebar.goal.time": "time",
   "sidebar.goal.empty": "No active goal",
+  "sidebar.scheduling.title": "Scheduled",
+  "sidebar.scheduling.cron": "cron",
+  "sidebar.scheduling.loop": "loop",
+  "sidebar.scheduling.recurring": "recurring",
+  "sidebar.scheduling.oneShot": "one-shot",
+  "sidebar.scheduling.dynamic": "dynamic",
+  "sidebar.scheduling.fixed": "fixed",
+  "sidebar.scheduling.empty": "No scheduled tasks",
   "sidebar.cache.title": "Cache Hit Rate",
   "sidebar.cache.hitRate": "hit rate",
   "sidebar.cache.input": "input",

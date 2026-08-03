@@ -32,6 +32,8 @@ export interface AddJobInput {
 export type AddJobResult = { ok: true; job: ScheduledJob } | { ok: false; error: string };
 
 export interface SchedulingStore {
+  /** 结构变更回调（供 TUI mirror 写入）。可外部赋值。 */
+  onChanged: ((sessionID: string) => void) | undefined;
   /** 插件启动时恢复 durable 任务（幂等）。 */
   load(): Promise<void>;
   /** 新增定时任务（校验 + 计算 nextRunAt）。 */
@@ -83,6 +85,7 @@ function toStoredTask(job: ScheduledJob): StoredTask {
 export function createSchedulingStore(dir: string): SchedulingStore {
   const jobs = new Map<string, ScheduledJob>();
   const filePath = path.join(dir, JOBS_FILE);
+  let onChanged: ((sessionID: string) => void) | undefined;
 
   const writeDurable = async (): Promise<void> => {
     const durable = [...jobs.values()].filter((j) => j.durable !== false);
@@ -169,6 +172,7 @@ export function createSchedulingStore(dir: string): SchedulingStore {
     if (next !== null) job.nextRunAt = next;
     jobs.set(job.id, job);
     if (durable) await writeDurable();
+    onChanged?.(job.sessionID);
     return { ok: true, job };
   };
 
@@ -181,22 +185,27 @@ export function createSchedulingStore(dir: string): SchedulingStore {
 
   const removeJobs = async (ids: string[]): Promise<void> => {
     if (ids.length === 0) return;
+    const touchedSessions = new Set<string>();
     let touchedDurable = false;
     for (const id of ids) {
       const job = jobs.get(id);
       if (!job) continue;
+      touchedSessions.add(job.sessionID);
       jobs.delete(id);
       if (job.durable !== false) touchedDurable = true;
     }
     if (touchedDurable) await writeDurable();
+    for (const sessionID of touchedSessions) onChanged?.(sessionID);
   };
 
   const markFired = async (ids: string[], firedAt: number): Promise<void> => {
     if (ids.length === 0) return;
+    const touchedSessions = new Set<string>();
     let touchedDurable = false;
     for (const id of ids) {
       const job = jobs.get(id);
       if (!job || !job.recurring) continue;
+      touchedSessions.add(job.sessionID);
       job.lastFiredAt = firedAt;
       // reschedule from now（无 catch-up），并保持锚点可持久化。
       const next = computeNextRunAt(job, firedAt);
@@ -204,7 +213,22 @@ export function createSchedulingStore(dir: string): SchedulingStore {
       if (job.durable !== false) touchedDurable = true;
     }
     if (touchedDurable) await writeDurable();
+    for (const sessionID of touchedSessions) onChanged?.(sessionID);
   };
 
-  return { load, addJob, listJobs, getJob, removeJobs, markFired, count: () => jobs.size };
+  return {
+    get onChanged() {
+      return onChanged;
+    },
+    set onChanged(fn: ((sessionID: string) => void) | undefined) {
+      onChanged = fn;
+    },
+    load,
+    addJob,
+    listJobs,
+    getJob,
+    removeJobs,
+    markFired,
+    count: () => jobs.size,
+  };
 }

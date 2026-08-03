@@ -11,6 +11,7 @@ import { createSessionNotification } from "./notification/session-notification";
 import { createTodoReminder } from "./notification/todo-reminder";
 import { loadLoopMaintenancePrompt, parseLoopCommand } from "./scheduling/command";
 import { createSchedulingContinuation } from "./scheduling/continuation";
+import { createSchedulingMirror } from "./scheduling/mirror";
 import { createSchedulingScheduler } from "./scheduling/scheduler";
 import { createSchedulingStore } from "./scheduling/store";
 import { createSchedulingTools } from "./scheduling/tools";
@@ -64,6 +65,13 @@ const server: Plugin = (input) => {
     ctx,
   });
   const schedulingScheduler = createSchedulingScheduler({ ctx });
+  const schedulingMirror = createSchedulingMirror(input.directory, schedulingStore, schedulingScheduler);
+  schedulingStore.onChanged = (sessionID) => {
+    schedulingMirror.write(sessionID);
+  };
+  schedulingScheduler.onChanged = (sessionID) => {
+    schedulingMirror.write(sessionID);
+  };
 
   const isSubagent = async (sessionID: string): Promise<boolean> => {
     const session = await input.client.session

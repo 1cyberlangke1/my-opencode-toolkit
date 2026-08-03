@@ -1,6 +1,8 @@
 // 5 字段 cron 解析与 next-run 计算 + jitter（从 Claude Code 逆向源码移植）。
 // 契约见 PLAN.md §0；算法与 tmp/claude-code/src/utils/cron.ts + cronTasks.ts 逐字对齐。
 
+import { translate, type TranslationDict } from "../i18n";
+
 export type CronFields = {
   minute: number[];
   hour: number[];
@@ -170,105 +172,107 @@ export function nextCronRunMs(cron: string, fromMs: number): number | null {
   return next ? next.getTime() : null;
 }
 
-const DAY_NAMES = [
-  "Sunday",
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-];
+// ── cron 转人类可读描述：结构化解析 + i18n 渲染（面向用户的显示走翻译表）──
 
-/** 本地时间格式化（固定 2000-01-01 规避 DST 跳变）。 */
-function formatLocalTime(minute: number, hour: number): string {
-  const d = new Date(2000, 0, 1, hour, minute);
-  return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-}
+export type CronHuman =
+  | { kind: "every_minute"; n: number }
+  | { kind: "every_hour"; minute: number }
+  | { kind: "every_n_hours"; n: number; minute: number }
+  | { kind: "daily"; hour: number; minute: number }
+  | { kind: "weekly"; day: number; hour: number; minute: number }
+  | { kind: "weekdays"; hour: number; minute: number }
+  | { kind: "raw"; text: string };
 
-/**
- * cron 转人类可读描述。只覆盖常见模式，无法识别的回退原始 cron 字符串。
- * 本地时区（无需 utc 分支——咱不跑 UTC 远程触发器）。
- */
-export function cronToHuman(cron: string): string {
+/** 解析常见 cron 模式为结构化描述；无法识别回退 raw（原文）。 */
+export function parseCronHuman(cron: string): CronHuman {
   const parts = cron.trim().split(/\s+/);
-  if (parts.length !== 5) return cron;
-
-  const [minute, hour, dayOfMonth, month, dayOfWeek] = parts as [
-    string,
-    string,
-    string,
-    string,
-    string,
-  ];
+  if (parts.length !== 5) return { kind: "raw", text: cron };
+  const [minute, hour, dayOfMonth, month, dayOfWeek] = parts as [string, string, string, string, string];
 
   // Every N minutes: */N * * * *
   const everyMinMatch = minute.match(/^\*\/(\d+)$/);
-  if (
-    everyMinMatch &&
-    hour === "*" &&
-    dayOfMonth === "*" &&
-    month === "*" &&
-    dayOfWeek === "*"
-  ) {
-    const minGroup = everyMinMatch[1];
-    if (minGroup === undefined) return cron;
-    const n = parseInt(minGroup, 10);
-    return n === 1 ? "Every minute" : `Every ${n} minutes`;
+  if (everyMinMatch && hour === "*" && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
+    const n = everyMinMatch[1] === undefined ? 1 : parseInt(everyMinMatch[1], 10);
+    return { kind: "every_minute", n };
   }
 
   // Every hour: M * * * *
-  if (
-    minute.match(/^\d+$/) &&
-    hour === "*" &&
-    dayOfMonth === "*" &&
-    month === "*" &&
-    dayOfWeek === "*"
-  ) {
-    const m = parseInt(minute, 10);
-    if (m === 0) return "Every hour";
-    return `Every hour at :${m.toString().padStart(2, "0")}`;
+  if (minute.match(/^\d+$/) && hour === "*" && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
+    return { kind: "every_hour", minute: parseInt(minute, 10) };
   }
 
   // Every N hours: M */N * * *
   const everyHourMatch = hour.match(/^\*\/(\d+)$/);
-  if (
-    minute.match(/^\d+$/) &&
-    everyHourMatch &&
-    dayOfMonth === "*" &&
-    month === "*" &&
-    dayOfWeek === "*"
-  ) {
-    const hourGroup = everyHourMatch[1];
-    if (hourGroup === undefined) return cron;
-    const n = parseInt(hourGroup, 10);
-    const m = parseInt(minute, 10);
-    const suffix = m === 0 ? "" : ` at :${m.toString().padStart(2, "0")}`;
-    return n === 1 ? `Every hour${suffix}` : `Every ${n} hours${suffix}`;
+  if (minute.match(/^\d+$/) && everyHourMatch && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
+    const n = everyHourMatch[1] === undefined ? 1 : parseInt(everyHourMatch[1], 10);
+    return { kind: "every_n_hours", n, minute: parseInt(minute, 10) };
   }
 
-  if (!minute.match(/^\d+$/) || !hour.match(/^\d+$/)) return cron;
+  if (!minute.match(/^\d+$/) || !hour.match(/^\d+$/)) return { kind: "raw", text: cron };
   const m = parseInt(minute, 10);
   const h = parseInt(hour, 10);
 
   // Daily at time: M H * * *
   if (dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
-    return `Every day at ${formatLocalTime(m, h)}`;
+    return { kind: "daily", hour: h, minute: m };
   }
 
   // Specific day of week: M H * * D
   if (dayOfMonth === "*" && month === "*" && dayOfWeek.match(/^\d$/)) {
-    const dayIndex = parseInt(dayOfWeek, 10) % 7; // 归一化 7（Sunday 别名）→ 0
-    const dayName = DAY_NAMES[dayIndex];
-    if (dayName) return `Every ${dayName} at ${formatLocalTime(m, h)}`;
+    return { kind: "weekly", day: parseInt(dayOfWeek, 10) % 7, hour: h, minute: m };
   }
 
   // Weekdays: M H * * 1-5
   if (dayOfMonth === "*" && month === "*" && dayOfWeek === "1-5") {
-    return `Weekdays at ${formatLocalTime(m, h)}`;
+    return { kind: "weekdays", hour: h, minute: m };
   }
 
-  return cron;
+  return { kind: "raw", text: cron };
+}
+
+const DAY_NAMES_EN = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const DAY_NAMES_ZH = ["日", "一", "二", "三", "四", "五", "六"];
+
+/** 本地时间格式化（固定 2000-01-01 规避 DST 跳变；按语言本地化）。 */
+function formatTime(lang: "zh" | "en", hour: number, minute: number): string {
+  const d = new Date(2000, 0, 1, hour, minute);
+  return d.toLocaleTimeString(lang === "zh" ? "zh-CN" : "en-US", { hour: "numeric", minute: "2-digit" });
+}
+
+/** cron 转本地化人类可读描述（sidebar / 面向用户显示）。 */
+export function cronToHumanI18n(cron: string, lang: "zh" | "en"): string {
+  const t = (key: keyof TranslationDict): string => translate(lang, key);
+  const human = parseCronHuman(cron);
+  switch (human.kind) {
+    case "every_minute":
+      return human.n === 1 ? t("cron.everyMinute") : t("cron.everyNMinutes").replace("{n}", String(human.n));
+    case "every_hour": {
+      const mm = String(human.minute).padStart(2, "0");
+      return human.minute === 0 ? t("cron.everyHour") : t("cron.everyHourAt").replace("{minute}", mm);
+    }
+    case "every_n_hours": {
+      const mm = String(human.minute).padStart(2, "0");
+      const base = human.minute === 0 ? t("cron.everyNHours") : t("cron.everyNHoursAt");
+      return base.replace("{n}", String(human.n)).replace("{minute}", mm);
+    }
+    case "daily":
+      return t("cron.daily").replace("{time}", formatTime(lang, human.hour, human.minute));
+    case "weekly": {
+      const day = (lang === "zh" ? DAY_NAMES_ZH : DAY_NAMES_EN)[human.day];
+      return t("cron.weekly")
+        .replace("{day}", day ?? String(human.day))
+        .replace("{time}", formatTime(lang, human.hour, human.minute));
+    }
+    case "weekdays":
+      return t("cron.weekdays").replace("{time}", formatTime(lang, human.hour, human.minute));
+    case "raw":
+      return human.text;
+  }
+}
+
+/** cron 转英文人类可读描述（工具返回值，LLM 用）。 */
+export function cronToHuman(cron: string): string {
+  return cronToHumanI18n(cron, "en");
 }
 
 /** jitter 调优参数（默认值对齐 Claude Code `DEFAULT_CRON_JITTER_CONFIG`）。 */

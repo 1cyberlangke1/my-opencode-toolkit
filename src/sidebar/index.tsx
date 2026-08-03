@@ -8,6 +8,8 @@ import type { Message } from "@opencode-ai/sdk/v2";
 
 import type { ConfigStore } from "../config/store";
 import { createTranslator, resolveLang, type Translator } from "../i18n";
+import { cronToHumanI18n } from "../scheduling/cron";
+import { readSchedulingMirror, type SchedulingTuiSnapshot } from "../scheduling/mirror";
 import { formatDuration, formatGoalElapsedSeconds, padRight, truncate } from "./format";
 import { createSidebarPersist, KV_KEYS } from "./persist";
 import {
@@ -119,12 +121,16 @@ function SessionStatsPanel(props: PanelProps) {
     return createTranslator(resolveLang(config.lang, process.env))(key);
   };
 
+  const lang = (): "zh" | "en" => resolveLang(store.get().lang, process.env);
+
   const [stats, setStatsRaw] = createSignal<SessionStats>({ cache: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, tools: [], subagentCount: 0 });
   const [subagents, setSubagents] = createSignal<SubagentEntry[]>([]);
   const [expandedId, setExpandedId] = createSignal<string | undefined>(undefined);
   const [childStats, setChildStats] = createSignal<SessionStats | undefined>(undefined);
   const [goal, setGoal] = createSignal<GoalTuiSnapshot["goal"] | undefined>(undefined);
   const [goalOpen, setGoalOpen] = createSignal(persist.loadBool(KV_KEYS.goalOpen, true));
+  const [scheduling, setScheduling] = createSignal<SchedulingTuiSnapshot | null>(null);
+  const [schedulingOpen, setSchedulingOpen] = createSignal(persist.loadBool(KV_KEYS.schedulingOpen, true));
 
   const [cacheOpen, setCacheOpen] = createSignal(persist.loadBool(KV_KEYS.cacheOpen, true));
   const [toolsOpen, setToolsOpen] = createSignal(persist.loadBool(KV_KEYS.toolsOpen, false));
@@ -160,6 +166,20 @@ function SessionStatsPanel(props: PanelProps) {
       setGoal(snapshot?.goal ?? undefined);
     } catch {
       setGoal(undefined);
+    }
+  }
+
+  /** 刷新定时任务面板：读 server 端写的 scheduling mirror。 */
+  function refreshScheduling(): void {
+    try {
+      const worktree = api.state.path.worktree || api.state.path.directory;
+      if (!worktree) {
+        setScheduling(null);
+        return;
+      }
+      setScheduling(readSchedulingMirror(worktree, sessionId));
+    } catch {
+      setScheduling(null);
     }
   }
 
@@ -290,6 +310,7 @@ function SessionStatsPanel(props: PanelProps) {
     const cached = persist.loadStats(sessionId);
     if (cached) setStatsRaw(cached);
     refreshGoal();
+    refreshScheduling();
 
     subscriptions = subscribeSidebarEvents(
       api.event,
@@ -298,6 +319,7 @@ function SessionStatsPanel(props: PanelProps) {
         onUpdate: () => {
           refreshStats();
           refreshGoal();
+          refreshScheduling();
           setSubagents(Array.from(subscriptions?.tracker.entries.values() ?? []));
         },
         onSubagentDone: (sid) => {
@@ -395,6 +417,52 @@ function SessionStatsPanel(props: PanelProps) {
                   <span style={{ fg: pal().text }}>{padRight(`${t("sidebar.goal.time")}:`, 14)}</span>
                   <span style={{ fg: pal().muted }}>{formatGoalElapsedSeconds(Math.floor(goalElapsedMs() / 1000))}</span>
                 </text>
+              </box>
+            </Show>
+          </Show>
+          <text style={{ fg: pal().border }}>{sep()}</text>
+        </Show>
+
+        {/* ── Scheduled 面板（定时任务：cron + loop，独立可折叠）── */}
+        <Show when={store.get().scheduling.enabled && scheduling() !== null}>
+          <text onMouseUp={() => toggleBool(schedulingOpen, setSchedulingOpen, KV_KEYS.schedulingOpen)}>
+            <span style={{ fg: pal().muted }}>{schedulingOpen() ? "▼ " : "▶ "}</span>
+            <span style={{ fg: pal().primary }}>{t("sidebar.scheduling.title")}</span>
+          </text>
+          <Show when={schedulingOpen()}>
+            <Show
+              when={
+                (scheduling()?.jobs.length ?? 0) > 0 || (scheduling()?.loops.length ?? 0) > 0
+              }
+              fallback={
+                <box paddingLeft={2}>
+                  <text style={{ fg: pal().muted }}>{t("sidebar.scheduling.empty")}</text>
+                </box>
+              }
+            >
+              <box paddingLeft={2} flexDirection="column" gap={0}>
+                <For each={scheduling()?.jobs ?? []}>
+                  {(job) => (
+                    <text>
+                      <span style={{ fg: pal().muted }}>⏰ [{t("sidebar.scheduling.cron")}] </span>
+                      <span style={{ fg: pal().text }}>{truncate(cronToHumanI18n(job.cron, lang()), 22)}</span>
+                      <span style={{ fg: pal().muted }}>
+                        {" "}({job.recurring ? t("sidebar.scheduling.recurring") : t("sidebar.scheduling.oneShot")})
+                      </span>
+                    </text>
+                  )}
+                </For>
+                <For each={scheduling()?.loops ?? []}>
+                  {(loop) => (
+                    <text>
+                      <span style={{ fg: pal().muted }}>🔁 [{t("sidebar.scheduling.loop")}] </span>
+                      <span style={{ fg: pal().text }}>{truncate(loop.prompt, 18)}</span>
+                      <span style={{ fg: pal().muted }}>
+                        {" "}({loop.mode === "dynamic" ? t("sidebar.scheduling.dynamic") : t("sidebar.scheduling.fixed")})
+                      </span>
+                    </text>
+                  )}
+                </For>
               </box>
             </Show>
           </Show>

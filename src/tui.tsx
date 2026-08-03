@@ -57,6 +57,7 @@ function showStatus(api: TuiPluginApi, config: ToolkitConfig, t: Translator): vo
     `${t("status.todoReminderMax")}: ${config.todoReminder.maxInjections}`,
     `${t("status.todoReminderCountdown")}: ${config.todoReminder.countdownSeconds}`,
     `${t("status.goal")}: ${onOff(config.goal.enabled)}`,
+    `${t("status.scheduling")}: ${onOff(config.scheduling.enabled)}`,
   ];
   api.ui.toast({ message: lines.join("\n"), duration: 6000 });
 }
@@ -246,6 +247,20 @@ function buildMenu(t: Translator, store: ConfigStore): MenuItem[] {
     },
   ];
 
+  const schedulingItems: MenuItem[] = [
+    {
+      key: "scheduling",
+      title: t("config.scheduling"),
+      description: () => onOff(store.get().scheduling.enabled),
+      help: t("help.scheduling"),
+      action: {
+        kind: "bool",
+        get: () => store.get().scheduling.enabled,
+        apply: (v) => store.updateScheduling({ enabled: v }),
+      },
+    },
+  ];
+
   return [
     {
       key: "lang",
@@ -273,6 +288,11 @@ function buildMenu(t: Translator, store: ConfigStore): MenuItem[] {
       key: "goalGroup",
       title: t("config.goal"),
       action: { kind: "submenu", items: goalItems },
+    },
+    {
+      key: "schedulingGroup",
+      title: t("config.scheduling"),
+      action: { kind: "submenu", items: schedulingItems },
     },
     {
       key: "todoReminderGroup",

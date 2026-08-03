@@ -21,6 +21,8 @@ export type ScheduleWakeupResult =
   | { ok: false; error: string };
 
 export interface SchedulingScheduler {
+  /** 结构变更回调（供 TUI mirror 写入）。可外部赋值。 */
+  onChanged: ((sessionID: string) => void) | undefined;
   /** 启动 loop：intervalSeconds 有值 = fixed，无值 = dynamic。立即 fire 一次。 */
   startLoop(sessionID: string, prompt: string, intervalSeconds?: number): Loop;
   /** 停止 loop：按 id 或（无 id 时）该会话任一 loop。 */
@@ -44,6 +46,7 @@ export function createSchedulingScheduler(args: {
   const loops = new Map<string, Loop>();
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
   const inFlight = new Set<string>();
+  let onChanged: ((sessionID: string) => void) | undefined;
 
   const findLoop = (sessionID: string, prompt: string): Loop | undefined =>
     [...loops.values()].find((loop) => loop.sessionID === sessionID && loop.prompt === prompt);
@@ -74,6 +77,7 @@ export function createSchedulingScheduler(args: {
 
   const fireLoop = (loop: Loop): void => {
     loop.fires += 1;
+    onChanged?.(loop.sessionID);
     void inject(loop.sessionID, `${loop.prompt}\n\n${LOOP_MARKER}`);
   };
 
@@ -127,6 +131,7 @@ export function createSchedulingScheduler(args: {
     } else {
       armLoop(loop, FALLBACK_WAKEUP_MS);
     }
+    onChanged?.(sessionID);
     return loop;
   };
 
@@ -139,6 +144,7 @@ export function createSchedulingScheduler(args: {
       timers.delete(target.id);
     }
     loops.delete(target.id);
+    onChanged?.(sessionID);
     return true;
   };
 
@@ -178,6 +184,7 @@ export function createSchedulingScheduler(args: {
     const fireAt = Math.ceil((now + clamped * 1000) / 60000) * 60000;
     loop.pendingWakeup = { fireAt, delaySeconds: clamped, prompt, reason };
     armLoop(loop, Math.max(0, fireAt - now));
+    onChanged?.(sessionID);
     return { ok: true, id: loop.id, fireAt };
   };
 
@@ -207,5 +214,20 @@ export function createSchedulingScheduler(args: {
     return Promise.resolve();
   };
 
-  return { startLoop, stopLoop, stopLoopByPrompt, stopAllLoops, listLoops, scheduleWakeup, handleEvent, clearSession };
+  return {
+    get onChanged() {
+      return onChanged;
+    },
+    set onChanged(fn: ((sessionID: string) => void) | undefined) {
+      onChanged = fn;
+    },
+    startLoop,
+    stopLoop,
+    stopLoopByPrompt,
+    stopAllLoops,
+    listLoops,
+    scheduleWakeup,
+    handleEvent,
+    clearSession,
+  };
 }

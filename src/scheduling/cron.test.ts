@@ -7,6 +7,7 @@ import { describe, expect, test } from "vitest";
 import {
   computeNextCronRun,
   cronToHuman,
+  cronToHumanI18n,
   jitteredNextCronRunMs,
   nextCronRunMs,
   oneShotJitteredNextCronRunMs,
@@ -128,6 +129,29 @@ describe("cronToHuman", () => {
   test("无法识别的回退原始字符串", () => {
     expect(cronToHuman("30 14 15 3 *")).toBe("30 14 15 3 *");
     expect(cronToHuman("not cron")).toBe("not cron");
+  });
+});
+
+describe("cronToHumanI18n", () => {
+  test("英文渲染与 cronToHuman 一致", () => {
+    expect(cronToHumanI18n("*/5 * * * *", "en")).toBe("Every 5 minutes");
+    expect(cronToHumanI18n("0 9 * * *", "en")).toBe("Every day at 9:00 AM");
+    expect(cronToHumanI18n("0 9 * * 1", "en")).toBe("Every Monday at 9:00 AM");
+    expect(cronToHumanI18n("0 9 * * 1-5", "en")).toBe("Weekdays at 9:00 AM");
+  });
+
+  test("中文渲染本地化（时间/星期/短语）", () => {
+    expect(cronToHumanI18n("*/5 * * * *", "zh")).toBe("每 5 分钟");
+    expect(cronToHumanI18n("*/1 * * * *", "zh")).toBe("每分钟");
+    expect(cronToHumanI18n("0 9 * * *", "zh")).toContain("每天");
+    expect(cronToHumanI18n("0 9 * * *", "zh")).toContain("9:00");
+    expect(cronToHumanI18n("0 9 * * 1", "zh")).toContain("每周一");
+    expect(cronToHumanI18n("0 9 * * 1-5", "zh")).toContain("工作日");
+  });
+
+  test("无法识别的回退原始字符串", () => {
+    expect(cronToHumanI18n("30 14 15 3 *", "zh")).toBe("30 14 15 3 *");
+    expect(cronToHumanI18n("not cron", "en")).toBe("not cron");
   });
 });
 
