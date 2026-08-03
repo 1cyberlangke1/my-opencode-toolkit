@@ -157,7 +157,9 @@ export function createTodoReminder(ctx: TodoReminderContext): (input: EventInput
     state.countdownInterval = setInterval(() => {
       remaining -= 1;
       if (remaining <= 0) {
-        stateStore.cancelCountdown(sessionID);
+        // 只停 toast 递减；注入 timer（countdownTimer）由 setTimeout 自然触发。
+        // 不能用 cancelCountdown——它会 clearTimeout 掉注入 timer，造成竞态偶发不注入。
+        clearInterval(state.countdownInterval);
         return;
       }
       void showCountdownToast(remaining, incompleteCount, cfg);
