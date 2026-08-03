@@ -34,6 +34,11 @@ export interface TranslationDict {
   "config.scheduling": string;
   "help.scheduling": string;
   "status.scheduling": string;
+  "config.yolo": string;
+  "help.yolo": string;
+  "status.yolo": string;
+  "toast.yoloOn": string;
+  "toast.yoloOff": string;
   // Cron human-readable description
   "cron.everyMinute": string;
   "cron.everyNMinutes": string;
@@ -145,6 +150,7 @@ export interface TranslationDict {
   "sidebar.scheduling.dynamic": string;
   "sidebar.scheduling.fixed": string;
   "sidebar.scheduling.empty": string;
+  "sidebar.yolo.label": string;
   "sidebar.cache.title": string;
   "sidebar.cache.hitRate": string;
   "sidebar.cache.input": string;
@@ -203,6 +209,11 @@ export const en: TranslationDict = {
 
   "help.scheduling": "Scheduled tasks (cron/loop). When off, cron_create/cron_list/cron_delete and the /loop commands are unavailable and no scheduled prompts fire.",
   "status.scheduling": "Scheduled tasks",
+  "config.yolo": "YOLO mode",
+  "help.yolo": "Auto-approve all tool calls (project-scoped). Existing explicit deny rules are still honored. Restart opencode to apply after toggling.",
+  "status.yolo": "YOLO mode",
+  "toast.yoloOn": "YOLO mode enabled — restart opencode to apply",
+  "toast.yoloOff": "YOLO mode disabled — restart opencode to apply",
 
   "cron.everyMinute": "Every minute",
   "cron.everyNMinutes": "Every {n} minutes",
@@ -313,6 +324,7 @@ export const en: TranslationDict = {
   "sidebar.scheduling.dynamic": "dynamic",
   "sidebar.scheduling.fixed": "fixed",
   "sidebar.scheduling.empty": "No scheduled tasks",
+  "sidebar.yolo.label": "YOLO",
   "sidebar.cache.title": "Cache Hit Rate",
   "sidebar.cache.hitRate": "hit rate",
   "sidebar.cache.input": "input",

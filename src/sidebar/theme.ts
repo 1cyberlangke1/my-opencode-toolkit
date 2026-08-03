@@ -68,8 +68,7 @@ function dimColor(hex: string, factor = 0.5): string {
     .join("")}`;
 }
 
-/** Morandi low-saturation fallback palette used when the theme lacks a key. */
-export const FALLBACK = {
+/** Morandi low-saturation fallback palette used when the theme lacks a key. */export const FALLBACK = {
   primary: "#8B9DAF",
   text: "#C5C5BB",
   muted: "#7A7A72",
@@ -106,6 +105,52 @@ export function usePalette(theme: TuiThemeCurrent) {
       border: sat("border", FALLBACK.border),
     };
   });
+}
+
+/**
+ * HSL → hex。h 为色相角度（0-360），s/l 为 0-1。
+ * YOLO 彩虹渐变用：`hue = (now % period) / period * 360` 即可让颜色沿色相环旋转。
+ */
+export function hslToHex(h: number, s: number, l: number): string {
+  const hue = ((h % 360) + 360) % 360;
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((hue / 60) % 2) - 1));
+  const m = l - c / 2;
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  if (hue < 60) {
+    r = c;
+    g = x;
+  } else if (hue < 120) {
+    r = x;
+    g = c;
+  } else if (hue < 180) {
+    g = c;
+    b = x;
+  } else if (hue < 240) {
+    g = x;
+    b = c;
+  } else if (hue < 300) {
+    r = x;
+    b = c;
+  } else {
+    r = c;
+    b = x;
+  }
+  return `#${[r, g, b]
+    .map((v) =>
+      Math.max(0, Math.min(255, Math.round((v + m) * 255)))
+        .toString(16)
+        .padStart(2, "0"),
+    )
+    .join("")}`;
+}
+
+/** 随时间旋转的彩虹色（高饱和、中亮度），用于 YOLO 激活指示。 */
+export function rainbowColor(now: number, periodMs = 4000): string {
+  const hue = ((now % periodMs) / periodMs) * 360;
+  return hslToHex(hue, 0.85, 0.55);
 }
 
 export { dimColor, rgb, saturation };

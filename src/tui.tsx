@@ -7,6 +7,7 @@ import type { ToolkitConfig } from "./config/types";
 import { createTranslator, resolveLang, type Lang, type Translator } from "./i18n";
 import { createSidebarSlot } from "./sidebar";
 import { applySidebarConfig, sidebarConfigSignal } from "./sidebar/state";
+import { readYolo, writeYolo } from "./yolo/store";
 
 const ID = "my-opencode-toolkit";
 
@@ -44,6 +45,7 @@ function translatorFor(config: ToolkitConfig): Translator {
 function showStatus(api: TuiPluginApi, config: ToolkitConfig, t: Translator): void {
   const n = config.notification;
   const onOff = (v: boolean): string => (v ? t("misc.on") : t("misc.off"));
+  const projectDir = api.state.path.worktree || api.state.path.directory;
   const lines = [
     `${t("status.plugin")}: ${onOff(config.enabled)}`,
     `${t("status.lang")}: ${config.lang}`,
@@ -58,6 +60,7 @@ function showStatus(api: TuiPluginApi, config: ToolkitConfig, t: Translator): vo
     `${t("status.todoReminderCountdown")}: ${config.todoReminder.countdownSeconds}`,
     `${t("status.goal")}: ${onOff(config.goal.enabled)}`,
     `${t("status.scheduling")}: ${onOff(config.scheduling.enabled)}`,
+    `${t("status.yolo")}: ${onOff(projectDir !== undefined && readYolo(projectDir).enabled)}`,
   ];
   api.ui.toast({ message: lines.join("\n"), duration: 6000 });
 }
@@ -66,8 +69,13 @@ function showStatus(api: TuiPluginApi, config: ToolkitConfig, t: Translator): vo
 // Menu builder
 // ---------------------------------------------------------------------------
 
-function buildMenu(t: Translator, store: ConfigStore): MenuItem[] {
+function buildMenu(t: Translator, store: ConfigStore, api: TuiPluginApi): MenuItem[] {
   const onOff = (v: boolean): string => (v ? t("misc.on") : t("misc.off"));
+  const projectDir = (): string | undefined => api.state.path.worktree || api.state.path.directory;
+  const yoloEnabled = (): boolean => {
+    const dir = projectDir();
+    return dir !== undefined && readYolo(dir).enabled;
+  };
 
   const notificationItems: MenuItem[] = [
     {
@@ -280,6 +288,25 @@ function buildMenu(t: Translator, store: ConfigStore): MenuItem[] {
       },
     },
     {
+      key: "yolo",
+      title: t("config.yolo"),
+      description: () => onOff(yoloEnabled()),
+      help: t("help.yolo"),
+      action: {
+        kind: "bool",
+        get: () => yoloEnabled(),
+        apply: (v) => {
+          const dir = projectDir();
+          if (dir !== undefined) writeYolo(dir, v);
+          api.ui.toast({
+            message: v ? t("toast.yoloOn") : t("toast.yoloOff"),
+            variant: v ? "warning" : "info",
+            duration: 6000,
+          });
+        },
+      },
+    },
+    {
       key: "notificationGroup",
       title: t("config.notificationGroup"),
       action: { kind: "submenu", items: notificationItems },
@@ -320,7 +347,7 @@ interface MenuNav {
 
 function buildRootNav(api: TuiPluginApi, store: ConfigStore): MenuNav {
   const t = translatorFor(store.get());
-  return { api, store, stack: [buildMenu(t, store)] };
+  return { api, store, stack: [buildMenu(t, store, api)] };
 }
 
 function currentMenu(nav: MenuNav): MenuItem[] {
@@ -491,7 +518,7 @@ function openLangDialog(nav: MenuNav, onLangChange?: () => void): void {
         const nextT = translatorFor(store.get());
         api.ui.toast({ message: `${t("toast.lang")} ${lang}` });
         // Rebuild root menu with the new language.
-        nav.stack = [buildMenu(nextT, store)];
+        nav.stack = [buildMenu(nextT, store, nav.api)];
         onLangChange?.();
         renderCurrent(nav);
       }}

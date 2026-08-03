@@ -22,8 +22,9 @@ import {
 } from "./stats";
 import { subscribeSidebarEvents, type SidebarEventSubscriptions } from "./events";
 import type { SubStatus, SubagentEntry, TokenBreakdown } from "./subagent";
-import { usePalette, rgb } from "./theme";
+import { rainbowColor, usePalette, rgb } from "./theme";
 import { applySidebarConfig, sidebarConfigSignal } from "./state";
+import { readYolo } from "../yolo/store";
 
 type GoalStatus = "active" | "paused" | "blocked" | "budget_limited" | "complete";
 
@@ -140,6 +141,7 @@ function SessionStatsPanel(props: PanelProps) {
   const [goalOpen, setGoalOpen] = createSignal(persist.loadBool(KV_KEYS.goalOpen, true));
   const [scheduling, setScheduling] = createSignal<SchedulingTuiSnapshot | null>(null);
   const [schedulingOpen, setSchedulingOpen] = createSignal(persist.loadBool(KV_KEYS.schedulingOpen, true));
+  const [yoloOn, setYoloOn] = createSignal(false);
 
   const [cacheOpen, setCacheOpen] = createSignal(persist.loadBool(KV_KEYS.cacheOpen, true));
   const [toolsOpen, setToolsOpen] = createSignal(persist.loadBool(KV_KEYS.toolsOpen, false));
@@ -189,6 +191,16 @@ function SessionStatsPanel(props: PanelProps) {
       setScheduling(readSchedulingMirror(worktree, sessionId));
     } catch {
       setScheduling(null);
+    }
+  }
+
+  /** 刷新 YOLO 状态：读项目级 `.opencode-toolkit/yolo.json`。 */
+  function refreshYolo(): void {
+    try {
+      const worktree = api.state.path.worktree || api.state.path.directory;
+      setYoloOn(worktree !== undefined && readYolo(worktree).enabled);
+    } catch {
+      setYoloOn(false);
     }
   }
 
@@ -320,6 +332,7 @@ function SessionStatsPanel(props: PanelProps) {
     if (cached) setStatsRaw(cached);
     refreshGoal();
     refreshScheduling();
+    refreshYolo();
 
     subscriptions = subscribeSidebarEvents(
       api.event,
@@ -329,6 +342,7 @@ function SessionStatsPanel(props: PanelProps) {
           refreshStats();
           refreshGoal();
           refreshScheduling();
+          refreshYolo();
           setSubagents(Array.from(subscriptions?.tracker.entries.values() ?? []));
         },
         onSubagentDone: (sid) => {
@@ -393,6 +407,14 @@ function SessionStatsPanel(props: PanelProps) {
   return (
     <Show when={sidebarConfigSignal().enabled}>
       <box flexDirection="column" gap={0}>
+        {/* ── YOLO 指示（项目级；关闭时整个不显示）── */}
+        <Show when={yoloOn()}>
+          <text>
+            <span style={{ fg: rainbowColor(now()) }}>◆ {t("sidebar.yolo.label")}</span>
+          </text>
+          <text style={{ fg: pal().border }}>{sep()}</text>
+        </Show>
+
         {/* ── Goal 面板（独立，同级别，不受会话统计折叠影响；goal 关闭或无目标时不显示）── */}
         <Show when={store.get().goal.enabled && goal() !== undefined}>
           <text onMouseUp={() => toggleBool(goalOpen, setGoalOpen, KV_KEYS.goalOpen)}>

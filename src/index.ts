@@ -15,6 +15,7 @@ import { clearSchedulingMirrors, createSchedulingMirror } from "./scheduling/mir
 import { createSchedulingScheduler } from "./scheduling/scheduler";
 import { createSchedulingStore } from "./scheduling/store";
 import { createSchedulingTools } from "./scheduling/tools";
+import { applyYoloPermission, readYolo } from "./yolo/store";
 
 const server: Plugin = (input) => {
   void input.client.app.log({
@@ -150,9 +151,12 @@ const server: Plugin = (input) => {
 
   const hooks: Record<string, unknown> = {
     event,
-    config: (cfg: { command?: Record<string, unknown> }) => {
+    config: (cfg: { command?: Record<string, unknown>; permission?: Record<string, unknown> }) => {
       const lang = resolveLang(config.lang, process.env);
       const t = createTranslator(lang);
+      // YOLO 模式（项目级）：开启时所有工具调用默认放行（用户显式 deny 保留）。
+      // config hook 每次会话初始化执行 → 切换后重启/新会话生效。
+      applyYoloPermission(cfg, readYolo(input.directory).enabled);
       if (config.goal.enabled) {
         cfg.command = {
           ...cfg.command,
