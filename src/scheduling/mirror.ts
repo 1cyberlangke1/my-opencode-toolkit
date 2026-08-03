@@ -2,7 +2,7 @@
 // {projectDir}/.opencode-toolkit/scheduling-tui/{sessionID}.json，供 sidebar 面板读取。
 // 对齐 goal 的 goal-tui mirror（loop 在内存、session job 不落盘，只能靠 mirror 暴露给 TUI）。
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { SchedulingScheduler } from "./scheduler";
 import type { SchedulingStore } from "./store";
@@ -79,5 +79,17 @@ export function readSchedulingMirror(worktree: string, sessionID: string): Sched
     return JSON.parse(raw) as SchedulingTuiSnapshot;
   } catch {
     return null;
+  }
+}
+
+/** 清空全部 mirror 快照（插件初始化时调用：重启后内存态任务丢失，残留快照会显示幽灵任务）。 */
+export function clearSchedulingMirrors(projectDir: string): void {
+  try {
+    const dir = join(projectDir, MIRROR_REL);
+    for (const file of readdirSync(dir)) {
+      if (file.endsWith(".json")) rmSync(join(dir, file), { force: true });
+    }
+  } catch {
+    // 目录不存在 = 无残留
   }
 }

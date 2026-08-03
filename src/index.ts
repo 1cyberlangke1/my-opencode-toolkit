@@ -11,7 +11,7 @@ import { createSessionNotification } from "./notification/session-notification";
 import { createTodoReminder } from "./notification/todo-reminder";
 import { loadLoopMaintenancePrompt, parseLoopCommand } from "./scheduling/command";
 import { createSchedulingContinuation, resolveSessionAgent } from "./scheduling/continuation";
-import { createSchedulingMirror } from "./scheduling/mirror";
+import { clearSchedulingMirrors, createSchedulingMirror } from "./scheduling/mirror";
 import { createSchedulingScheduler } from "./scheduling/scheduler";
 import { createSchedulingStore } from "./scheduling/store";
 import { createSchedulingTools } from "./scheduling/tools";
@@ -77,6 +77,8 @@ const server: Plugin = (input) => {
     shouldDeferFire,
   });
   const schedulingMirror = createSchedulingMirror(input.directory, schedulingStore, schedulingScheduler);
+  // 重启后内存态任务（loop/session job）丢失，清空残留快照避免侧边栏显示幽灵任务。
+  clearSchedulingMirrors(input.directory);
   schedulingStore.onChanged = (sessionID) => {
     schedulingMirror.write(sessionID);
     schedulingContinuation.armTimers();
