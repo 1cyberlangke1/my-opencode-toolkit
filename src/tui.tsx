@@ -27,6 +27,8 @@ interface MenuItem {
   description?: () => string;
   /** Help text shown inside the on/off dialog for this item. */
   help?: string;
+  /** Custom toast message for bool toggles (replaces the generic "title: on/off"). */
+  toast?: (value: boolean) => string;
   /** Custom dialog placeholder for number items (defaults to a generic label). */
   dialogPlaceholder?: string;
   /** Custom invalid-input message for number items. */
@@ -292,17 +294,13 @@ function buildMenu(t: Translator, store: ConfigStore, api: TuiPluginApi): MenuIt
       title: t("config.yolo"),
       description: () => onOff(yoloEnabled()),
       help: t("help.yolo"),
+      toast: (v) => (v ? t("toast.yoloOn") : t("toast.yoloOff")),
       action: {
         kind: "bool",
         get: () => yoloEnabled(),
         apply: (v) => {
           const dir = projectDir();
           if (dir !== undefined) writeYolo(dir, v);
-          api.ui.toast({
-            message: v ? t("toast.yoloOn") : t("toast.yoloOff"),
-            variant: v ? "warning" : "info",
-            duration: 6000,
-          });
         },
       },
     },
@@ -461,7 +459,12 @@ function openBoolDialog(
       onSelect={(option) => {
         const v = option.value === true;
         apply(v);
-        api.ui.toast({ message: `${item.title}: ${t(v ? "misc.on" : "misc.off")}` });
+        const custom = item.toast;
+        api.ui.toast({
+          message: custom ? custom(v) : `${item.title}: ${t(v ? "misc.on" : "misc.off")}`,
+          variant: custom ? "warning" : "info",
+          duration: custom ? 6000 : 4000,
+        });
         renderCurrent(nav);
       }}
     />
