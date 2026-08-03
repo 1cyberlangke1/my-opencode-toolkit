@@ -39,6 +39,9 @@ export interface TranslationDict {
   "status.yolo": string;
   "toast.yoloOn": string;
   "toast.yoloOff": string;
+  "config.autoGitignore": string;
+  "help.autoGitignore": string;
+  "status.autoGitignore": string;
   // Cron human-readable description
   "cron.everyMinute": string;
   "cron.everyNMinutes": string;
@@ -212,6 +215,9 @@ export const en: TranslationDict = {
   "config.yolo": "YOLO mode",
   "help.yolo": "Auto-approve all tool calls (project-scoped). Existing explicit deny rules are still honored. Restart opencode to apply after toggling.",
   "status.yolo": "YOLO mode",
+  "config.autoGitignore": "Auto .gitignore",
+  "help.autoGitignore": "Append .opencode-toolkit/ to the project's .gitignore when present. Skipped when the project has no .gitignore.",
+  "status.autoGitignore": "Auto .gitignore",
   "toast.yoloOn": "YOLO mode enabled — restart opencode to apply",
   "toast.yoloOff": "YOLO mode disabled — restart opencode to apply",
 

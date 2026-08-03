@@ -55,6 +55,8 @@ export interface ToolkitConfig {
   lang: Lang;
   /** Master toggle for the whole plugin (default: true) */
   enabled: boolean;
+  /** Auto-append `.opencode-toolkit/` to the project's `.gitignore` when present (default: true) */
+  autoGitignore: boolean;
   notification: NotificationConfig;
   todoReminder: TodoReminderConfig;
   goal: GoalConfig;
@@ -76,6 +78,7 @@ export const DEFAULT_TODO_REMINDER_MESSAGE = `> **[SYSTEM] Todo continuation**
 export const DEFAULT_CONFIG: ToolkitConfig = {
   lang: "auto",
   enabled: true,
+  autoGitignore: true,
   notification: {
     enabled: true,
     onComplete: true,

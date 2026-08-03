@@ -16,6 +16,7 @@ import { createSchedulingScheduler } from "./scheduling/scheduler";
 import { createSchedulingStore } from "./scheduling/store";
 import { createSchedulingTools } from "./scheduling/tools";
 import { applyYoloPermission, readYolo } from "./yolo/store";
+import { ensureToolkitGitignore } from "./gitignore";
 
 const server: Plugin = (input) => {
   void input.client.app.log({
@@ -109,6 +110,8 @@ const server: Plugin = (input) => {
   });
 
   const config = loadConfig();
+  // 项目已有 .gitignore 时，自动确保 .opencode-toolkit/ 被忽略（配置可关）。
+  if (config.autoGitignore) ensureToolkitGitignore(input.directory);
 
   /** Apply a parsed /goal command directly to the controller; returns a feedback message. */
   const applyGoalCommand = (sessionID: string, arguments_: string): string => {

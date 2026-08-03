@@ -87,6 +87,7 @@ export function parseConfig(raw: unknown): ToolkitConfig {
   const result: ToolkitConfig = structuredClone(DEFAULT_CONFIG);
   if (isLang(obj.lang)) result.lang = obj.lang;
   if (isBoolean(obj.enabled)) result.enabled = obj.enabled;
+  if (isBoolean(obj.autoGitignore)) result.autoGitignore = obj.autoGitignore;
   result.notification = parseNotification(obj.notification);
   result.todoReminder = parseTodoReminder(obj.todoReminder);
   result.goal = parseGoal(obj.goal);

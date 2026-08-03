@@ -8,6 +8,7 @@ import { createTranslator, resolveLang, type Lang, type Translator } from "./i18
 import { createSidebarSlot } from "./sidebar";
 import { applySidebarConfig, sidebarConfigSignal } from "./sidebar/state";
 import { readYolo, writeYolo } from "./yolo/store";
+import { ensureToolkitGitignore } from "./gitignore";
 
 const ID = "my-opencode-toolkit";
 
@@ -63,6 +64,7 @@ function showStatus(api: TuiPluginApi, config: ToolkitConfig, t: Translator): vo
     `${t("status.goal")}: ${onOff(config.goal.enabled)}`,
     `${t("status.scheduling")}: ${onOff(config.scheduling.enabled)}`,
     `${t("status.yolo")}: ${onOff(projectDir !== undefined && readYolo(projectDir).enabled)}`,
+    `${t("status.autoGitignore")}: ${onOff(config.autoGitignore)}`,
   ];
   api.ui.toast({ message: lines.join("\n"), duration: 6000 });
 }
@@ -300,8 +302,22 @@ function buildMenu(t: Translator, store: ConfigStore, api: TuiPluginApi): MenuIt
         get: () => yoloEnabled(),
         apply: (v) => {
           const dir = projectDir();
-          if (dir !== undefined) writeYolo(dir, v);
+          if (dir !== undefined) {
+            writeYolo(dir, v);
+            if (store.get().autoGitignore) ensureToolkitGitignore(dir);
+          }
         },
+      },
+    },
+    {
+      key: "autoGitignore",
+      title: t("config.autoGitignore"),
+      description: () => onOff(store.get().autoGitignore),
+      help: t("help.autoGitignore"),
+      action: {
+        kind: "bool",
+        get: () => store.get().autoGitignore,
+        apply: (v) => store.update({ autoGitignore: v }),
       },
     },
     {
