@@ -232,6 +232,60 @@ describe("cron timer 触发与 toast", () => {
 
     expect(toast).toHaveBeenCalledTimes(1);
   });
+
+  test("toast 在消息发送时立即弹（不等 prompt resolve）", async () => {
+    let resolvePrompt: (v: unknown) => void = () => undefined;
+    const pending = new Promise<unknown>((resolve) => {
+      resolvePrompt = resolve;
+    });
+    const toast = vi.fn(() => Promise.resolve());
+    handler = createSchedulingContinuation({
+      store,
+      ctx: {
+        client: {
+          session: {
+            messages: vi.fn(() => Promise.resolve(messages)),
+            prompt: vi.fn(() => pending),
+          },
+          tui: { showToast: toast },
+        },
+      },
+    });
+    await addDueRecurring();
+    advanceToNextRun();
+
+    const p = fire("session.idle", "s1"); // inject 挂起（prompt 未 resolve）
+    await vi.advanceTimersByTimeAsync(0); // 推进到 prompt 调用
+    expect(toast).toHaveBeenCalledTimes(1); // 不等 resolve 已弹 toast
+
+    resolvePrompt(undefined);
+    await p;
+  });
+
+  test("plan 模式（shouldDeferFire=true）不注入但 nextRunAt 仍重排", async () => {
+    const prompt = vi.fn(() => Promise.resolve());
+    handler = createSchedulingContinuation({
+      store,
+      ctx: {
+        client: {
+          session: {
+            messages: vi.fn(() => Promise.resolve(messages)),
+            prompt,
+          },
+        },
+      },
+      shouldDeferFire: () => Promise.resolve(true),
+    });
+    await addDueRecurring();
+    advanceToNextRun();
+    const before = store.listJobs("s1")[0]!.nextRunAt!;
+
+    await fire("session.idle", "s1");
+
+    expect(prompt).not.toHaveBeenCalled(); // plan 让路，不注入
+    const after = store.listJobs("s1")[0]!.nextRunAt!;
+    expect(after).toBeGreaterThan(before); // 到点仍重排，倒计时不卡 0
+  });
 });
 
 describe("session 生命周期", () => {

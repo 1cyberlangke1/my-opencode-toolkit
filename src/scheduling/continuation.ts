@@ -72,6 +72,19 @@ async function lastMessageIsUser(ctx: SchedulingContext, sessionID: string): Pro
   return last?.info?.role === "user";
 }
 
+/** 读会话末条消息的 agent（plan 特判用，对齐 todo 的 resolveSessionAgent）。 */
+export async function resolveSessionAgent(ctx: SchedulingContext, sessionID: string): Promise<string | undefined> {
+  try {
+    const messages = await ctx.client.session.messages(sessionID);
+    if (!messages || messages.length === 0) return undefined;
+    const last = messages.at(-1);
+    const agent = last?.info?.agent;
+    return typeof agent === "string" && agent.length > 0 ? agent : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export type SchedulingContinuation = ((input: EventInput) => Promise<boolean>) & {
   /** 为所有未到期的 cron 重新武装到点 timer（addJob/load 后调用）。 */
   armTimers: () => void;
@@ -92,9 +105,12 @@ export function createSchedulingContinuation(args: {
     if (inFlight.has(sessionID)) return false;
     inFlight.add(sessionID);
     try {
-      await ctx.client.session.prompt(sessionID, {
+      // 消息发送后立即弹 toast（不等 prompt resolve——同步 prompt 会挂起到 AI 回复完）。
+      const pending = ctx.client.session.prompt(sessionID, {
         parts: [{ type: "text", text, metadata: { cronContinuation: true } }],
       });
+      showInjectedToast();
+      await pending;
       return true;
     } catch {
       return false;
@@ -130,12 +146,10 @@ export function createSchedulingContinuation(args: {
       await store.markFired([job.id], now);
     }
     armCronTimers();
-    // ② 尽力注入：goal active 让路 / 末条 user 防叠加 / inFlight 防重。
+    // ② 尽力注入：goal active / plan 让路（shouldDeferFire）、末条 user 防叠加、inFlight 防重。
     if (shouldDeferFire !== undefined && (await shouldDeferFire(job.sessionID))) return false;
     if (await lastMessageIsUser(ctx, job.sessionID)) return false;
-    const ok = await inject(job.sessionID, buildFirePrompt(job, new Date(now)));
-    if (ok) showInjectedToast();
-    return ok;
+    return await inject(job.sessionID, buildFirePrompt(job, new Date(now)));
   };
 
   /** 为所有未到期的 cron 武装 setTimeout（到点触发 handleCronFire；不依赖 idle 事件）。 */

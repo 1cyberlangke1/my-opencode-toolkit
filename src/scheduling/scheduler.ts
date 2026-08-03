@@ -69,9 +69,12 @@ export function createSchedulingScheduler(args: {
     if (await lastMessageIsUser(sessionID)) return false;
     inFlight.add(sessionID);
     try {
-      await ctx.client.session.prompt(sessionID, {
+      // 消息发送后立即弹 toast（不等 prompt resolve——同步 prompt 会挂起到 AI 回复完）。
+      const pending = ctx.client.session.prompt(sessionID, {
         parts: [{ type: "text", text, metadata: { loopContinuation: true } }],
       });
+      showLoopInjectedToast();
+      await pending;
       return true;
     } catch {
       return false;
@@ -100,8 +103,7 @@ export function createSchedulingScheduler(args: {
     }
     loop.fires += 1;
     onChanged?.(loop.sessionID);
-    const ok = await inject(loop.sessionID, `${loop.prompt}\n\n${LOOP_MARKER}`);
-    if (ok) showLoopInjectedToast();
+    await inject(loop.sessionID, `${loop.prompt}\n\n${LOOP_MARKER}`);
   };
 
   const armLoop = (loop: Loop, delayMs: number): void => {

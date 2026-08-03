@@ -10,7 +10,7 @@ import { createEventHandler } from "./notification/event";
 import { createSessionNotification } from "./notification/session-notification";
 import { createTodoReminder } from "./notification/todo-reminder";
 import { loadLoopMaintenancePrompt, parseLoopCommand } from "./scheduling/command";
-import { createSchedulingContinuation } from "./scheduling/continuation";
+import { createSchedulingContinuation, resolveSessionAgent } from "./scheduling/continuation";
 import { createSchedulingMirror } from "./scheduling/mirror";
 import { createSchedulingScheduler } from "./scheduling/scheduler";
 import { createSchedulingStore } from "./scheduling/store";
@@ -60,20 +60,21 @@ const server: Plugin = (input) => {
 
   const schedulingStore = createSchedulingStore(input.directory);
   void schedulingStore.load();
+  // cron/loop 注入让路：goal active 优先；plan 模式不触发（对齐 goal/todo 续作）。
+  const shouldDeferFire = async (sessionID: string): Promise<boolean> => {
+    const goal = goalController.getGoal(sessionID);
+    if (goal !== null && goal.status === "active") return true;
+    const agent = await resolveSessionAgent(ctx, sessionID);
+    return agent === "plan";
+  };
   const schedulingContinuation = createSchedulingContinuation({
     store: schedulingStore,
     ctx,
-    shouldDeferFire: (sessionID) => {
-      const goal = goalController.getGoal(sessionID);
-      return goal !== null && goal.status === "active";
-    },
+    shouldDeferFire,
   });
   const schedulingScheduler = createSchedulingScheduler({
     ctx,
-    shouldDeferFire: (sessionID) => {
-      const goal = goalController.getGoal(sessionID);
-      return goal !== null && goal.status === "active";
-    },
+    shouldDeferFire,
   });
   const schedulingMirror = createSchedulingMirror(input.directory, schedulingStore, schedulingScheduler);
   schedulingStore.onChanged = (sessionID) => {
