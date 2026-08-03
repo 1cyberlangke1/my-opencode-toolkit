@@ -17,7 +17,7 @@ let store: ReturnType<typeof createSchedulingStore>;
 let prompts: Array<{ sessionID: string; text: string }>;
 let messages: Array<{ info: { role?: string } }>;
 let promptImpl: (id: string, body: { parts: Array<{ text: string }> }) => Promise<unknown>;
-let handler: (input: { event: { type: string; properties?: unknown } }) => Promise<void>;
+let handler: (input: { event: { type: string; properties?: unknown } }) => Promise<boolean>;
 
 beforeEach(async () => {
   vi.useFakeTimers();

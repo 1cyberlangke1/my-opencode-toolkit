@@ -18,11 +18,13 @@ interface EventHandlerArgs {
   sessionNotification: ((input: EventInput) => Promise<void>) | null;
   todoReminder?: ((input: EventInput) => Promise<void>) | null;
   goal?: ((input: EventInput) => Promise<void>) | null;
+  /** 返回 true 表示本次 idle 注入了一条续作（协调层据此跳过 todo）。 */
+  scheduling?: ((input: EventInput) => Promise<boolean>) | null;
   hasActiveGoal?: (sessionID: string) => boolean;
 }
 
 export function createEventHandler(args: EventHandlerArgs): (input: EventInput) => Promise<void> {
-  const { sessionNotification, todoReminder, goal, hasActiveGoal } = args;
+  const { sessionNotification, todoReminder, goal, scheduling, hasActiveGoal } = args;
 
   const runEventHookSafely = async (
     handler: ((input: EventInput) => Promise<void>) | null,
@@ -33,6 +35,18 @@ export function createEventHandler(args: EventHandlerArgs): (input: EventInput) 
       await Promise.resolve(handler(input));
     } catch {
       // ignore hook errors (mirrors omo)
+    }
+  };
+
+  const runSchedulingSafely = async (
+    handler: ((input: EventInput) => Promise<boolean>) | null,
+    input: EventInput,
+  ): Promise<boolean> => {
+    if (!handler) return false;
+    try {
+      return await Promise.resolve(handler(input));
+    } catch {
+      return false;
     }
   };
 
@@ -67,13 +81,21 @@ export function createEventHandler(args: EventHandlerArgs): (input: EventInput) 
     await runEventHookSafely(goal ?? null, effective);
 
     const isIdle = effective.event.type === "session.idle";
-    if (isIdle && hasActiveGoal) {
-      const sessionID = getSessionIDFromProps(effective.event.properties);
-      if (sessionID !== undefined && hasActiveGoal(sessionID)) {
-        return;
-      }
+    const sessionID = getSessionIDFromProps(effective.event.properties);
+
+    // goal 优先：active goal 存在时 cron/todo 让路（只注入 goal 续作）。
+    if (isIdle && sessionID !== undefined && hasActiveGoal?.(sessionID)) {
+      return;
     }
-    await runEventHookSafely(todoReminder ?? null, effective);
+
+    // 一个 idle 只注入一条：scheduling 注入了就跳过 todo。
+    let schedulingInjected = false;
+    if (scheduling) {
+      schedulingInjected = await runSchedulingSafely(scheduling, effective);
+    }
+    if (isIdle && !schedulingInjected) {
+      await runEventHookSafely(todoReminder ?? null, effective);
+    }
   };
 }
 

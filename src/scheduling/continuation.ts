@@ -12,7 +12,7 @@ import type { ScheduledJob } from "./types";
 
 const CRON_MARKER = "<!-- CRON_AUTONOMOUS -->";
 
-interface SchedulingContext {
+export interface SchedulingContext {
   client: {
     session: {
       messages(id: string): Promise<
@@ -62,7 +62,7 @@ async function lastMessageIsUser(ctx: SchedulingContext, sessionID: string): Pro
 export function createSchedulingContinuation(args: {
   store: SchedulingStore;
   ctx: SchedulingContext;
-}): (input: EventInput) => Promise<void> {
+}): (input: EventInput) => Promise<boolean> {
   const { store, ctx } = args;
   const loadConfigFn = ctx.loadConfigOverride ?? loadConfig;
   const inFlight = new Set<string>();
@@ -82,9 +82,10 @@ export function createSchedulingContinuation(args: {
     }
   };
 
-  const handleIdle = async (sessionID: string): Promise<void> => {
+  /** 返回 true = 本次 idle 注入了一条续作（协调层据此跳过 todo）。 */
+  const handleIdle = async (sessionID: string): Promise<boolean> => {
     const cfg = loadConfigFn();
-    if (!cfg.enabled || !cfg.scheduling.enabled) return;
+    if (!cfg.enabled || !cfg.scheduling.enabled) return false;
 
     const now = Date.now();
     const due = store
@@ -92,13 +93,13 @@ export function createSchedulingContinuation(args: {
       .filter((job) => job.nextRunAt !== undefined && job.nextRunAt <= now)
       .sort((a, b) => (a.nextRunAt ?? Infinity) - (b.nextRunAt ?? Infinity));
     const job = due[0];
-    if (!job) return;
+    if (!job) return false;
 
     // 上次注入还没被 AI 回复 → 不重复 fire。
-    if (await lastMessageIsUser(ctx, sessionID)) return;
+    if (await lastMessageIsUser(ctx, sessionID)) return false;
 
     const ok = await inject(sessionID, buildFirePrompt(job, new Date(now)));
-    if (!ok) return;
+    if (!ok) return false;
 
     if (isRecurringTaskAged(job, now)) {
       // 7 天过期：最后 fire 一次后删除。
@@ -110,16 +111,17 @@ export function createSchedulingContinuation(args: {
       // one-shot：fire 后自删。
       await store.removeJobs([job.id]);
     }
+    return true;
   };
 
-  return async (input: EventInput): Promise<void> => {
+  return async (input: EventInput): Promise<boolean> => {
     const { event } = input;
     const props = event.properties as Record<string, unknown> | undefined;
 
     if (event.type === "session.idle") {
       const sessionID = getSessionID(props);
-      if (sessionID) await handleIdle(sessionID);
-      return;
+      if (sessionID) return await handleIdle(sessionID);
+      return false;
     }
 
     if (event.type === "session.deleted") {
@@ -129,7 +131,7 @@ export function createSchedulingContinuation(args: {
         await store.removeJobs(jobs.map((job) => job.id));
         inFlight.delete(sessionID);
       }
-      return;
+      return false;
     }
 
     // 活动事件释放 inFlight，防止同步 prompt 挂起锁死后续 fire。
@@ -142,7 +144,8 @@ export function createSchedulingContinuation(args: {
     ) {
       const sessionID = getSessionID(props);
       if (sessionID) inFlight.delete(sessionID);
-      return;
+      return false;
     }
+    return false;
   };
 }

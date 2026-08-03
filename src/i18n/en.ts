@@ -22,6 +22,13 @@ export interface TranslationDict {
   "goalCommand.usage": string;
   "goalCommand.example": string;
   "goalCommand.editPrompt": string;
+  // Scheduling command feedback
+  "schedulingCommand.loop.desc": string;
+  "schedulingCommand.loopStop.desc": string;
+  "schedulingCommand.loopStart": string;
+  "schedulingCommand.loopStopDone": string;
+  "schedulingCommand.loopStopNone": string;
+  "config.scheduling": string;
   // Commands
   "cmd.mot.title": string;
   "cmd.mot.desc": string;
@@ -160,6 +167,13 @@ export const en: TranslationDict = {
   "goalCommand.usage": "Usage: /goal [<objective>|clear|edit|pause|resume]",
   "goalCommand.example": "Example: /goal improve benchmark coverage",
   "goalCommand.editPrompt": "Current goal: {objective}. Edit with /goal <new objective>.",
+
+  "schedulingCommand.loop.desc": "run a prompt on a fixed or self-paced loop in this session",
+  "schedulingCommand.loopStop.desc": "stop all /loop loops in this session",
+  "schedulingCommand.loopStart": "Loop started: {prompt} ({mode})",
+  "schedulingCommand.loopStopDone": "Loop stopped",
+  "schedulingCommand.loopStopNone": "No active loop to stop",
+  "config.scheduling": "Scheduled tasks",
 
   "cmd.mot.title": "My OpenCode Toolkit: Settings",
   "cmd.mot.desc": "Open toolkit settings",

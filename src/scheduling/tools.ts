@@ -3,11 +3,13 @@
 
 import { tool, type ToolDefinition } from "@opencode-ai/plugin";
 import { cronToHuman } from "./cron";
+import type { SchedulingScheduler } from "./scheduler";
 import type { SchedulingStore } from "./store";
 import { DEFAULT_MAX_AGE_DAYS } from "./types";
 
 export interface SchedulingToolsDeps {
   store: SchedulingStore;
+  scheduler: SchedulingScheduler;
   getSessionID: () => string | undefined;
   isSubagent: (sessionID: string) => Promise<boolean>;
 }
@@ -108,10 +110,38 @@ export function cronDeleteTool(deps: SchedulingToolsDeps): ToolDefinition {
   });
 }
 
+export function scheduleWakeupTool(deps: SchedulingToolsDeps): ToolDefinition {
+  return tool({
+    description: `Schedule when to resume work in /loop dynamic mode.
+
+Only works when there is an active dynamic loop in this session with the exact same prompt. Pass the loop prompt back verbatim to continue; omit this call to end the loop. delaySeconds is clamped to [60, 3600]. Set stop: true to end the loop immediately.`,
+    args: {
+      delaySeconds: tool.schema.number().describe("Seconds until wake-up. Clamped to 60-3600."),
+      prompt: tool.schema.string().describe("The /loop prompt to fire on wake-up. Pass it back verbatim to continue."),
+      reason: tool.schema.string().describe("One sentence explaining why this wake-up is scheduled."),
+      stop: tool.schema.boolean().optional().describe("true = end the loop immediately."),
+    },
+    execute: async (args, context) => {
+      const sessionID = deps.getSessionID() ?? context.sessionID;
+      if (await deps.isSubagent(sessionID)) return SUBAGENT_MSG;
+      if (args.stop) {
+        const stopped = deps.scheduler.stopLoopByPrompt(sessionID, args.prompt);
+        return stopped
+          ? `Loop stopped: ${args.prompt}`
+          : `Error: no active dynamic loop for prompt '${args.prompt}'`;
+      }
+      const result = deps.scheduler.scheduleWakeup(sessionID, args.prompt, args.delaySeconds, args.reason);
+      if (!result.ok) return `Error: ${result.error}`;
+      return `Wake-up scheduled for ${new Date(result.fireAt).toLocaleString()} (loop ${result.id}).`;
+    },
+  });
+}
+
 export function createSchedulingTools(deps: SchedulingToolsDeps): Record<string, ToolDefinition> {
   return {
     cron_create: cronCreateTool(deps),
     cron_list: cronListTool(deps),
     cron_delete: cronDeleteTool(deps),
+    schedule_wakeup: scheduleWakeupTool(deps),
   };
 }

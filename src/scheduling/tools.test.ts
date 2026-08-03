@@ -6,7 +6,8 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import type { SchedulingScheduler } from "./scheduler";
 import { createSchedulingStore, type SchedulingStore } from "./store";
 import { createSchedulingTools } from "./tools";
 import type { ToolDefinition } from "@opencode-ai/plugin";
@@ -17,6 +18,17 @@ let isSub = false;
 let currentSessionID = "s1";
 let tools: ReturnType<typeof createSchedulingTools>;
 
+const schedulerMock: SchedulingScheduler = {
+  startLoop: vi.fn(),
+  stopLoop: vi.fn(() => true),
+  stopLoopByPrompt: vi.fn(() => true),
+  stopAllLoops: vi.fn(() => 0),
+  listLoops: vi.fn(() => []),
+  scheduleWakeup: vi.fn(() => ({ ok: true, id: "w0000001", fireAt: 0 } as const)),
+  handleEvent: vi.fn(() => Promise.resolve()),
+  clearSession: vi.fn(),
+};
+
 beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), "sched-tools-"));
   store = createSchedulingStore(dir);
@@ -25,6 +37,7 @@ beforeEach(async () => {
   currentSessionID = "s1";
   tools = createSchedulingTools({
     store,
+    scheduler: schedulerMock,
     getSessionID: () => currentSessionID,
     isSubagent: () => Promise.resolve(isSub),
   });

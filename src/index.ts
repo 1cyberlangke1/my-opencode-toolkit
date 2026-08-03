@@ -1,4 +1,4 @@
-import type { Plugin, PluginModule } from "@opencode-ai/plugin";
+import type { Plugin, PluginModule, ToolDefinition } from "@opencode-ai/plugin";
 
 import { loadConfig } from "./config/load";
 import { createTranslator, resolveLang } from "./i18n";
@@ -9,6 +9,11 @@ import { parseGoalCommand } from "./goal/parse-command";
 import { createEventHandler } from "./notification/event";
 import { createSessionNotification } from "./notification/session-notification";
 import { createTodoReminder } from "./notification/todo-reminder";
+import { loadLoopMaintenancePrompt, parseLoopCommand } from "./scheduling/command";
+import { createSchedulingContinuation } from "./scheduling/continuation";
+import { createSchedulingScheduler } from "./scheduling/scheduler";
+import { createSchedulingStore } from "./scheduling/store";
+import { createSchedulingTools } from "./scheduling/tools";
 
 const server: Plugin = (input) => {
   void input.client.app.log({
@@ -52,11 +57,28 @@ const server: Plugin = (input) => {
     ctx,
   });
 
+  const schedulingStore = createSchedulingStore(input.directory);
+  void schedulingStore.load();
+  const schedulingContinuation = createSchedulingContinuation({
+    store: schedulingStore,
+    ctx,
+  });
+  const schedulingScheduler = createSchedulingScheduler({ ctx });
+
+  const isSubagent = async (sessionID: string): Promise<boolean> => {
+    const session = await input.client.session
+      .get({ path: { id: sessionID } })
+      .then((r) => r.data)
+      .catch(() => undefined);
+    return typeof session?.parentID === "string" && session.parentID.length > 0;
+  };
+
   const event = createEventHandler({
     ctx,
     sessionNotification,
     todoReminder,
     goal: goalContinuation,
+    scheduling: schedulingContinuation,
     hasActiveGoal: (sessionID) => {
       const goal = goalController.getGoal(sessionID);
       return goal !== null && goal.status === "active";
@@ -107,9 +129,9 @@ const server: Plugin = (input) => {
   const hooks: Record<string, unknown> = {
     event,
     config: (cfg: { command?: Record<string, unknown> }) => {
+      const lang = resolveLang(config.lang, process.env);
+      const t = createTranslator(lang);
       if (config.goal.enabled) {
-        const lang = resolveLang(config.lang, process.env);
-        const t = createTranslator(lang);
         cfg.command = {
           ...cfg.command,
           goal: {
@@ -119,37 +141,97 @@ const server: Plugin = (input) => {
           },
         };
       }
+      if (config.scheduling.enabled) {
+        cfg.command = {
+          ...cfg.command,
+          loop: {
+            description: t("schedulingCommand.loop.desc"),
+            template:
+              "The /loop command is handled by the plugin; repeat the requested prompt on a loop.",
+          },
+          "loop-stop": {
+            description: t("schedulingCommand.loopStop.desc"),
+            template: "The /loop-stop command is handled by the plugin; stop all loops.",
+          },
+        };
+      }
     },
     "command.execute.before": async (
       input_: { command: string; sessionID: string; arguments: string },
       output: { parts: Array<Record<string, unknown>> },
     ) => {
-      if (input_.command !== "goal" || !config.goal.enabled) return;
-      if (!input_.sessionID) return;
-      const message = applyGoalCommand(input_.sessionID, input_.arguments);
       const lang = resolveLang(config.lang, process.env);
       const t = createTranslator(lang);
-      await ctx.client.tui.showToast({
-        title: t("goalCommand.title"),
-        message,
-        variant: "info",
-      });
-      output.parts.length = 0;
-      output.parts.push({ type: "text", text: message, synthetic: true });
+
+      if (input_.command === "goal" && config.goal.enabled) {
+        if (!input_.sessionID) return;
+        const message = applyGoalCommand(input_.sessionID, input_.arguments);
+        await ctx.client.tui.showToast({
+          title: t("goalCommand.title"),
+          message,
+          variant: "info",
+        });
+        output.parts.length = 0;
+        output.parts.push({ type: "text", text: message, synthetic: true });
+        return;
+      }
+
+      if (input_.command === "loop" && config.scheduling.enabled) {
+        if (!input_.sessionID) return;
+        const parsed = parseLoopCommand(input_.arguments);
+        let message: string;
+        if (parsed.kind === "invalid") {
+          message = parsed.reason;
+        } else {
+          const prompt =
+            parsed.prompt.length > 0 ? parsed.prompt : loadLoopMaintenancePrompt(input.directory);
+          schedulingScheduler.startLoop(input_.sessionID, prompt, parsed.intervalSeconds);
+          message = t("schedulingCommand.loopStart")
+            .replace("{prompt}", prompt)
+            .replace("{mode}", parsed.intervalSeconds !== undefined ? `${parsed.intervalSeconds}s` : "dynamic");
+        }
+        await ctx.client.tui.showToast({
+          title: t("schedulingCommand.loop.desc"),
+          message,
+          variant: "info",
+        });
+        output.parts.length = 0;
+        output.parts.push({ type: "text", text: message, synthetic: true });
+        return;
+      }
+
+      if (input_.command === "loop-stop" && config.scheduling.enabled) {
+        if (!input_.sessionID) return;
+        const stopped = schedulingScheduler.stopAllLoops(input_.sessionID);
+        const message = stopped > 0 ? t("schedulingCommand.loopStopDone") : t("schedulingCommand.loopStopNone");
+        await ctx.client.tui.showToast({
+          title: t("schedulingCommand.loopStop.desc"),
+          message,
+          variant: "info",
+        });
+        output.parts.length = 0;
+        output.parts.push({ type: "text", text: message, synthetic: true });
+        return;
+      }
     },
   };
+  const tools: Record<string, ToolDefinition> = {};
   if (config.goal.enabled) {
-    hooks.tool = createGoalTools({
-      controller: goalController,
-      getSessionID: () => undefined,
-      isSubagent: async (sessionID) => {
-        const session = await input.client.session
-          .get({ path: { id: sessionID } })
-          .then((r) => r.data)
-          .catch(() => undefined);
-        return typeof session?.parentID === "string" && session.parentID.length > 0;
-      },
-    });
+    Object.assign(tools, createGoalTools({ controller: goalController, getSessionID: () => undefined, isSubagent }));
+  }
+  if (config.scheduling.enabled) {
+    Object.assign(
+      tools,
+      createSchedulingTools({
+        store: schedulingStore,
+        scheduler: schedulingScheduler,
+        getSessionID: () => undefined,
+        isSubagent,
+      }),
+    );
+  }
+  if (Object.keys(tools).length > 0) {
+    hooks.tool = tools;
   }
   return Promise.resolve(hooks);
 };
