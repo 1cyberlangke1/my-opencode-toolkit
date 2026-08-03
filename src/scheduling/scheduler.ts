@@ -122,15 +122,24 @@ export function createSchedulingScheduler(args: {
   /** timer 到点：fire 后按模式决定 next。 */
   const handleFire = (loop: Loop): void => {
     void (async () => {
+      // fire 前记下旧 wakeup 引用：fire（同步 prompt 挂起）期间模型可能 schedule_wakeup 新唤醒，
+      // 恢复后不能误删/覆盖它（否则倒计时变成 fallback 20min）。
+      const hadWakeup = loop.pendingWakeup;
       await fireLoop(loop);
       if (loop.mode === "fixed" && loop.intervalSeconds !== undefined) {
         armLoop(loop, loop.intervalSeconds * 1000);
         return;
       }
       // dynamic：wakeup fire（模型可能再 ScheduleWakeup）→ 等 fallback；fallback fire → 结束。
-      if (loop.pendingWakeup !== undefined) {
-        delete loop.pendingWakeup;
-        armLoop(loop, FALLBACK_WAKEUP_MS);
+      if (hadWakeup !== undefined) {
+        if (loop.pendingWakeup === hadWakeup) {
+          // 未在 fire 期间被新 schedule_wakeup 替换 → 删 + fallback 等模型下次。
+          delete loop.pendingWakeup;
+          armLoop(loop, FALLBACK_WAKEUP_MS);
+        }
+        // 已被模型新 schedule_wakeup 替换 → 保留（timer 已由 schedule_wakeup arm）。
+      } else if (loop.pendingWakeup !== undefined) {
+        // 初始/fallback fire 期间模型新 schedule_wakeup → 保留（不结束、不覆盖）。
       } else {
         stopLoop(loop.sessionID, loop.id);
       }

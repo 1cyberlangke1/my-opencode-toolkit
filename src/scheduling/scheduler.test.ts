@@ -128,6 +128,40 @@ describe("优先级：goal active 时 loop 让路", () => {
   });
 });
 
+describe("fire 期间 schedule_wakeup 不被覆盖", () => {
+  test("注入挂起（同步 prompt）时模型新唤醒保留，不被 fallback/stop 覆盖", async () => {
+    let resolvePrompt: (v: unknown) => void = () => undefined;
+    const pending = new Promise<unknown>((resolve) => {
+      resolvePrompt = resolve;
+    });
+    const promptMock = vi.fn(() => pending);
+    scheduler = createSchedulingScheduler({
+      ctx: {
+        client: {
+          session: {
+            messages: () => Promise.resolve(messages),
+            prompt: promptMock,
+          },
+        },
+      },
+    });
+
+    scheduler.startLoop("s1", "watch"); // dynamic：立即 fire，inject 挂起
+    await vi.advanceTimersByTimeAsync(0); // 推进到注入开始
+
+    const r = scheduler.scheduleWakeup("s1", "watch", 60, "resume"); // fire 挂起期间新唤醒
+    expect(r.ok).toBe(true);
+
+    resolvePrompt(undefined);
+    await vi.advanceTimersByTimeAsync(0); // fire 恢复 → handleFire
+
+    const loop = scheduler.listLoops("s1")[0];
+    expect(loop).toBeDefined(); // 未被 stopLoop 误删
+    expect(loop!.pendingWakeup).toBeDefined(); // 新唤醒保留
+    expect(loop!.nextFireAt).toBe(loop!.pendingWakeup!.fireAt); // 未被 fallback 覆盖成 20min
+  });
+});
+
 describe("loop 生命周期", () => {
   test("同 prompt 重发取消旧 loop（一个 prompt 一个 live loop）", () => {
     scheduler.startLoop("s1", "poll");
