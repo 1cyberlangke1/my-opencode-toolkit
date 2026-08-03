@@ -49,6 +49,8 @@ export interface Loop {
   /** recurring 7 天过期；dynamic loop 也适用。 */
   expiresAt?: number;
   fires: number;
+  /** 下一次 fire 时刻（epoch ms，scheduler 武装 timer 时设置；供 TUI 倒计时）。 */
+  nextFireAt?: number;
   /** dynamic 模式：ScheduleWakeup 设定的待唤醒信息。 */
   pendingWakeup?: Wakeup;
 }

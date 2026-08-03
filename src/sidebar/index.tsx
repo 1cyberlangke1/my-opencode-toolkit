@@ -93,6 +93,15 @@ function goalStatusLabel(status: GoalStatus, tr: Translator): string {
 
 const ORDER = 70;
 
+/** 倒计时格式：`37s` / `4m` / `1m30s`。 */
+function formatCountdown(ms: number): string {
+  const s = Math.max(0, Math.ceil(ms / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  return rem === 0 ? `${m}m` : `${m}m${rem}s`;
+}
+
 export function createSidebarSlot(api: TuiPluginApi, store: ConfigStore): TuiSlotPlugin {
   return {
     order: ORDER,
@@ -443,6 +452,7 @@ function SessionStatsPanel(props: PanelProps) {
                     <span style={{ fg: pal().text }}>{truncate(cronToHumanI18n(job.cron, lang()), 22)}</span>
                     <span style={{ fg: pal().muted }}>
                       {" "}({job.recurring ? t("sidebar.scheduling.recurring") : t("sidebar.scheduling.oneShot")})
+                      {job.nextRunAt !== undefined ? ` ${formatCountdown(job.nextRunAt - now())}` : ""}
                     </span>
                   </text>
                 )}
@@ -454,6 +464,7 @@ function SessionStatsPanel(props: PanelProps) {
                     <span style={{ fg: pal().text }}>{truncate(loop.prompt, 18)}</span>
                     <span style={{ fg: pal().muted }}>
                       {" "}({loop.mode === "dynamic" ? t("sidebar.scheduling.dynamic") : t("sidebar.scheduling.fixed")})
+                      {loop.nextFireAt !== undefined ? ` ${formatCountdown(loop.nextFireAt - now())}` : ""}
                     </span>
                   </text>
                 )}

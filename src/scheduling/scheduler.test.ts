@@ -103,6 +103,31 @@ describe("dynamic loop", () => {
   });
 });
 
+describe("优先级：goal active 时 loop 让路", () => {
+  test("shouldDeferFire=true 时不注入，恢复后下一轮注入", async () => {
+    let defer = true;
+    scheduler = createSchedulingScheduler({
+      ctx: {
+        client: {
+          session: {
+            messages: () => Promise.resolve(messages),
+            prompt: promptMock,
+          },
+        },
+      },
+      shouldDeferFire: () => Promise.resolve(defer),
+    });
+
+    scheduler.startLoop("s1", "poll", 300); // 立即 fire 但被 defer
+    await vi.advanceTimersByTimeAsync(0);
+    expect(promptMock).not.toHaveBeenCalled();
+
+    defer = false;
+    await vi.advanceTimersByTimeAsync(300_000); // 下一轮 fire 恢复注入
+    expect(promptMock).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("loop 生命周期", () => {
   test("同 prompt 重发取消旧 loop（一个 prompt 一个 live loop）", () => {
     scheduler.startLoop("s1", "poll");

@@ -24,6 +24,7 @@ export interface SchedulingTuiSnapshot {
     mode: "fixed" | "dynamic";
     intervalSeconds?: number;
     fires: number;
+    nextFireAt?: number;
   }>;
 }
 
@@ -57,6 +58,7 @@ export function createSchedulingMirror(
         mode: loop.mode,
         ...(loop.intervalSeconds !== undefined ? { intervalSeconds: loop.intervalSeconds } : {}),
         fires: loop.fires,
+        ...(loop.nextFireAt !== undefined ? { nextFireAt: loop.nextFireAt } : {}),
       })),
     };
     const path = mirrorPath(projectDir, sessionID);

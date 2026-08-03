@@ -64,7 +64,13 @@ const server: Plugin = (input) => {
     store: schedulingStore,
     ctx,
   });
-  const schedulingScheduler = createSchedulingScheduler({ ctx });
+  const schedulingScheduler = createSchedulingScheduler({
+    ctx,
+    shouldDeferFire: (sessionID) => {
+      const goal = goalController.getGoal(sessionID);
+      return goal !== null && goal.status === "active";
+    },
+  });
   const schedulingMirror = createSchedulingMirror(input.directory, schedulingStore, schedulingScheduler);
   schedulingStore.onChanged = (sessionID) => {
     schedulingMirror.write(sessionID);

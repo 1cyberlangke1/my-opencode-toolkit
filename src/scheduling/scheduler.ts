@@ -41,8 +41,10 @@ export interface SchedulingScheduler {
 
 export function createSchedulingScheduler(args: {
   ctx: SchedulingContext;
+  /** 返回 true 时本轮 loop fire 让路（如 goal active 优先），loop 保留下轮再试。 */
+  shouldDeferFire?: (sessionID: string) => boolean | Promise<boolean>;
 }): SchedulingScheduler {
-  const { ctx } = args;
+  const { ctx, shouldDeferFire } = args;
   const loops = new Map<string, Loop>();
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
   const inFlight = new Set<string>();
@@ -75,7 +77,11 @@ export function createSchedulingScheduler(args: {
     }
   };
 
-  const fireLoop = (loop: Loop): void => {
+  const fireLoop = async (loop: Loop): Promise<void> => {
+    // 优先级：goal active 时 loop 让路（goal > loop > todo），loop 保留等下次。
+    if (shouldDeferFire !== undefined && (await shouldDeferFire(loop.sessionID))) {
+      return;
+    }
     loop.fires += 1;
     onChanged?.(loop.sessionID);
     void inject(loop.sessionID, `${loop.prompt}\n\n${LOOP_MARKER}`);
@@ -84,6 +90,8 @@ export function createSchedulingScheduler(args: {
   const armLoop = (loop: Loop, delayMs: number): void => {
     const existing = timers.get(loop.id);
     if (existing !== undefined) clearTimeout(existing);
+    loop.nextFireAt = Date.now() + delayMs;
+    onChanged?.(loop.sessionID);
     const handle = setTimeout(() => {
       timers.delete(loop.id);
       handleFire(loop);
@@ -94,18 +102,20 @@ export function createSchedulingScheduler(args: {
 
   /** timer 到点：fire 后按模式决定 next。 */
   const handleFire = (loop: Loop): void => {
-    fireLoop(loop);
-    if (loop.mode === "fixed" && loop.intervalSeconds !== undefined) {
-      armLoop(loop, loop.intervalSeconds * 1000);
-      return;
-    }
-    // dynamic：wakeup fire（模型可能再 ScheduleWakeup）→ 等 fallback；fallback fire → 结束。
-    if (loop.pendingWakeup !== undefined) {
-      delete loop.pendingWakeup;
-      armLoop(loop, FALLBACK_WAKEUP_MS);
-    } else {
-      stopLoop(loop.sessionID, loop.id);
-    }
+    void (async () => {
+      await fireLoop(loop);
+      if (loop.mode === "fixed" && loop.intervalSeconds !== undefined) {
+        armLoop(loop, loop.intervalSeconds * 1000);
+        return;
+      }
+      // dynamic：wakeup fire（模型可能再 ScheduleWakeup）→ 等 fallback；fallback fire → 结束。
+      if (loop.pendingWakeup !== undefined) {
+        delete loop.pendingWakeup;
+        armLoop(loop, FALLBACK_WAKEUP_MS);
+      } else {
+        stopLoop(loop.sessionID, loop.id);
+      }
+    })();
   };
 
   const startLoop = (sessionID: string, prompt: string, intervalSeconds?: number): Loop => {
@@ -125,7 +135,7 @@ export function createSchedulingScheduler(args: {
       fires: 0,
     };
     loops.set(loop.id, loop);
-    fireLoop(loop);
+    void fireLoop(loop);
     if (loop.mode === "fixed" && loop.intervalSeconds !== undefined) {
       armLoop(loop, loop.intervalSeconds * 1000);
     } else {
