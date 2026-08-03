@@ -19,6 +19,7 @@ let currentSessionID = "s1";
 let tools: ReturnType<typeof createSchedulingTools>;
 
 const schedulerMock: SchedulingScheduler = {
+  onChanged: undefined,
   startLoop: vi.fn(),
   stopLoop: vi.fn(() => true),
   stopLoopByPrompt: vi.fn(() => true),
