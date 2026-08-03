@@ -423,48 +423,42 @@ function SessionStatsPanel(props: PanelProps) {
           <text style={{ fg: pal().border }}>{sep()}</text>
         </Show>
 
-        {/* ── Scheduled 面板（定时任务：cron + loop，独立可折叠）── */}
-        <Show when={store.get().scheduling.enabled && scheduling() !== null}>
+        {/* ── Scheduled 面板（定时任务：cron + loop，独立可折叠；无任务不显示）── */}
+        <Show
+          when={
+            store.get().scheduling.enabled &&
+            ((scheduling()?.jobs.length ?? 0) > 0 || (scheduling()?.loops.length ?? 0) > 0)
+          }
+        >
           <text onMouseUp={() => toggleBool(schedulingOpen, setSchedulingOpen, KV_KEYS.schedulingOpen)}>
             <span style={{ fg: pal().muted }}>{schedulingOpen() ? "▼ " : "▶ "}</span>
             <span style={{ fg: pal().primary }}>{t("sidebar.scheduling.title")}</span>
           </text>
           <Show when={schedulingOpen()}>
-            <Show
-              when={
-                (scheduling()?.jobs.length ?? 0) > 0 || (scheduling()?.loops.length ?? 0) > 0
-              }
-              fallback={
-                <box paddingLeft={2}>
-                  <text style={{ fg: pal().muted }}>{t("sidebar.scheduling.empty")}</text>
-                </box>
-              }
-            >
-              <box paddingLeft={2} flexDirection="column" gap={0}>
-                <For each={scheduling()?.jobs ?? []}>
-                  {(job) => (
-                    <text>
-                      <span style={{ fg: pal().muted }}>⏰ [{t("sidebar.scheduling.cron")}] </span>
-                      <span style={{ fg: pal().text }}>{truncate(cronToHumanI18n(job.cron, lang()), 22)}</span>
-                      <span style={{ fg: pal().muted }}>
-                        {" "}({job.recurring ? t("sidebar.scheduling.recurring") : t("sidebar.scheduling.oneShot")})
-                      </span>
-                    </text>
-                  )}
-                </For>
-                <For each={scheduling()?.loops ?? []}>
-                  {(loop) => (
-                    <text>
-                      <span style={{ fg: pal().muted }}>🔁 [{t("sidebar.scheduling.loop")}] </span>
-                      <span style={{ fg: pal().text }}>{truncate(loop.prompt, 18)}</span>
-                      <span style={{ fg: pal().muted }}>
-                        {" "}({loop.mode === "dynamic" ? t("sidebar.scheduling.dynamic") : t("sidebar.scheduling.fixed")})
-                      </span>
-                    </text>
-                  )}
-                </For>
-              </box>
-            </Show>
+            <box paddingLeft={2} flexDirection="column" gap={0}>
+              <For each={scheduling()?.jobs ?? []}>
+                {(job) => (
+                  <text>
+                    <span style={{ fg: pal().muted }}>⏰ [{t("sidebar.scheduling.cron")}] </span>
+                    <span style={{ fg: pal().text }}>{truncate(cronToHumanI18n(job.cron, lang()), 22)}</span>
+                    <span style={{ fg: pal().muted }}>
+                      {" "}({job.recurring ? t("sidebar.scheduling.recurring") : t("sidebar.scheduling.oneShot")})
+                    </span>
+                  </text>
+                )}
+              </For>
+              <For each={scheduling()?.loops ?? []}>
+                {(loop) => (
+                  <text>
+                    <span style={{ fg: pal().muted }}>🔁 [{t("sidebar.scheduling.loop")}] </span>
+                    <span style={{ fg: pal().text }}>{truncate(loop.prompt, 18)}</span>
+                    <span style={{ fg: pal().muted }}>
+                      {" "}({loop.mode === "dynamic" ? t("sidebar.scheduling.dynamic") : t("sidebar.scheduling.fixed")})
+                    </span>
+                  </text>
+                )}
+              </For>
+            </box>
           </Show>
           <text style={{ fg: pal().border }}>{sep()}</text>
         </Show>
