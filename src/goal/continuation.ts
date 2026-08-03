@@ -13,7 +13,7 @@ interface GoalContinuationContext {
     session: {
       messages(id: string): Promise<
         Array<{
-          info: Record<string, unknown>;
+          info?: Record<string, unknown>;
           parts?: Array<{ type?: string; text?: string; state?: { status?: string } }>;
         }> | undefined
       >;
@@ -78,7 +78,7 @@ async function lastMessageIsUser(ctx: GoalContinuationContext, sessionID: string
   const messages = await ctx.client.session.messages(sessionID).catch(() => undefined);
   if (!messages || messages.length === 0) return false;
   const last = messages.at(-1);
-  return last?.info.role === "user";
+  return last?.info?.role === "user";
 }
 
 export function createGoalContinuation(args: {

@@ -7,7 +7,7 @@ export interface GoalAccountingContext {
       messages(
         id: string,
       ): Promise<
-        Array<{ info: Record<string, unknown>; parts?: Array<{ type?: string; text?: string }> }> | undefined
+        Array<{ info?: Record<string, unknown>; parts?: Array<{ type?: string; text?: string }> }> | undefined
       >;
     };
   };
@@ -45,7 +45,8 @@ export function createGoalAccounting(): {
     let input = 0;
     let output = 0;
     for (const message of messages) {
-      if (message.info.role !== "assistant") continue;
+      // 防御：真实消息可能缺 info（子代理/工具消息等），缺了就跳过而非抛错中断整个续作。
+      if (message.info?.role !== "assistant") continue;
       const tokens = message.info.tokens as { input?: number; output?: number } | undefined;
       if (!tokens) continue;
       input += typeof tokens.input === "number" ? tokens.input : 0;

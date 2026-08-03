@@ -14,7 +14,7 @@ interface TodoReminderContext {
     session: {
       messages(id: string): Promise<
         Array<{
-          info: Record<string, unknown>;
+          info?: Record<string, unknown>;
           parts?: Array<{ type?: string; text?: string; metadata?: Record<string, unknown> }>;
         }> | undefined
       >;
@@ -64,7 +64,7 @@ async function resolveSessionAgent(ctx: TodoReminderContext, sessionID: string):
     const messages = await ctx.client.session.messages(sessionID);
     if (!messages || messages.length === 0) return undefined;
     const last = messages.at(-1);
-    const agent = last?.info.agent;
+    const agent = last?.info?.agent;
     return typeof agent === "string" && agent.length > 0 ? agent : undefined;
   } catch {
     return undefined;
@@ -79,10 +79,10 @@ async function lastAssistantMessageWasAborted(
   try {
     const messages = await ctx.client.session.messages(sessionID);
     if (!messages || messages.length === 0) return false;
-    const assistantMessages = messages.filter((message) => message.info.role === "assistant");
+    const assistantMessages = messages.filter((message) => message.info?.role === "assistant");
     if (assistantMessages.length === 0) return false;
     const last = assistantMessages.at(-1);
-    const error = last?.info.error;
+    const error = last?.info?.error;
     if (!error || typeof error !== "object") return false;
     const name = (error as Record<string, unknown>).name;
     return name === "MessageAbortedError" || name === "AbortError";
@@ -94,14 +94,15 @@ async function lastAssistantMessageWasAborted(
 /** True when the last message is real user input (not an injected continuation). */
 function lastMessageIsUserInput(
   messages: Array<{
-    info: Record<string, unknown>;
+    info?: Record<string, unknown>;
     parts?: Array<{ type?: string; text?: string; metadata?: Record<string, unknown> }>;
   }>,
 ): boolean {
   if (messages.length === 0) return false;
   const last = messages.at(-1);
   if (!last) return false;
-  const role = last.info.role;
+  // 防御：消息可能缺 info，缺了就视为非用户输入（不挡续作）。
+  const role = last.info?.role;
   if (role !== "user") return false;
   const hasMarker = (last.parts ?? []).some(
     (part) =>

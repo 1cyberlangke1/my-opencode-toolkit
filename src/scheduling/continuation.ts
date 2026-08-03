@@ -16,7 +16,10 @@ export interface SchedulingContext {
   client: {
     session: {
       messages(id: string): Promise<
-        Array<{ info: Record<string, unknown>; parts?: Array<{ type?: string; text?: string; state?: { status?: string } }> }> | undefined
+        Array<{
+          info?: Record<string, unknown>;
+          parts?: Array<{ type?: string; text?: string; state?: { status?: string } }>;
+        }> | undefined
       >;
       prompt(
         id: string,
@@ -56,7 +59,7 @@ async function lastMessageIsUser(ctx: SchedulingContext, sessionID: string): Pro
   const messages = await ctx.client.session.messages(sessionID).catch(() => undefined);
   if (!messages || messages.length === 0) return false;
   const last = messages.at(-1);
-  return last?.info.role === "user";
+  return last?.info?.role === "user";
 }
 
 export function createSchedulingContinuation(args: {

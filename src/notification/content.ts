@@ -9,7 +9,7 @@ interface MessageInfo {
 }
 
 interface MessageEntry {
-  info: MessageInfo;
+  info?: MessageInfo;
   parts: Array<{ type: string; text?: string }>;
 }
 
@@ -53,7 +53,8 @@ function findLastMessage(
   for (let index = messages.length - 1; index >= 0; index--) {
     const message = messages[index];
     if (message === undefined) continue;
-    if (message.info.role !== role) continue;
+    // 防御：消息可能缺 info，缺了跳过（不抛错中断通知链路）。
+    if (message.info?.role !== role) continue;
     if (role === "assistant" && message.info.error) continue;
     if (!extractMessageText(message)) continue;
     return message;

@@ -52,7 +52,7 @@ export function createSchedulingScheduler(args: {
     const messages = await ctx.client.session.messages(sessionID).catch(() => undefined);
     if (!messages || messages.length === 0) return false;
     const last = messages.at(-1);
-    return last?.info.role === "user";
+    return last?.info?.role === "user";
   }
 
   const inject = async (sessionID: string, text: string): Promise<boolean> => {
