@@ -33,6 +33,11 @@ export interface GoalConfig {
   enabled: boolean;
 }
 
+export interface SchedulingConfig {
+  /** Master toggle for scheduled tasks (cron/loop, default: true). Equivalent to CLAUDE_CODE_DISABLE_CRON. */
+  enabled: boolean;
+}
+
 export interface SidebarConfig {
   /** Master toggle for the sidebar panel (default: true) */
   enabled: boolean;
@@ -53,6 +58,7 @@ export interface ToolkitConfig {
   notification: NotificationConfig;
   todoReminder: TodoReminderConfig;
   goal: GoalConfig;
+  scheduling: SchedulingConfig;
   sidebar: SidebarConfig;
 }
 
@@ -86,6 +92,9 @@ export const DEFAULT_CONFIG: ToolkitConfig = {
     message: DEFAULT_TODO_REMINDER_MESSAGE,
   },
   goal: {
+    enabled: true,
+  },
+  scheduling: {
     enabled: true,
   },
   sidebar: {

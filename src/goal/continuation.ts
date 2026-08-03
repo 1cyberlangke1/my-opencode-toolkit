@@ -90,6 +90,17 @@ export function createGoalContinuation(args: {
   const runStates = createGoalRunStateStore();
   const accounting = createGoalAccounting();
   const inFlight = new Set<string>();
+  const lastAccountAt = new Map<string, number>();
+  const ACCOUNT_THROTTLE_MS = 2000;
+
+  /** 实时记账：每轮消息/工具完成后累计 token+时间（throttle 防高频读全量消息）。 */
+  const accountThrottled = async (sessionID: string): Promise<void> => {
+    const now = Date.now();
+    const last = lastAccountAt.get(sessionID);
+    if (last !== undefined && now - last < ACCOUNT_THROTTLE_MS) return;
+    lastAccountAt.set(sessionID, now);
+    await accounting.account(ctx, sessionID, controller);
+  };
 
   const promptForKind = (goal: Goal, kind: "continuation" | "budget_limit" | "objective_updated"): string => {
     switch (kind) {
@@ -224,12 +235,14 @@ export function createGoalContinuation(args: {
       if (sessionID) {
         runStates.clear(sessionID);
         accounting.clear(sessionID);
+        lastAccountAt.delete(sessionID);
       }
       return;
     }
 
     // Fallback: activity events release the in-flight flag (todo-style), so a
     // hanging synchronous prompt does not block the next idle continuation.
+    // 同时实时记账：每轮消息更新/工具执行后累计 token+时间（throttle 防高频）。
     if (
       event.type === "message.updated" ||
       event.type === "message.part.updated" ||
@@ -238,7 +251,12 @@ export function createGoalContinuation(args: {
       event.type === "tool.execute.after"
     ) {
       const sessionID = getSessionID(props);
-      if (sessionID) inFlight.delete(sessionID);
+      if (sessionID) {
+        inFlight.delete(sessionID);
+        if (event.type === "message.updated" || event.type === "tool.execute.after") {
+          await accountThrottled(sessionID);
+        }
+      }
       return;
     }
   };

@@ -173,6 +173,16 @@ function SessionStatsPanel(props: PanelProps) {
     return base + Math.max(0, liveSeconds) * 1000;
   };
 
+  /** Live token count: active 时按记账平均速率外推（与时间外推对称，数字实时走）。 */
+  const goalTokens = (): number => {
+    const g = goal();
+    if (!g) return 0;
+    if (g.status !== "active" || g.updatedAt === undefined) return g.tokensUsed;
+    const rate = g.timeUsedSeconds > 0 ? g.tokensUsed / g.timeUsedSeconds : 0;
+    const liveSeconds = Math.floor(now() / 1000) - g.updatedAt;
+    return g.tokensUsed + Math.round(rate * Math.max(0, liveSeconds));
+  };
+
   function refreshStats(): void {
     const messages = getMessages(sessionId);
     setStats(computeSessionStats(messages, getParts));
@@ -377,7 +387,7 @@ function SessionStatsPanel(props: PanelProps) {
                 <text>
                   <span style={{ fg: pal().text }}>{padRight(`${t("sidebar.goal.tokens")}:`, 14)}</span>
                   <span style={{ fg: pal().muted }}>
-                    {formatTokens(goal()!.tokensUsed)}
+                    {formatTokens(goalTokens())}
                     {goal()!.tokenBudget !== undefined ? ` / ${formatTokens(goal()!.tokenBudget as number)}` : " / unbounded"}
                   </span>
                 </text>

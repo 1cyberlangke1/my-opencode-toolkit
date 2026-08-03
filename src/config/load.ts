@@ -2,7 +2,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { readFileSync } from "node:fs";
 
-import { DEFAULT_CONFIG, type GoalConfig, type NotificationConfig, type SidebarConfig, type TodoReminderConfig, type ToolkitConfig } from "./types";
+import { DEFAULT_CONFIG, type GoalConfig, type NotificationConfig, type SchedulingConfig, type SidebarConfig, type TodoReminderConfig, type ToolkitConfig } from "./types";
 import { isBoolean, isLang, isPositiveNumber } from "./types";
 
 /** Global config file path shared between server and TUI plugins. */
@@ -52,6 +52,17 @@ function parseGoal(value: unknown): GoalConfig {
   return result;
 }
 
+function parseScheduling(value: unknown): SchedulingConfig {
+  if (typeof value !== "object" || value === null) {
+    return { ...DEFAULT_CONFIG.scheduling };
+  }
+
+  const raw = value as Record<string, unknown>;
+  const result: SchedulingConfig = { ...DEFAULT_CONFIG.scheduling };
+  if (isBoolean(raw.enabled)) result.enabled = raw.enabled;
+  return result;
+}
+
 function parseSidebar(value: unknown): SidebarConfig {
   if (typeof value !== "object" || value === null) {
     return { ...DEFAULT_CONFIG.sidebar };
@@ -79,6 +90,7 @@ export function parseConfig(raw: unknown): ToolkitConfig {
   result.notification = parseNotification(obj.notification);
   result.todoReminder = parseTodoReminder(obj.todoReminder);
   result.goal = parseGoal(obj.goal);
+  result.scheduling = parseScheduling(obj.scheduling);
   result.sidebar = parseSidebar(obj.sidebar);
   return result;
 }
