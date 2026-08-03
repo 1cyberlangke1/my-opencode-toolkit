@@ -18,3 +18,5 @@ PLAN*.md
 .claude/
 .opencode/
 .opencode-toolkit/
+# vitest coverage
+coverage/
