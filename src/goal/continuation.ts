@@ -129,10 +129,13 @@ export function createGoalContinuation(args: {
     if (inFlight.has(sessionID)) return false;
     inFlight.add(sessionID);
     try {
-      await ctx.client.session.prompt(sessionID, {
+      // 消息发送后立即弹 toast（不等 prompt resolve——同步 prompt 会挂起到 AI 回复完，
+      // 否则 toast 延迟到回复结束才弹，主人期望注入即弹，对齐 scheduling/continuation）。
+      const pending = ctx.client.session.prompt(sessionID, {
         parts: [{ type: "text", text, metadata: { goalContinuation: true } }],
       });
       showInjectedToast();
+      await pending;
       return true;
     } catch {
       return false;

@@ -22,7 +22,7 @@ const activeGoal = {
   updatedAt: 0,
 };
 
-function setup() {
+function setup(options?: { prompt?: () => Promise<unknown> }) {
   const prompts: string[] = [];
   let messages: Array<{
     info?: Record<string, unknown>;
@@ -35,6 +35,8 @@ function setup() {
     accountUsage: vi.fn(),
   };
 
+  const showToast = vi.fn(() => Promise.resolve());
+
   const goalContinuation: GoalContinuation = createGoalContinuation({
     controller: controller as unknown as GoalController,
     ctx: {
@@ -43,10 +45,10 @@ function setup() {
           messages: vi.fn(() => Promise.resolve(messages)),
           prompt: vi.fn((_id: string, body: { parts: Array<{ text: string }> }) => {
             prompts.push(body.parts[0]!.text);
-            return Promise.resolve();
+            return options?.prompt ? options.prompt() : Promise.resolve();
           }),
         },
-        tui: { showToast: vi.fn(() => Promise.resolve()) },
+        tui: { showToast },
       },
       loadConfigOverride: () => DEFAULT_CONFIG,
     },
@@ -71,7 +73,7 @@ function setup() {
     messages = [message];
   };
 
-  return { goalContinuation, controller, prompts, fire, setLastMessage };
+  return { goalContinuation, controller, prompts, fire, setLastMessage, showToast };
 }
 
 describe("goal runState 锁死标志", () => {
@@ -130,6 +132,27 @@ describe("goal runState 锁死标志", () => {
     await fire("message.updated");
     await fire("session.idle");
     expect(prompts).toHaveLength(0);
+  });
+});
+
+describe("goal 注入 toast", () => {
+  test("注入时 toast 立即弹出（不等 prompt resolve）", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { showToast, fire, setLastMessage } = setup({ prompt: () => gate });
+    setLastMessage("assistant");
+
+    // prompt 挂起中（同步 prompt 要等 AI 回复完才 resolve）：fire 不返回，但 toast 应立即弹出。
+    const idlePromise = fire("session.idle");
+    // 放行微任务链（account → lastMessageIsUser → inject → toast），此时 prompt 仍挂起。
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(showToast).toHaveBeenCalledTimes(1);
+
+    release();
+    await idlePromise;
+    expect(showToast).toHaveBeenCalledTimes(1);
   });
 });
 
