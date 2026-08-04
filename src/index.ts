@@ -118,6 +118,9 @@ const server: Plugin = (input) => {
     switch (parsed.kind) {
       case "set": {
         goalController.setGoal(sessionID, parsed.objective);
+        // 新目标 = 全新开始：清掉旧会话残留的锁死标志（如 completed 后打断残留 wasCancelled），
+        // 否则新 active goal 会被旧标志挡死永不续作。
+        goalContinuation.resetRunState(sessionID);
         return `Goal set: ${parsed.objective}`;
       }
       case "pause": {

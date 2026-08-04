@@ -85,7 +85,12 @@ export function createGoalController(options: GoalControllerOptions) {
     },
 
     pauseGoal(sessionID: string): Goal | null {
-      const goal = setGoalStatus(storeRef(sessionID), "paused");
+      const ref = storeRef(sessionID);
+      // 只允许 active → paused：无 goal 或已 complete/blocked/budget_limited/paused 等非 active 态
+      // 不覆写（否则打断时会把已完成的目标强制改成「已暂停」并误弹「目标已暂停」toast）。
+      const existing = readGoal(ref);
+      if (existing === null || existing.status !== "active") return null;
+      const goal = setGoalStatus(ref, "paused");
       if (goal !== null) writeTuiMirror(sessionID, goal);
       return goal;
     },

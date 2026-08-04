@@ -22,7 +22,7 @@ const activeGoal = {
   updatedAt: 0,
 };
 
-function setup(options?: { prompt?: () => Promise<unknown> }) {
+function setup(options?: { prompt?: () => Promise<unknown>; pauseGoalResult?: typeof activeGoal | null }) {
   const prompts: string[] = [];
   let messages: Array<{
     info?: Record<string, unknown>;
@@ -31,7 +31,9 @@ function setup(options?: { prompt?: () => Promise<unknown> }) {
 
   const controller = {
     getGoal: vi.fn<() => typeof activeGoal | null>(() => activeGoal),
-    pauseGoal: vi.fn(),
+    // 模拟真实 controller.pauseGoal 的守卫：非 active 态（含 complete/无 goal）返回 null，
+    // handleSessionError 据此不弹「目标已暂停」toast。
+    pauseGoal: vi.fn(() => options?.pauseGoalResult ?? null),
     accountUsage: vi.fn(),
   };
 
@@ -186,5 +188,34 @@ describe("goal lastMessageIsUser marker 判断", () => {
     const { prompts, fire } = setup();
     await fire("session.idle");
     expect(prompts).toHaveLength(1);
+  });
+});
+
+describe("goal 打断/没钱暂停：非 active 态不覆写不弹 toast", () => {
+  test("goal 已 complete（pauseGoal 返回 null）时 abort 不弹「目标已暂停」toast", async () => {
+    const { controller, fire, setLastMessage, showToast } = setup({ pauseGoalResult: null });
+    setLastMessage("assistant");
+
+    await fire("session.error", "s1", { name: "MessageAbortedError" });
+    expect(controller.pauseGoal).toHaveBeenCalledWith("s1");
+    // 守卫：pauseGoal 返回 null（已 complete/无 goal）→ 不弹 toast。
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  test("goal 已 complete（pauseGoal 返回 null）时 insufficient_funds 不弹 toast", async () => {
+    const { controller, fire, setLastMessage, showToast } = setup({ pauseGoalResult: null });
+    setLastMessage("assistant");
+
+    await fire("session.error", "s1", { name: "InsufficientQuotaError" });
+    expect(controller.pauseGoal).toHaveBeenCalledWith("s1");
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  test("active goal 被打断时 pauseGoal 返回 goal → 弹「目标已暂停」toast", async () => {
+    const { fire, setLastMessage, showToast } = setup({ pauseGoalResult: activeGoal });
+    setLastMessage("assistant");
+
+    await fire("session.error", "s1", { name: "MessageAbortedError" });
+    expect(showToast).toHaveBeenCalledTimes(1);
   });
 });
