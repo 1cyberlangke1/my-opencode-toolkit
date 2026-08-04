@@ -67,7 +67,7 @@ beforeEach(async () => {
     ctx,
     sessionNotification: null,
     todoReminder,
-    goal: goalContinuation,
+    goal: goalContinuation.handler,
     scheduling: schedulingContinuation,
     hasActiveGoal: (id) => {
       const goal = goalController.getGoal(id);

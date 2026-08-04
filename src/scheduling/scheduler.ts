@@ -60,7 +60,12 @@ export function createSchedulingScheduler(args: {
     const messages = await ctx.client.session.messages(sessionID).catch(() => undefined);
     if (!messages || messages.length === 0) return false;
     const last = messages.at(-1);
-    return last?.info?.role === "user";
+    if (last?.info?.role !== "user") return false;
+    // 注入的 loop 消息带 LOOP_MARKER，不算「用户输入」——否则注入后未回复会死锁（对齐 todo/goal）。
+    const hasMarker = (last.parts ?? []).some(
+      (part) => part.type === "text" && typeof part.text === "string" && part.text.includes(LOOP_MARKER),
+    );
+    return !hasMarker;
   }
 
   const inject = async (sessionID: string, text: string): Promise<boolean> => {

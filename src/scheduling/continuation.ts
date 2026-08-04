@@ -64,12 +64,17 @@ function buildFirePrompt(job: ScheduledJob, now: Date): string {
   return `Running scheduled task (${formatFireTime(now)})\n\n${job.prompt}\n\n${CRON_MARKER}`;
 }
 
-/** 末条消息是 user（上次注入还没被 AI 回复）→ 跳过，防重复注入。 */
+/** 末条消息是真实用户输入（上次注入还没被 AI 回复）→ 跳过，防重复注入。 */
 async function lastMessageIsUser(ctx: SchedulingContext, sessionID: string): Promise<boolean> {
   const messages = await ctx.client.session.messages(sessionID).catch(() => undefined);
   if (!messages || messages.length === 0) return false;
   const last = messages.at(-1);
-  return last?.info?.role === "user";
+  if (last?.info?.role !== "user") return false;
+  // 注入的 cron 消息带 CRON_MARKER，不算「用户输入」——否则注入后未回复会死锁（对齐 todo/goal）。
+  const hasMarker = (last.parts ?? []).some(
+    (part) => part.type === "text" && typeof part.text === "string" && part.text.includes(CRON_MARKER),
+  );
+  return !hasMarker;
 }
 
 /** 读会话末条消息的 agent（plan 特判用，对齐 todo 的 resolveSessionAgent）。 */

@@ -19,6 +19,7 @@ export interface TranslationDict {
   "goalCommand.show": string;
   "goalCommand.injected": string;
   "goalCommand.description": string;
+  "goalCommand.commandDone": string;
   "goalCommand.usage": string;
   "goalCommand.example": string;
   "goalCommand.editPrompt": string;
@@ -196,6 +197,7 @@ export const en: TranslationDict = {
   "goalCommand.show": "Goal ({status}): {objective}",
   "goalCommand.injected": "Goal continuation injected",
   "goalCommand.description": "set or view the goal for a long-running task",
+  "goalCommand.commandDone": "Goal command processed",
   "goalCommand.usage": "Usage: /goal [<objective>|clear|edit|pause|resume]",
   "goalCommand.example": "Example: /goal improve benchmark coverage",
   "goalCommand.editPrompt": "Current goal: {objective}. Edit with /goal <new objective>.",

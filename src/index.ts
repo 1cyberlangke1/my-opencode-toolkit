@@ -53,7 +53,6 @@ const server: Plugin = (input) => {
 
   const sessionNotification = createSessionNotification(ctx);
   const todoReminder = createTodoReminder(ctx);
-
   const goalController = createGoalController({ projectDir: input.directory });
   const goalContinuation = createGoalContinuation({
     controller: goalController,
@@ -101,7 +100,7 @@ const server: Plugin = (input) => {
     ctx,
     sessionNotification,
     todoReminder,
-    goal: goalContinuation,
+    goal: goalContinuation.handler,
     scheduling: schedulingContinuation,
     hasActiveGoal: (sessionID) => {
       const goal = goalController.getGoal(sessionID);
@@ -113,41 +112,39 @@ const server: Plugin = (input) => {
   // 项目已有 .gitignore 时，自动确保 .opencode-toolkit/ 被忽略（配置可关）。
   if (config.autoGitignore) ensureToolkitGitignore(input.directory);
 
-  /** Apply a parsed /goal command directly to the controller; returns a feedback message. */
+  /** Apply a parsed /goal command directly to the controller; returns an English feedback message so the AI knows the concrete goal. */
   const applyGoalCommand = (sessionID: string, arguments_: string): string => {
-    const lang = resolveLang(config.lang, process.env);
-    const t = createTranslator(lang);
     const parsed = parseGoalCommand(arguments_);
     switch (parsed.kind) {
       case "set": {
         goalController.setGoal(sessionID, parsed.objective);
-        return t("goalCommand.set").replace("{objective}", parsed.objective);
+        return `Goal set: ${parsed.objective}`;
       }
       case "pause": {
-        goalController.pauseGoal(sessionID);
-        return t("goalCommand.paused");
+        const goal = goalController.pauseGoal(sessionID);
+        return goal !== null ? `Goal paused. Current goal: ${goal.objective}` : "No active goal";
       }
       case "resume": {
-        goalController.resumeGoal(sessionID);
-        return t("goalCommand.resumed");
+        const goal = goalController.resumeGoal(sessionID);
+        // 清除 wasCancelled/tokenLimitDetected 等锁死标志，否则 resume 后 idle 仍不续作。
+        goalContinuation.resetRunState(sessionID);
+        return goal !== null ? `Goal resumed. Current goal: ${goal.objective}` : "No active goal";
       }
       case "clear": {
         goalController.clearGoal(sessionID);
-        return t("goalCommand.cleared");
+        return "Goal cleared";
       }
       case "edit": {
         const goal = goalController.getGoal(sessionID);
         if (goal === null) {
-          return `${t("goalCommand.usage")}\n${t("goalCommand.example")}`;
+          return "Usage: /goal [<objective>|clear|edit|pause|resume]\nExample: /goal improve benchmark coverage";
         }
-        return `${t("goalCommand.editPrompt").replace("{objective}", goal.objective)}\n${t("goalCommand.usage")}`;
+        return `Current goal: ${goal.objective}. Edit with /goal <new objective>.\nUsage: /goal [<objective>|clear|edit|pause|resume]`;
       }
       case "show": {
         const goal = goalController.getGoal(sessionID);
-        if (goal === null) return t("goalCommand.showNone");
-        return t("goalCommand.show")
-          .replace("{status}", goal.status)
-          .replace("{objective}", goal.objective);
+        if (goal === null) return "No active goal";
+        return `Goal (${goal.status}): ${goal.objective}`;
       }
     }
   };
@@ -194,10 +191,12 @@ const server: Plugin = (input) => {
 
       if (input_.command === "goal" && config.goal.enabled) {
         if (!input_.sessionID) return;
+        // AI 输出（output.parts）：英文 + 具体目标内容，让 AI 明确知道目标（给 LLM 的提示固定英文）。
         const message = applyGoalCommand(input_.sessionID, input_.arguments);
+        // toast（给用户看）：走 i18n。
         await ctx.client.tui.showToast({
           title: t("goalCommand.title"),
-          message,
+          message: t("goalCommand.commandDone"),
           variant: "info",
         });
         output.parts.length = 0;

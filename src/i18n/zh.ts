@@ -20,6 +20,7 @@ export const zh: TranslationDict = {
   "goalCommand.show": "目标（{status}）：{objective}",
   "goalCommand.injected": "已注入目标续作",
   "goalCommand.description": "为长期运行的任务设置或查看目标",
+  "goalCommand.commandDone": "目标命令已处理",
   "goalCommand.usage": "用法：/goal [<目标>|clear|edit|pause|resume]",
   "goalCommand.example": "示例：/goal 提升基准测试覆盖率",
     "goalCommand.editPrompt": "当前目标：{objective}。用 /goal <新目标> 修改。",

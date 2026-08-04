@@ -73,18 +73,30 @@ function createGoalRunStateStore(): GoalRunStateStore {
   };
 }
 
-/** True when the last message is a user message (previous continuation not yet answered, or waiting on the user). */
+/** True when the last message is real user input (not an injected continuation). */
 async function lastMessageIsUser(ctx: GoalContinuationContext, sessionID: string): Promise<boolean> {
   const messages = await ctx.client.session.messages(sessionID).catch(() => undefined);
   if (!messages || messages.length === 0) return false;
   const last = messages.at(-1);
-  return last?.info?.role === "user";
+  if (last?.info?.role !== "user") return false;
+  // 注入的续作消息带 GOAL_MARKER，不算「用户输入」——否则注入后 AI 未回复会永久死锁（对齐 todo）。
+  const hasMarker = (last.parts ?? []).some(
+    (part) => part.type === "text" && typeof part.text === "string" && part.text.includes(GOAL_MARKER),
+  );
+  return !hasMarker;
+}
+
+export interface GoalContinuation {
+  /** 事件入口：idle 续作 / session.error 分类 / 活动事件重置锁死标志。 */
+  handler: (input: EventInput) => Promise<void>;
+  /** 清除会话的锁死标志（wasCancelled/tokenLimitDetected/insufficientFundsDetected），/goal resume 等显式恢复时调用。 */
+  resetRunState: (sessionID: string) => void;
 }
 
 export function createGoalContinuation(args: {
   controller: GoalController;
   ctx: GoalContinuationContext;
-}): (input: EventInput) => Promise<void> {
+}): GoalContinuation {
   const { controller, ctx } = args;
   const loadConfigFn = ctx.loadConfigOverride ?? loadConfig;
   const runStates = createGoalRunStateStore();
@@ -212,52 +224,71 @@ export function createGoalContinuation(args: {
     state.consecutiveFailures += 1;
   };
 
-  return async (input: EventInput): Promise<void> => {
-    const { event } = input;
-    const props = event.properties as Record<string, unknown> | undefined;
+  /** 显式恢复（如 /goal resume）时清除锁死标志，否则 resume 后 idle 仍被 wasCancelled 等挡死。 */
+  const resetRunState = (sessionID: string): void => {
+    // runStates.get 总是返回 state（不存在则创建），无需判空。
+    const state = runStates.get(sessionID);
+    state.wasCancelled = false;
+    state.tokenLimitDetected = false;
+    state.insufficientFundsDetected = false;
+  };
 
-    if (event.type === "session.idle") {
-      const sessionID = getSessionID(props);
-      if (!sessionID) return;
-      await handleSessionIdle(sessionID);
-      return;
-    }
+  return {
+    handler: async (input: EventInput): Promise<void> => {
+      const { event } = input;
+      const props = event.properties as Record<string, unknown> | undefined;
 
-    if (event.type === "session.error") {
-      const sessionID = getSessionID(props);
-      if (!sessionID) return;
-      handleSessionError(sessionID, props?.error);
-      return;
-    }
-
-    if (event.type === "session.deleted") {
-      const sessionID = getSessionID(props);
-      if (sessionID) {
-        runStates.clear(sessionID);
-        accounting.clear(sessionID);
-        lastAccountAt.delete(sessionID);
+      if (event.type === "session.idle") {
+        const sessionID = getSessionID(props);
+        if (!sessionID) return;
+        await handleSessionIdle(sessionID);
+        return;
       }
-      return;
-    }
 
-    // Fallback: activity events release the in-flight flag (todo-style), so a
-    // hanging synchronous prompt does not block the next idle continuation.
-    // 同时实时记账：每轮消息更新/工具执行后累计 token+时间（throttle 防高频）。
-    if (
-      event.type === "message.updated" ||
-      event.type === "message.part.updated" ||
-      event.type === "message.part.delta" ||
-      event.type === "tool.execute.before" ||
-      event.type === "tool.execute.after"
-    ) {
-      const sessionID = getSessionID(props);
-      if (sessionID) {
-        inFlight.delete(sessionID);
-        if (event.type === "message.updated" || event.type === "tool.execute.after") {
-          await accountThrottled(sessionID);
+      if (event.type === "session.error") {
+        const sessionID = getSessionID(props);
+        if (!sessionID) return;
+        handleSessionError(sessionID, props?.error);
+        return;
+      }
+
+      if (event.type === "session.deleted") {
+        const sessionID = getSessionID(props);
+        if (sessionID) {
+          runStates.clear(sessionID);
+          accounting.clear(sessionID);
+          lastAccountAt.delete(sessionID);
         }
+        return;
       }
-      return;
-    }
+
+      // Fallback: activity events release the in-flight flag (todo-style), so a
+      // hanging synchronous prompt does not block the next idle continuation.
+      // 同时重置锁死标志（对齐 todo handleNonIdleEvent）：一次打断（abort）或上下文超长
+      // （token_limit）后，只要 AI 恢复活动就解除锁定——否则 goal 显示 active 但永不续作。
+      // insufficientFundsDetected 保留（真没钱，需用户显式 resume/充值，不应被活动事件自动恢复）。
+      // 同时实时记账：每轮消息更新/工具执行后累计 token+时间（throttle 防高频）。
+      if (
+        event.type === "message.updated" ||
+        event.type === "message.part.updated" ||
+        event.type === "message.part.delta" ||
+        event.type === "tool.execute.before" ||
+        event.type === "tool.execute.after"
+      ) {
+        const sessionID = getSessionID(props);
+        if (sessionID) {
+          inFlight.delete(sessionID);
+          // runStates.get 总是返回 state（不存在则创建），无需判空。
+          const state = runStates.get(sessionID);
+          state.wasCancelled = false;
+          state.tokenLimitDetected = false;
+          if (event.type === "message.updated" || event.type === "tool.execute.after") {
+            await accountThrottled(sessionID);
+          }
+        }
+        return;
+      }
+    },
+    resetRunState,
   };
 }
