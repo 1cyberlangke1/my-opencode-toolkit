@@ -23,44 +23,60 @@ export interface SessionStats {
   subagentCount: number;
 }
 
-function isCacheTokenMessage(message: Message): message is Message & {
-  tokens: { input: number; output: number; cache: { read: number; write: number } };
-} {
-  return message.role === "assistant" && "tokens" in message && "cache" in message.tokens;
+function isCacheTokenMessage(
+  message: Message,
+): message is Message & { tokens: { input: number; output: number; cache?: { read?: number; write?: number } } } {
+  // 运行时防御：不同 provider / 中断消息的 tokens 可能为 null、缺 cache 字段（对齐
+  // tmp/opencode-subagent-magazine 的 `if (!t) continue` 模式）。SDK 类型是必填，
+  // 但运行时不一定，先 cast 到 unknown 收窄再判字段，避免 `"cache" in null` 抛 TypeError。
+  const tokens: unknown = (message as Message & { tokens?: unknown }).tokens;
+  if (tokens === null || typeof tokens !== "object") return false;
+  const t = tokens as Record<string, unknown>;
+  return (
+    message.role === "assistant" &&
+    typeof t.input === "number" &&
+    typeof t.output === "number"
+  );
 }
 
 /** Aggregate cache + tool stats from a session's messages and parts. */
 export function computeSessionStats(
-  messages: readonly Message[],
-  getParts: (messageID: string) => readonly Part[],
+  messages: readonly Message[] | undefined,
+  getParts: (messageID: string) => readonly Part[] | undefined,
 ): SessionStats {
-  const cache: CacheStats = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
-  const toolCounts = new Map<string, number>();
-  let subagentCount = 0;
+  try {
+    const cache: CacheStats = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+    const toolCounts = new Map<string, number>();
+    let subagentCount = 0;
 
-  for (const message of messages) {
-    if (isCacheTokenMessage(message)) {
-      cache.input += message.tokens.input;
-      cache.output += message.tokens.output;
-      cache.cacheRead += message.tokens.cache.read;
-      cache.cacheWrite += message.tokens.cache.write;
-    }
+    // 运行时 api.state 也可能返回 undefined（虽然类型是数组），?? [] 双保险。
+    for (const message of messages ?? []) {
+      if (isCacheTokenMessage(message)) {
+        cache.input += message.tokens.input;
+        cache.output += message.tokens.output;
+        cache.cacheRead += message.tokens.cache?.read ?? 0;
+        cache.cacheWrite += message.tokens.cache?.write ?? 0;
+      }
 
-    for (const part of getParts(message.id)) {
-      if (part.type === "tool") {
-        const name = part.tool;
-        toolCounts.set(name, (toolCounts.get(name) ?? 0) + 1);
-      } else if (part.type === "subtask") {
-        subagentCount += 1;
+      for (const part of getParts(message.id) ?? []) {
+        if (part.type === "tool") {
+          const name = part.tool;
+          toolCounts.set(name, (toolCounts.get(name) ?? 0) + 1);
+        } else if (part.type === "subtask") {
+          subagentCount += 1;
+        }
       }
     }
+
+    const tools = Array.from(toolCounts.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count);
+
+    return { cache, tools, subagentCount };
+  } catch {
+    // 单条异常消息绝不能冻结整个统计刷新：返回零值兜底。
+    return { cache: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, tools: [], subagentCount: 0 };
   }
-
-  const tools = Array.from(toolCounts.entries())
-    .map(([name, count]) => ({ name, count }))
-    .sort((a, b) => b.count - a.count);
-
-  return { cache, tools, subagentCount };
 }
 
 /** Compute hit rate from cache stats. Returns a ratio in [0, 1]. */

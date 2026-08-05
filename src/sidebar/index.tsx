@@ -225,8 +225,12 @@ function SessionStatsPanel(props: PanelProps) {
   };
 
   function refreshStats(): void {
-    const messages = getMessages(sessionId);
-    setStats(computeSessionStats(messages, getParts));
+    try {
+      const messages = getMessages(sessionId);
+      setStats(computeSessionStats(messages, getParts));
+    } catch {
+      // 统计刷新失败只跳过本次，绝不传染 onUpdate 里其他面板刷新（否则数字永久冻结）。
+    }
   }
 
   function refreshChildStats(entry: SubagentEntry): void {
@@ -251,36 +255,51 @@ function SessionStatsPanel(props: PanelProps) {
   }
 
   function readSessionTokens(sid: string): TokenBreakdown | undefined {
-    const msgs = getMessages(sid);
-    const acc: TokenBreakdown = { input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0 };
-    let found = false;
-    for (const m of msgs) {
-      if (m === undefined || m.role !== "assistant" || !("tokens" in m) || m.tokens === undefined) continue;
-      const tokens = m.tokens as {
-        input: number;
-        output: number;
-        reasoning: number;
-        cache: { read: number; write: number };
-      };
-      acc.input += Number(tokens.input) || 0;
-      acc.output += Number(tokens.output) || 0;
-      acc.reasoning += Number(tokens.reasoning) || 0;
-      acc.cacheRead += Number(tokens.cache?.read) || 0;
-      acc.cacheWrite += Number(tokens.cache?.write) || 0;
-      found = true;
+    try {
+      // 运行时防御：中断/跨 provider 消息的 tokens 可能为 null 或缺 cache 字段
+      // （对齐 tmp/opencode-subagent-magazine 的 `if (!t) continue` 模式）。
+      // SDK 类型是必填，先 cast 到 unknown 收窄，避免 `null.input` 抛 TypeError 冻结统计。
+      const msgs = getMessages(sid) as readonly Message[] | undefined;
+      const acc: TokenBreakdown = { input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0 };
+      let found = false;
+      for (const m of msgs ?? []) {
+        if (m === undefined || m.role !== "assistant") continue;
+        const tokens: unknown = (m as Message & { tokens?: unknown }).tokens;
+        if (tokens === null || typeof tokens !== "object") continue;
+        const t = tokens as {
+          input?: unknown;
+          output?: unknown;
+          reasoning?: unknown;
+          cache?: { read?: unknown; write?: unknown };
+        };
+        acc.input += Number(t.input) || 0;
+        acc.output += Number(t.output) || 0;
+        acc.reasoning += Number(t.reasoning) || 0;
+        acc.cacheRead += Number(t.cache?.read) || 0;
+        acc.cacheWrite += Number(t.cache?.write) || 0;
+        found = true;
+      }
+      return found ? acc : undefined;
+    } catch {
+      return undefined;
     }
-    return found ? acc : undefined;
   }
 
   function readSessionModel(sid: string): string | undefined {
-    const msgs = getMessages(sid);
-    for (let i = msgs.length - 1; i >= 0; i--) {
-      const m = msgs[i];
-      if (m === undefined) continue;
-      if (m.role === "assistant" && "modelID" in m && m.modelID) return String(m.modelID);
-      if ("model" in m && m.model !== undefined && m.model.modelID) return String(m.model.modelID);
+    try {
+      const msgs = getMessages(sid) as readonly Message[] | undefined;
+      for (let i = (msgs ?? []).length - 1; i >= 0; i--) {
+        const m = msgs?.[i];
+        if (m === undefined) continue;
+        if (m.role === "assistant" && "modelID" in m && m.modelID) return String(m.modelID);
+        if ("model" in m && m.model !== null && m.model !== undefined && m.model.modelID) {
+          return String(m.model.modelID);
+        }
+      }
+      return undefined;
+    } catch {
+      return undefined;
     }
-    return undefined;
   }
 
   function readSessionCost(sid: string): number | undefined {
