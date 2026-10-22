@@ -38,11 +38,11 @@ OpenCode V2 插件重写。功能保留：通知、Goal、cron/loop、TUI 侧栏
 
 ### P2 cron / loop
 
-- [ ] cron 表达式解析与校验
-- [ ] 任务存储与上限、过期
-- [ ] 定时器调度与重启恢复
-- [ ] `/cron`、`/loop` 命令
-- [ ] `schedule_wakeup` 工具
+- [x] cron 表达式解析与校验
+- [x] 任务存储与上限、过期
+- [x] 定时器调度与重启恢复
+- [x] `/cron`、`/loop` 命令
+- [x] `schedule_wakeup` 工具
 
 ### P3 通知
 

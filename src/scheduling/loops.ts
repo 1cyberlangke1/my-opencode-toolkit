@@ -1,0 +1,229 @@
+import { randomUUID } from "node:crypto"
+
+import type { Plugin } from "@opencode/plugin"
+
+import { DEFAULT_MAX_AGE_DAYS, type Loop } from "./types.ts"
+import type { SessionRoles } from "../goal/session-role.ts"
+
+/** dynamic 模式没有 `schedule_wakeup` 时的兜底唤醒（20 分钟）。 */
+const FALLBACK_WAKEUP_MS = 20 * 60 * 1000
+const WAKEUP_MIN_S = 60
+const WAKEUP_MAX_S = 3600
+
+/** `schedule_wakeup` 的结果。 */
+export type ScheduleWakeupResult =
+  | { readonly ok: true; readonly id: string; readonly fireAt: number }
+  | { readonly ok: false; readonly error: string }
+
+/** 循环调度器。 */
+export type LoopScheduler = {
+  /** 输入：会话 + prompt + 可选间隔；输出：新循环。预期：立即触发一次。 */
+  startLoop(sessionID: string, prompt: string, intervalSeconds?: number): Loop
+  /** 输入：会话 + 可选 id；输出：是否停止。 */
+  stopLoop(sessionID: string, id?: string): boolean
+  /** 输入：会话 + prompt；输出：是否停止。 */
+  stopLoopByPrompt(sessionID: string, prompt: string): boolean
+  /** 输入：会话；输出：停止数量。 */
+  stopAllLoops(sessionID: string): number
+  /** 输入：会话；输出：该会话的循环。 */
+  listLoops(sessionID: string): Loop[]
+  /** 输入：会话 + prompt + 延迟 + 原因；输出：唤醒结果。 */
+  scheduleWakeup(sessionID: string, prompt: string, delaySeconds: number, reason: string): ScheduleWakeupResult
+  /** 输入：会话事件；输出：无。预期：step 结束清 pending，删除会话清循环。 */
+  handleEvent(event: { readonly type: string; readonly data: unknown }): Promise<void>
+  /** 输入：会话；输出：无。预期：停掉该会话全部循环。 */
+  clearSession(sessionID: string): void
+  /** 输入：无；输出：无。预期：清掉所有定时器。 */
+  dispose(): void
+}
+
+/**
+ * 输入：插件上下文、会话角色、是否让路回调。
+ * 输出：循环调度器。
+ * 预期：fixed 按间隔重复，dynamic 等 `schedule_wakeup`，都不给子代理注入。
+ */
+export function createLoopScheduler(args: {
+  readonly ctx: Plugin.Context
+  readonly roles: SessionRoles
+  readonly shouldDefer: (sessionID: string) => Promise<boolean>
+}): LoopScheduler {
+  const { ctx, roles, shouldDefer } = args
+  const loops = new Map<string, Loop>()
+  const timers = new Map<string, ReturnType<typeof setTimeout>>()
+  const inFlight = new Set<string>()
+  const pending = new Set<string>()
+
+  /** 输入：会话 + prompt；输出：匹配的循环。预期：同一 prompt 只保留一个。 */
+  const findLoop = (sessionID: string, prompt: string): Loop | undefined =>
+    [...loops.values()].find((loop) => loop.sessionID === sessionID && loop.prompt === prompt)
+
+  /** 输入：会话 + 文本；输出：是否注入成功。预期：子代理、并发、上一条未完成时跳过。 */
+  const inject = async (sessionID: string, text: string): Promise<boolean> => {
+    if (inFlight.has(sessionID) || pending.has(sessionID)) return false
+    if (await roles.isSubagent(sessionID)) return false
+    inFlight.add(sessionID)
+    try {
+      await ctx.session.prompt({ sessionID, text, delivery: "steer" })
+      pending.add(sessionID)
+      return true
+    } catch {
+      return false
+    } finally {
+      inFlight.delete(sessionID)
+    }
+  }
+
+  /** 输入：循环；输出：无。预期：触发一次注入；过期则停掉。 */
+  const fireLoop = async (loop: Loop): Promise<void> => {
+    if (Date.now() >= loop.expiresAt) {
+      stopLoop(loop.sessionID, loop.id)
+      return
+    }
+    if (await shouldDefer(loop.sessionID)) return
+    loop.fires += 1
+    await inject(loop.sessionID, loop.prompt)
+  }
+
+  /** 输入：循环 + 延迟毫秒；输出：无。预期：重设 timer，`unref` 不阻止进程退出。 */
+  const armLoop = (loop: Loop, delayMs: number): void => {
+    const existing = timers.get(loop.id)
+    if (existing !== undefined) clearTimeout(existing)
+    loop.nextFireAt = Date.now() + delayMs
+    const handle = setTimeout(() => {
+      timers.delete(loop.id)
+      void handleFire(loop)
+    }, Math.max(0, delayMs))
+    handle.unref()
+    timers.set(loop.id, handle)
+  }
+
+  /** 输入：循环；输出：无。预期：触发后按模式决定下一次。 */
+  const handleFire = async (loop: Loop): Promise<void> => {
+    const hadWakeup = loop.pendingWakeup
+    await fireLoop(loop)
+    if (!loops.has(loop.id)) return
+
+    if (loop.mode === "fixed" && loop.intervalSeconds !== undefined) {
+      armLoop(loop, loop.intervalSeconds * 1000)
+      return
+    }
+
+    if (hadWakeup !== undefined) {
+      if (loop.pendingWakeup === hadWakeup) {
+        delete loop.pendingWakeup
+        armLoop(loop, FALLBACK_WAKEUP_MS)
+      }
+      return
+    }
+    if (loop.pendingWakeup !== undefined) return
+    stopLoop(loop.sessionID, loop.id)
+  }
+
+  const startLoop = (sessionID: string, prompt: string, intervalSeconds?: number): Loop => {
+    const existing = findLoop(sessionID, prompt)
+    if (existing !== undefined) stopLoop(sessionID, existing.id)
+
+    const now = Date.now()
+    const loop: Loop = {
+      id: randomUUID().slice(0, 8),
+      sessionID,
+      prompt,
+      mode: intervalSeconds === undefined ? "dynamic" : "fixed",
+      ...(intervalSeconds === undefined ? {} : { intervalSeconds }),
+      createdAt: now,
+      expiresAt: now + DEFAULT_MAX_AGE_DAYS * 24 * 60 * 60 * 1000,
+      fires: 0,
+    }
+    loops.set(loop.id, loop)
+    void fireLoop(loop)
+    armLoop(loop, intervalSeconds === undefined ? FALLBACK_WAKEUP_MS : intervalSeconds * 1000)
+    return loop
+  }
+
+  const stopLoop = (sessionID: string, id?: string): boolean => {
+    const target = id === undefined ? [...loops.values()].find((loop) => loop.sessionID === sessionID) : loops.get(id)
+    if (target?.sessionID !== sessionID) return false
+    const timer = timers.get(target.id)
+    if (timer !== undefined) {
+      clearTimeout(timer)
+      timers.delete(target.id)
+    }
+    loops.delete(target.id)
+    return true
+  }
+
+  const stopLoopByPrompt = (sessionID: string, prompt: string): boolean => {
+    const loop = findLoop(sessionID, prompt)
+    return loop === undefined ? false : stopLoop(sessionID, loop.id)
+  }
+
+  const stopAllLoops = (sessionID: string): number => {
+    let count = 0
+    for (const loop of [...loops.values()].filter((item) => item.sessionID === sessionID)) {
+      if (stopLoop(sessionID, loop.id)) count += 1
+    }
+    return count
+  }
+
+  const listLoops = (sessionID: string): Loop[] => [...loops.values()].filter((loop) => loop.sessionID === sessionID)
+
+  const scheduleWakeup = (
+    sessionID: string,
+    prompt: string,
+    delaySeconds: number,
+    reason: string,
+  ): ScheduleWakeupResult => {
+    const loop = findLoop(sessionID, prompt)
+    if (loop?.mode !== "dynamic") {
+      return {
+        ok: false,
+        error: "schedule_wakeup is only available inside an active dynamic /loop for this session and prompt.",
+      }
+    }
+    const clamped = Math.min(Math.max(Math.round(delaySeconds), WAKEUP_MIN_S), WAKEUP_MAX_S)
+    const now = Date.now()
+    const fireAt = Math.ceil((now + clamped * 1000) / 60_000) * 60_000
+    loop.pendingWakeup = { fireAt, delaySeconds: clamped, prompt, reason }
+    armLoop(loop, fireAt - now)
+    return { ok: true, id: loop.id, fireAt }
+  }
+
+  const clearSession = (sessionID: string): void => {
+    for (const loop of listLoops(sessionID)) stopLoop(sessionID, loop.id)
+    inFlight.delete(sessionID)
+    pending.delete(sessionID)
+  }
+
+  return {
+    startLoop,
+    stopLoop,
+    stopLoopByPrompt,
+    stopAllLoops,
+    listLoops,
+    scheduleWakeup,
+    clearSession,
+
+    handleEvent(event) {
+      const data = typeof event.data === "object" && event.data !== null ? (event.data as Record<string, unknown>) : {}
+      const sessionID = data["sessionID"]
+      if (typeof sessionID !== "string" || sessionID.length === 0) return Promise.resolve()
+
+      if (event.type === "session.deleted") {
+        clearSession(sessionID)
+        return Promise.resolve()
+      }
+      if (event.type === "session.step.ended" || event.type === "session.usage.updated") {
+        pending.delete(sessionID)
+      }
+      return Promise.resolve()
+    },
+
+    dispose() {
+      for (const timer of timers.values()) clearTimeout(timer)
+      timers.clear()
+      loops.clear()
+      inFlight.clear()
+      pending.clear()
+    },
+  }
+}

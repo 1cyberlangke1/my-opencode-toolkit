@@ -66,6 +66,16 @@ Windows 补充：只设 `HOME` 不够，`os.homedir()` 读 `USERPROFILE`，必�
   - 工具不进子代理：`context` 钩子里从 `event.tools` 删除，模型请求里根本看不到；
   - 续作/定时注入不进子代理：`session.idle` 时先查 `parentID`，是子代理就直接返回。
 
+## 定时任务（P2 实测）
+
+- 任务存 `schedule:<sessionID>`，一个 key 放该会话全部 durable 任务；非 durable 只留内存。
+- 重启恢复：`setup` 里 `store.load()` 扫 `schedule:` 前缀，重建 `nextRunAt`，再 `armTimers()`。
+- 定时器是 `setTimeout` + `unref()`；到点先无条件重排/删除，再尝试注入，注入失败不影响倒计时。
+- 除 timer 外还有 `session.idle` 兜底：查该会话已到点任务，没有就补武装 timer。
+- 注入规则与 goal 一致：子代理跳过、goal active 时让路、上一条注入未完成（没有 step）时跳过。
+- `/loop` 是内存态（不持久化），fixed 按间隔重复，dynamic 等 `schedule_wakeup`，20 分钟没唤醒就结束。
+- `/cron` 建的任务默认 durable；命令与工具都通过 `ctx.session.prompt` 把反馈发回会话。
+
 ## 旧仓库
 
 - V1 依赖 `@opencode-ai/plugin`，导出 `./server` + `./tui`，用 tsc + esbuild 构建后复制到 `~/.config/opencode/plugins`。

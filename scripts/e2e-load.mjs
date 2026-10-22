@@ -1,9 +1,10 @@
 #!/usr/bin/env bun
 /**
  * 输入：无（需要本机 opencode 2.x 与 bun）。
- * 输出：在隔离的临时 HOME/DB/config 里启动 opencode，用假 provider 驱动三次工具调用。
- * 预期：工具表包含 toolkit_ping 与三个 goal 工具；create_goal / get_goal 依次执行成功；
- *       默认设置与 goal 状态写入隔离数据库。不会读写日常使用的 OpenCode 数据。
+ * 输出：在隔离的临时 HOME/DB/config 里启动 opencode，用假 provider 驱动四次工具调用。
+ * 预期：工具表包含 toolkit_ping、三个 goal 工具与四个 scheduling 工具；
+ *       create_goal / get_goal / cron_create 依次执行成功；
+ *       默认设置、goal 与 durable cron 任务写入隔离数据库。不会读写日常使用的 OpenCode 数据。
  *
  * 用法：bun scripts/e2e-load.mjs
  */
@@ -107,7 +108,12 @@ function handle(body) {
     return toolCallResponse(stream, "get_goal", {}, usage)
   }
 
-  served = 3
+  if (served === 2) {
+    served = 3
+    return toolCallResponse(stream, "cron_create", { cron: "*/5 * * * *", prompt: "e2e cron", durable: true }, usage)
+  }
+
+  served = 4
   toolResultText = messages
     .filter((message) => message?.role === "tool")
     .map((message) => (typeof message.content === "string" ? message.content : JSON.stringify(message.content)))
@@ -261,6 +267,7 @@ const readValue = (suffix) => {
 }
 const settings = readValue("settings")
 const goal = readValue(`goal:${sessionID}`)
+const schedule = readValue(`schedule:${sessionID}`)
 db.close()
 
 if (!toolNames.includes("create_goal")) {
@@ -269,8 +276,17 @@ if (!toolNames.includes("create_goal")) {
   console.log("logs saved to:", root)
 }
 
-assert.equal(served, 3, "provider must serve three requests (create, read, finish)")
-for (const name of ["toolkit_ping", "create_goal", "get_goal", "update_goal"]) {
+assert.equal(served, 4, "provider must serve four requests (create goal, read goal, cron, finish)")
+for (const name of [
+  "toolkit_ping",
+  "create_goal",
+  "get_goal",
+  "update_goal",
+  "cron_create",
+  "cron_list",
+  "cron_delete",
+  "schedule_wakeup",
+]) {
   assert.ok(toolNames.includes(name), `tool table must include ${name}, got ${toolNames.join(",")}`)
 }
 assert.ok(toolResultText.includes(GOAL_OBJECTIVE), `goal result missing objective, got ${toolResultText}`)
@@ -278,10 +294,13 @@ assert.ok(toolResultText.includes('"status": "active"'), `goal result missing ac
 assert.equal(settings?.lang, "auto", "default settings must be written to storage")
 assert.equal(goal?.objective, GOAL_OBJECTIVE, "goal must be persisted under the session key")
 assert.equal(goal?.status, "active", "new goal must be active")
+assert.equal(schedule?.jobs?.length, 1, "durable cron job must be persisted")
+assert.equal(schedule?.jobs?.[0]?.cron, "*/5 * * * *", "cron expression must round-trip")
 
 console.log("tools:", toolNames.length, "goal tools:", toolNames.filter((name) => name.endsWith("_goal")).join(","))
 console.log("goal:", JSON.stringify(goal))
-console.log("case passed: plugin loads, tools execute, goal persists")
+console.log("schedule:", JSON.stringify(schedule))
+console.log("case passed: plugin loads, tools execute, goal and cron persist")
 
 server.kill()
 await rm(root, { recursive: true, force: true }).catch(() => undefined)

@@ -24,6 +24,15 @@ export type JsonStore = {
   remove(key: string): Promise<void>
 }
 
+/** 带分页扫描能力的存储（`ctx.storage` 满足）。 */
+export type ScannableStore = JsonStore & {
+  scan(options: {
+    prefix: string
+    limit?: number
+    after?: string
+  }): Promise<{ entries: readonly { key: string; value: unknown }[]; next?: string }>
+}
+
 /**
  * 输入：任意值。
  * 输出：普通对象则返回自身，否则 `undefined`。
