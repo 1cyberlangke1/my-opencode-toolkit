@@ -1,40 +1,28 @@
-import { en, type TranslationDict } from "./en";
-import { zh } from "./zh";
+import { en } from "./en.ts"
+import type { Messages } from "./types.ts"
+import { zh } from "./zh.ts"
 
-export type { TranslationDict } from "./en";
-export type Lang = "zh" | "en" | "auto";
-
-export const LANG_KEYS: readonly ("zh" | "en")[] = ["zh", "en"] as const;
+export type { Messages }
 
 /**
- * Detect the user's preferred language.
- *
- * Priority: OPENCODE_LANG env → LANG/LC_ALL env → system locale (Intl).
- * `Intl.DateTimeFormat().resolvedOptions().locale` reflects the OS locale,
- * which is the reliable signal on Windows where LANG is typically unset.
+ * 输入：locale 字符串（可为空）。
+ * 输出：对应语言的消息表。
+ * 预期：`zh*` 用中文，其余一律英文；空值回退到系统 locale。
  */
-export function detectLang(env: NodeJS.ProcessEnv): "zh" | "en" {
-  const fromEnv = env.OPENCODE_LANG ?? env.LANG ?? env.LC_ALL ?? "";
-  if (fromEnv.toLowerCase().startsWith("zh")) return "zh";
-  if (fromEnv.length > 0) return "en";
-
-  const systemLocale = Intl.DateTimeFormat().resolvedOptions().locale.toLowerCase();
-  return systemLocale.startsWith("zh") ? "zh" : "en";
+export function resolveMessages(locale: string | undefined): Messages {
+  const value = (locale ?? detectLocale()).toLowerCase()
+  return value.startsWith("zh") ? zh : en
 }
 
-/** Resolve the effective language given the configured value. */
-export function resolveLang(configured: Lang, env: NodeJS.ProcessEnv): "zh" | "en" {
-  return configured === "auto" ? detectLang(env) : configured;
+/**
+ * 输入：无。
+ * 输出：系统 locale。
+ * 预期：运行时拿不到时回退 `en`，保证始终有文案。
+ */
+export function detectLocale(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().locale
+  } catch {
+    return "en"
+  }
 }
-
-export function translate(lang: "zh" | "en", key: keyof TranslationDict): string {
-  const dict: TranslationDict = lang === "zh" ? zh : en;
-  return dict[key];
-}
-
-/** Create a bound translation function for a resolved language. */
-export function createTranslator(lang: "zh" | "en") {
-  return (key: keyof TranslationDict): string => translate(lang, key);
-}
-
-export type Translator = ReturnType<typeof createTranslator>;

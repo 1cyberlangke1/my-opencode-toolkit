@@ -1,30 +1,32 @@
-import js from "@eslint/js";
-import globals from "globals";
-import tseslint from "typescript-eslint";
+import js from "@eslint/js"
+import { defineConfig } from "eslint/config"
+import tseslint from "typescript-eslint"
 
-export default tseslint.config(
-  js.configs.recommended,
+export default defineConfig([
   {
-    languageOptions: {
-      globals: globals.node,
-    },
+    ignores: [
+      "node_modules/**",
+      "legacy/**",
+      "scripts/**",
+      "tui-test/**",
+      "coverage/**",
+    ],
   },
+  js.configs.recommended,
+  ...tseslint.configs.strictTypeChecked,
+  ...tseslint.configs.stylisticTypeChecked,
   {
-    files: ["src/**/*.ts"],
-    extends: [...tseslint.configs.strictTypeChecked],
     languageOptions: {
       parserOptions: {
-        projectService: true,
+        projectService: {
+          allowDefaultProject: ["eslint.config.js"],
+        },
         tsconfigRootDir: import.meta.dirname,
       },
     },
     rules: {
-      "@typescript-eslint/no-explicit-any": "error",
-      "@typescript-eslint/no-unused-vars": ["error", { caughtErrors: "none" }],
-      "@typescript-eslint/restrict-template-expressions": ["error", { allowNumber: true }],
+      // 设置对象要能直接赋给 JSON 值类型；interface 不会获得隐式索引签名，故统一用 type。
+      "@typescript-eslint/consistent-type-definitions": ["error", "type"],
     },
   },
-  {
-    ignores: ["dist/"],
-  },
-);
+])

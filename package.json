@@ -1,45 +1,61 @@
 {
   "name": "my-opencode-toolkit",
-  "version": "0.1.0",
-  "description": "My OpenCode Toolkit",
+  "version": "0.2.0",
+  "description": "OpenCode 插件：系统通知、持久目标、定时任务与 TUI 面板",
   "type": "module",
-  "exports": {
-    "./server": "./dist/index.js",
-    "./tui": "./dist/tui.js"
+  "license": "MIT",
+  "author": "1cyberlangke1",
+  "homepage": "https://github.com/1cyberlangke1/my-opencode-toolkit#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/1cyberlangke1/my-opencode-toolkit.git"
   },
-  "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "build": "tsc",
-    "bundle": "tsx script/build.ts",
-    "deploy": "npm run bundle && node -e \"const fs=require('fs'),h=process.env.USERPROFILE,p=h+'/.config/opencode/plugins',t=h+'/.config/opencode/toolkit';fs.mkdirSync(p,{recursive:true});fs.mkdirSync(t,{recursive:true});fs.copyFileSync('dist/index.js',p+'/my-opencode-toolkit.js');fs.copyFileSync('dist/tui.js',t+'/tui.js')\"",
-    "lint": "eslint src/",
-    "format": "prettier --write src/",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
-    "typecheck": "tsc --noEmit"
+  "bugs": {
+    "url": "https://github.com/1cyberlangke1/my-opencode-toolkit/issues"
+  },
+  "keywords": [
+    "opencode",
+    "plugin",
+    "notification",
+    "goal",
+    "cron",
+    "tui"
+  ],
+  "exports": {
+    ".": "./index.ts",
+    "./tui": "./tui.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "dependencies": {
+    "effect": "4.0.1"
   },
   "peerDependencies": {
-    "@opencode-ai/plugin": "^1.18.10",
-    "@opentui/core": ">=0.4.5",
-    "@opentui/solid": ">=0.4.5",
+    "@opencode/plugin": "^2.0.32",
+    "@opentui/core": ">=0.5.17",
+    "@opentui/solid": ">=0.5.17",
     "solid-js": ">=1.9.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "check": "pnpm typecheck && pnpm lint && pnpm test",
+    "test": "vitest run",
+    "test:e2e": "bun scripts/e2e-load.mjs",
+    "test:watch": "vitest"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@opencode-ai/plugin": "^1.18.10",
-    "@opentui/core": "^0.4.5",
-    "@opentui/solid": "^0.4.5",
-    "@types/node": "^26.1.0",
-    "@vitest/coverage-v8": "^4.1.10",
-    "esbuild-plugin-solid": "^0.6.0",
-    "eslint": "^10.6.0",
-    "globals": "^17.7.0",
-    "prettier": "^3.9.4",
-    "solid-js": "^1.9.12",
-    "tsx": "^4.22.5",
+    "@opencode/plugin": "^2.1.2",
+    "@opencode/theme": "2.1.2",
+    "@opentui/core": "0.6.6",
+    "@opentui/solid": "0.6.6",
+    "@types/node": "^26.6.5",
+    "eslint": "^10.13.0",
+    "solid-js": "1.9.15",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.62.1",
-    "vitest": "^4.1.10"
+    "typescript-eslint": "^8.71.2",
+    "vitest": "^5.0.5"
   }
 }
