@@ -205,6 +205,33 @@ describe("scheduling continuation", () => {
     continuation.dispose()
   })
 
+  it("执行失败后清掉 pending，后续任务还能注入", async () => {
+    const log: string[] = []
+    const store = makeStore()
+    const added = await store.addJob({ sessionID: SESSION, cron: "* * * * *", prompt: "ping", recurring: true })
+    expect(added.ok).toBe(true)
+    if (!added.ok) return
+    makeDue(store, added.job.id)
+
+    const continuation = createSchedulingContinuation({
+      ctx: fakeCtx(log),
+      store,
+      roles,
+      shouldDefer: () => Promise.resolve(false),
+      enabled: () => Promise.resolve(true),
+      now: () => NOW,
+    })
+    await continuation.handle({ type: "session.idle", data: { sessionID: SESSION } })
+    expect(log).toHaveLength(1)
+
+    await continuation.handle({ type: "session.execution.failed", data: { sessionID: SESSION } })
+    makeDue(store, added.job.id)
+    await continuation.handle({ type: "session.idle", data: { sessionID: SESSION } })
+
+    expect(log).toHaveLength(2)
+    continuation.dispose()
+  })
+
   it("功能关闭时不注入也不推进 lastFiredAt", async () => {
     const log: string[] = []
     const store = makeStore()

@@ -63,6 +63,7 @@ OpenCode v2 插件：系统通知、持久目标、定时任务与循环、TUI �
   - 下一次触发在四年窗口内搜索，支持 `2 月 29 日`；永远不存在的日期会被拒绝
 - 每会话最多 50 个任务；重复任务 7 天后自动过期
 - durable 任务存插件存储，重启恢复并重新武装 timer；非 durable 只留内存
+- 循环只存在内存，重启后消失；需要跨重启请用 cron
 - 循环：固定间隔或动态（模型用 `schedule_wakeup` 决定下次，60–3600 秒，20 分钟兜底）
 - 固定间隔范围 60 秒 – 7 天；裸 `/loop` 使用内置维护提示词，项目根目录有非空 `loop.md` 时优先用它
 
@@ -135,6 +136,8 @@ OpenCode v2 插件：系统通知、持久目标、定时任务与循环、TUI �
 - 侧栏统计是进程内数据：重启后第一次打开面板会从已存消息重建（重建瞬间完成的一步可能漏算）
 - 通知依赖系统命令：Windows 用 PowerShell toast，macOS 用 `osascript`，Linux 用 `notify-send`
 - 定时任务按 OpenCode 进程的本地时区解析；不支持秒级字段与 `L` / `W` / `?` 等扩展语法
+- 夏令时切换当天，本地时间的 cron 可能跳过或重复一次（标准 cron 语义的固有问题）
+- 同一会话不要同时开多个 OpenCode 实例执行目标/定时任务；插件存储没有跨进程锁
 - 目标进行中时 cron/loop 让路，避免和续作抢同一轮对话
 - 子代理会话不提供 goal/scheduling 工具，也不会被注入续作
 
@@ -169,7 +172,7 @@ OpenCode v2 插件：系统通知、持久目标、定时任务与循环、TUI �
 
 ```bash
 pnpm install
-pnpm check        # typecheck + lint + 161 单测 + TUI 测试
+pnpm check        # typecheck + lint + 175 单测 + TUI 测试 + 发布包内容校验
 pnpm test:e2e     # 需要本机 opencode 2.x 与 bun，使用隔离的 HOME/DB/config
 ```
 

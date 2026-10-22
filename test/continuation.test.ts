@@ -99,6 +99,22 @@ describe("goal continuation", () => {
     expect(log).toHaveLength(2)
   })
 
+  it("执行失败后清掉 pending，下一次 idle 能重试", async () => {
+    const store = storeWithGoalEnabled()
+    const controller = createGoalController(store)
+    await controller.setGoal(SESSION, "x")
+    const log: PromptLog = []
+    const continuation = createGoalContinuation({ ctx: fakeCtx(log), store, controller, roles })
+
+    await continuation.handle({ type: "session.idle", data: { sessionID: SESSION } })
+    expect(log).toHaveLength(1)
+
+    await continuation.handle({ type: "session.execution.failed", data: { sessionID: SESSION, error: {} } })
+    await continuation.handle({ type: "session.idle", data: { sessionID: SESSION } })
+
+    expect(log).toHaveLength(2)
+  })
+
   it("step.ended 把输入/输出/缓存都计入目标", async () => {
     const store = storeWithGoalEnabled()
     const controller = createGoalController(store)

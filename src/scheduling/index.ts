@@ -35,7 +35,13 @@ export async function registerScheduling(
   const jobs = createSchedulingStore(store)
   await jobs.load()
 
-  const scheduler = createLoopScheduler({ ctx, roles, shouldDefer })
+  /** 输入：无；输出：总开关与 scheduling 开关是否都打开。 */
+  const isEnabled = async (): Promise<boolean> => {
+    const settings = await loadSettings(store)
+    return settings.enabled && settings.scheduling.enabled
+  }
+
+  const scheduler = createLoopScheduler({ ctx, roles, shouldDefer, enabled: isEnabled })
   const tools = await registerSchedulingTools(ctx, jobs, scheduler, roles)
   const commands = await registerSchedulingCommands(ctx, jobs, scheduler, roles)
 
@@ -44,10 +50,7 @@ export async function registerScheduling(
     store: jobs,
     roles,
     shouldDefer,
-    enabled: async () => {
-      const settings = await loadSettings(store)
-      return settings.enabled && settings.scheduling.enabled
-    },
+    enabled: isEnabled,
   })
   continuation.armTimers()
 

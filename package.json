@@ -1,6 +1,6 @@
 {
   "name": "my-opencode-toolkit",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "OpenCode 插件：系统通知、持久目标、定时任务与 TUI 面板",
   "type": "module",
   "license": "MIT",
@@ -45,7 +45,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm test:tui",
+    "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm test:tui && pnpm check:package",
+    "check:package": "node scripts/check-package.mjs",
     "test": "vitest run",
     "test:tui": "cd tui-test && bun test",
     "test:e2e": "bun scripts/e2e-load.mjs",

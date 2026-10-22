@@ -70,8 +70,11 @@ export async function registerGoalCommand(
       description: DESCRIPTION,
       execute: async (input) => {
         const settings = await loadSettings(ctx.storage)
+        const parsed = parseGoalCommand(input.prompt.text)
+        // clear / show 是清理与查看，功能关闭时也允许，避免目标被永久锁在存储里。
+        const readOnly = parsed.kind === "clear" || parsed.kind === "show"
         const text =
-          settings.enabled && settings.goal.enabled
+          (settings.enabled && settings.goal.enabled) || readOnly
             ? await applyGoalCommand(controller, continuation, input.sessionID, input.prompt.text)
             : "Error: the goal feature is disabled in settings."
         // /goal 只关心文本参数；附件不回传，避免把命令附件重复塞进会话。

@@ -106,8 +106,9 @@ export async function registerSchedulingCommands(
       name: "loop",
       description: "Start or stop a recurring prompt loop in this session",
       execute: async (input) => {
-        const blocked = await unavailable(input.sessionID)
         const parsed = parseLoopCommand(input.prompt.text)
+        // stop 即使功能关闭也要能执行，否则用户没法停掉正在跑的循环。
+        const blocked = parsed.kind === "stop" ? null : await unavailable(input.sessionID)
         const text = await (async (): Promise<string> => {
           if (blocked !== null) return blocked
           if (parsed.kind === "stop") {
@@ -128,8 +129,10 @@ export async function registerSchedulingCommands(
       name: "cron",
       description: "Create, list or delete scheduled prompts for this session",
       execute: async (input) => {
-        const blocked = await unavailable(input.sessionID)
         const raw = input.prompt.text.trim()
+        // list / delete 属于清理操作，功能关闭时也允许；只有创建需要开关。
+        const readOnly = raw === "" || raw.toLowerCase() === "list" || /^delete\s+\S+$/i.test(raw)
+        const blocked = readOnly ? null : await unavailable(input.sessionID)
         const text = await (async (): Promise<string> => {
           if (blocked !== null) return blocked
 

@@ -123,6 +123,8 @@ export function createGoalContinuation(args: {
 
   /** 输入：会话 ID + 错误载荷；输出：无。预期：余额不足/超长锁死，其余只记录。 */
   const handleFailure = async (sessionID: string, error: unknown): Promise<void> => {
+    // 这一轮已经失败，清掉待确认注入，下一次 idle 才能重试。
+    pending.delete(sessionID)
     if (!(await enabled())) return
 
     const state = stateOf(sessionID)
@@ -139,6 +141,8 @@ export function createGoalContinuation(args: {
 
   /** 输入：会话 ID + 打断原因；输出：无。预期：用户打断时暂停目标。 */
   const handleInterrupted = async (sessionID: string, reason: string): Promise<void> => {
+    // 任何打断都意味着这一轮结束，清掉待确认注入。
+    pending.delete(sessionID)
     if (reason !== "user") return
     if (!(await enabled())) return
     const state = stateOf(sessionID)

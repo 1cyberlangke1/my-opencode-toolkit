@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.4
+
+### 修复
+
+- 注入后模型失败/被打断/直接 idle 时清理 `pending`，循环与定时任务不再永久卡死
+- scheduling 关闭时循环暂停，重新开启后恢复
+- scheduling 关闭时仍允许 `/loop stop`、`/cron list`、`/cron delete`
+- goal 关闭时仍允许 `/goal clear`、`/goal show`
+- 分页扫描在游标丢失或不前进时不再回退或死循环
+
+### 测试与构建
+
+- 通知发送改为可注入 runner，新增 Windows/macOS/Linux 参数与转义测试
+- `pnpm check` 增加发布包内容校验（`npm pack` 清单）
+
 ## 0.2.3
 
 ### 修复

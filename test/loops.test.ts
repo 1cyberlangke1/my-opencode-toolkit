@@ -162,4 +162,41 @@ describe("loop scheduler", () => {
     expect(loop.intervalSeconds).toBe(7 * 24 * 3600)
     scheduler.dispose()
   })
+
+  it("执行失败后清掉 pending，循环能继续注入", async () => {
+    const log: string[] = []
+    const scheduler = createLoopScheduler({ ctx: fakeCtx(log), roles, shouldDefer: () => Promise.resolve(false) })
+
+    scheduler.startLoop(SESSION, "a", 5)
+    await flush()
+    expect(log).toEqual(["a"])
+
+    await scheduler.handleEvent({ type: "session.execution.failed", data: { sessionID: SESSION } })
+
+    scheduler.startLoop(SESSION, "b", 5)
+    await flush()
+    expect(log).toEqual(["a", "b"])
+    scheduler.dispose()
+  })
+
+  it("功能关闭时循环暂停，重新开启后恢复", async () => {
+    const log: string[] = []
+    let on = false
+    const scheduler = createLoopScheduler({
+      ctx: fakeCtx(log),
+      roles,
+      shouldDefer: () => Promise.resolve(false),
+      enabled: () => Promise.resolve(on),
+    })
+
+    scheduler.startLoop(SESSION, "paused", 5)
+    await flush()
+    expect(log).toHaveLength(0)
+
+    on = true
+    scheduler.startLoop(SESSION, "resumed", 5)
+    await flush()
+    expect(log).toEqual(["resumed"])
+    scheduler.dispose()
+  })
 })

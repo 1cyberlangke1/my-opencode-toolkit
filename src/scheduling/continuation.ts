@@ -175,6 +175,8 @@ export function createSchedulingContinuation(args: {
       if (typeof sessionID !== "string" || sessionID.length === 0) return
 
       if (event.type === "session.idle") {
+        // idle 表示上一轮已经结束；清掉 pending 让本轮可以继续注入。
+        pending.delete(sessionID)
         await handleIdle(sessionID)
         return
       }
@@ -194,6 +196,10 @@ export function createSchedulingContinuation(args: {
         return
       }
       if (event.type === "session.step.ended" || event.type === "session.usage.updated") {
+        pending.delete(sessionID)
+      }
+      // 注入后模型失败/被打断时清掉 pending，避免后续任务永远被挡住。
+      if (event.type === "session.execution.failed" || event.type === "session.execution.interrupted") {
         pending.delete(sessionID)
       }
     },

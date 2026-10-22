@@ -15,7 +15,8 @@ export async function forEachScannedEntry(
   for (;;) {
     const page = await store.scan({ prefix, limit, ...(after === undefined ? {} : { after }) })
     for (const entry of page.entries) await visit(entry)
-    if (page.next === undefined) return
+    // 游标不前进时立即停下，防止异常存储导致死循环。
+    if (page.next === undefined || page.next === after) return
     after = page.next
   }
 }

@@ -55,8 +55,11 @@ export function createLoopScheduler(args: {
   readonly ctx: Plugin.Context
   readonly roles: SessionRoles
   readonly shouldDefer: (sessionID: string) => Promise<boolean>
+  /** 输入：无；输出：scheduling 是否启用。缺省视为启用（测试与旧调用兼容）。 */
+  readonly enabled?: () => Promise<boolean>
 }): LoopScheduler {
   const { ctx, roles, shouldDefer } = args
+  const isEnabled = args.enabled ?? ((): Promise<boolean> => Promise.resolve(true))
   const loops = new Map<string, Loop>()
   const timers = new Map<string, ReturnType<typeof setTimeout>>()
   const inFlight = new Set<string>()
@@ -90,6 +93,8 @@ export function createLoopScheduler(args: {
       stopLoop(loop.sessionID, loop.id)
       return
     }
+    // 功能关闭时循环暂停，但不销毁；重新开启后下一个 timer 继续。
+    if (!(await isEnabled().catch(() => false))) return
     if (await shouldDefer(loop.sessionID).catch(() => false)) return
     loop.fires += 1
     await inject(loop.sessionID, loop.prompt)
@@ -241,6 +246,14 @@ export function createLoopScheduler(args: {
         return Promise.resolve()
       }
       if (event.type === "session.step.ended" || event.type === "session.usage.updated") {
+        pending.delete(sessionID)
+      }
+      // 注入后模型失败/被打断/直接 idle 时清掉 pending，否则循环会被永久卡住。
+      if (
+        event.type === "session.execution.failed" ||
+        event.type === "session.execution.interrupted" ||
+        event.type === "session.idle"
+      ) {
         pending.delete(sessionID)
       }
       return Promise.resolve()
