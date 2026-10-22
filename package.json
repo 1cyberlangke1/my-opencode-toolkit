@@ -21,6 +21,9 @@
     "cron",
     "tui"
   ],
+  "engines": {
+    "node": ">=20"
+  },
   "exports": {
     ".": "./index.ts",
     "./tui": "./tui.ts"

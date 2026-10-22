@@ -192,6 +192,8 @@ export function createGoalContinuation(args: {
           inFlight.delete(sessionID)
           lastAccountAt.delete(sessionID)
           roles.forget(sessionID)
+          // 会话删了就把目标一起清掉，避免插件存储里留下永远读不到的 key。
+          await controller.clearGoal(sessionID)
           return
         default:
           return

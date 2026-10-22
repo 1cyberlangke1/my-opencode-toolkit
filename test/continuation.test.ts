@@ -222,7 +222,7 @@ describe("goal continuation", () => {
     expect(log).toHaveLength(0)
   })
 
-  it("删除会话清掉运行状态", async () => {
+  it("删除会话清掉运行状态与目标", async () => {
     const store = storeWithGoalEnabled()
     const controller = createGoalController(store)
     await controller.setGoal(SESSION, "x")
@@ -231,8 +231,11 @@ describe("goal continuation", () => {
 
     await continuation.handle({ type: "session.idle", data: { sessionID: SESSION } })
     await continuation.handle({ type: "session.deleted", data: { sessionID: SESSION } })
+
+    // 会话删除后目标 key 也删掉，后续 idle 不再续作。
+    expect(await controller.getGoal(SESSION)).toBeNull()
     await continuation.handle({ type: "session.idle", data: { sessionID: SESSION } })
 
-    expect(log).toHaveLength(2)
+    expect(log).toHaveLength(1)
   })
 })

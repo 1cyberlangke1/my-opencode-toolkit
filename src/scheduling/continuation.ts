@@ -144,6 +144,7 @@ export function createSchedulingContinuation(args: {
         await store.removeJobs(ids)
         inFlight.delete(sessionID)
         pending.delete(sessionID)
+        roles.forget(sessionID)
         return
       }
       if (event.type === "session.step.ended" || event.type === "session.usage.updated") {

@@ -22,11 +22,13 @@ function truncate(text: string, max: number): string {
 }
 
 /**
- * 输入：命令名。
+ * 输入：命令名 + 该命令能快速成功退出的探测参数。
  * 输出：可用时返回命令名，否则 `null`。
  * 预期：结果缓存；探测超时 3 秒，不阻塞通知链路。
+ *       探测参数必须按命令区分：把 PowerShell 的 `-Command` 传给 osascript/notify-send 会必然失败，
+ *       导致这两个平台的命令被误判为不存在。
  */
-function createCommandFinder(commandName: string): () => Promise<string | null> {
+function createCommandFinder(commandName: string, probeArgs: readonly string[]): () => Promise<string | null> {
   let cached: string | null | undefined
   let pending: Promise<string | null> | undefined
 
@@ -36,7 +38,7 @@ function createCommandFinder(commandName: string): () => Promise<string | null> 
 
     pending = (async () => {
       try {
-        await execFileAsync(commandName, ["-NoProfile", "-Command", "exit 0"], {
+        await execFileAsync(commandName, [...probeArgs], {
           timeout: 3_000,
           windowsHide: true,
         })
@@ -50,9 +52,9 @@ function createCommandFinder(commandName: string): () => Promise<string | null> 
   }
 }
 
-const findPowerShell = createCommandFinder(POWERSHELL)
-const findOsascript = createCommandFinder(OSASCRIPT)
-const findNotifySend = createCommandFinder(NOTIFY_SEND)
+const findPowerShell = createCommandFinder(POWERSHELL, ["-NoProfile", "-Command", "exit 0"])
+const findOsascript = createCommandFinder(OSASCRIPT, ["-e", "return"])
+const findNotifySend = createCommandFinder(NOTIFY_SEND, ["--help"])
 
 /** 输入：命令 + 参数；输出：无。预期：静默执行，失败由调用方忽略。 */
 async function runQuiet(command: string, args: readonly string[]): Promise<void> {

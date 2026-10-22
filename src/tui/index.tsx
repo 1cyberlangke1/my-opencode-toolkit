@@ -120,134 +120,10 @@ export function Sidebar(props: {
 }
 
 /**
- * 输入：TUI 上下文 + 设置访问器 + 写入函数。
- * 输出：无渲染内容；注册 `/my-opencode-toolkit` 命令。
- * 预期：命令打开循环菜单，每次选择后写回设置并重开菜单；Esc 返回上一级。
- */
-function SettingsCommand(props: {
-  readonly context: Context
-  readonly settings: () => Settings
-  readonly update: (next: Settings) => Promise<void>
-}) {
-  const copy = (): Messages => resolveMessages(localeOf(props.settings().lang))
-
-  /** 选择语言并写回。 */
-  const chooseLanguage = async (): Promise<void> => {
-    const picked = await props.context.ui.dialog.select<Lang>({
-      title: copy().menu.language,
-      current: props.settings().lang,
-      options: [
-        { title: copy().menu.auto, value: "auto" },
-        { title: copy().menu.chinese, value: "zh" },
-        { title: copy().menu.english, value: "en" },
-      ],
-    })
-    if (picked === undefined) return
-    await props.update({ ...props.settings(), lang: picked })
-  }
-
-  /** 侧栏子菜单：逐项切换显示开关。 */
-  const chooseSidebar = async (): Promise<void> => {
-    for (;;) {
-      const current = props.settings()
-      const text = copy()
-      const onOff = (value: boolean): string => (value ? text.menu.on : text.menu.off)
-      const choice = await props.context.ui.dialog.select<SidebarChoice>({
-        title: text.menu.sidebar,
-        options: [
-          { title: text.menu.enabled, value: "enabled", footer: onOff(current.sidebar.enabled) },
-          { title: text.menu.showCache, value: "showCache", footer: onOff(current.sidebar.showCache) },
-          { title: text.menu.showTools, value: "showTools", footer: onOff(current.sidebar.showTools) },
-          { title: text.menu.showSubagents, value: "showSubagents", footer: onOff(current.sidebar.showSubagents) },
-          { title: text.menu.collapsed, value: "collapsed", footer: onOff(current.sidebar.collapsed) },
-        ],
-      })
-      if (choice === undefined) return
-      const next = { ...current.sidebar, [choice]: !current.sidebar[choice] }
-      await props.update({ ...current, sidebar: next })
-    }
-  }
-
-  /**
-   * 输入：要切换的条目。
-   * 输出：无。
-   * 预期：只改对应字段，其余设置保持不变。
-   */
-  const toggle = async (choice: Exclude<MenuChoice, "language" | "sidebar">): Promise<void> => {
-    const current = props.settings()
-    switch (choice) {
-      case "enabled":
-        await props.update({ ...current, enabled: !current.enabled })
-        return
-      case "notifications":
-        await props.update({
-          ...current,
-          notification: { ...current.notification, enabled: !current.notification.enabled },
-        })
-        return
-      case "goal":
-        await props.update({ ...current, goal: { enabled: !current.goal.enabled } })
-        return
-      case "scheduling":
-        await props.update({ ...current, scheduling: { enabled: !current.scheduling.enabled } })
-        return
-    }
-  }
-
-  /** 打开菜单；选择语言/侧栏进入子菜单，其余条目原地切换后重开。 */
-  const openMenu = async (): Promise<void> => {
-    for (;;) {
-      const current = props.settings()
-      const text = copy()
-      const onOff = (value: boolean): string => (value ? text.menu.on : text.menu.off)
-      const choice = await props.context.ui.dialog.select<MenuChoice>({
-        title: text.menu.title,
-        options: [
-          { title: text.menu.enabled, value: "enabled", footer: onOff(current.enabled) },
-          { title: text.menu.language, value: "language", footer: current.lang },
-          { title: text.menu.notifications, value: "notifications", footer: onOff(current.notification.enabled) },
-          { title: text.menu.goal, value: "goal", footer: onOff(current.goal.enabled) },
-          { title: text.menu.scheduling, value: "scheduling", footer: onOff(current.scheduling.enabled) },
-          { title: text.menu.sidebar, value: "sidebar", footer: onOff(current.sidebar.enabled) },
-        ],
-      })
-      if (choice === undefined) return
-      if (choice === "language") {
-        await chooseLanguage()
-        continue
-      }
-      if (choice === "sidebar") {
-        await chooseSidebar()
-        continue
-      }
-      await toggle(choice)
-    }
-  }
-
-  props.context.keymap.layer(() => ({
-    mode: "global",
-    commands: [
-      {
-        id: "my-opencode-toolkit.settings",
-        title: copy().command.title,
-        description: copy().command.description,
-        group: copy().command.group,
-        slash: { name: "my-opencode-toolkit" },
-        palette: true,
-        run() {
-          void openMenu()
-        },
-      },
-    ],
-  }))
-
-  return null
-}
-
-/**
  * 输入：TUI 插件上下文（含插件 options）。
  * 输出：侧栏面板 + `/my-opencode-toolkit` 设置命令。
  * 预期：设置以服务端存储为准，启动时通过 RPC 读取；写入失败时回滚本地值。
+ *       keymap 层在 setup 作用域注册，生命周期跟随插件，不依赖某个 slot 组件是否挂载。
  */
 export default Plugin.define({
   id: "my-opencode-toolkit.tui",
@@ -274,6 +150,116 @@ export default Plugin.define({
 
     const copy = (): Messages => resolveMessages(localeOf(settings().lang))
 
+    /** 选择语言并写回。 */
+    const chooseLanguage = async (): Promise<void> => {
+      const picked = await context.ui.dialog.select<Lang>({
+        title: copy().menu.language,
+        current: settings().lang,
+        options: [
+          { title: copy().menu.auto, value: "auto" },
+          { title: copy().menu.chinese, value: "zh" },
+          { title: copy().menu.english, value: "en" },
+        ],
+      })
+      if (picked === undefined) return
+      await update({ ...settings(), lang: picked })
+    }
+
+    /** 侧栏子菜单：逐项切换显示开关。 */
+    const chooseSidebar = async (): Promise<void> => {
+      for (;;) {
+        const current = settings()
+        const text = copy()
+        const onOff = (value: boolean): string => (value ? text.menu.on : text.menu.off)
+        const choice = await context.ui.dialog.select<SidebarChoice>({
+          title: text.menu.sidebar,
+          options: [
+            { title: text.menu.enabled, value: "enabled", footer: onOff(current.sidebar.enabled) },
+            { title: text.menu.showCache, value: "showCache", footer: onOff(current.sidebar.showCache) },
+            { title: text.menu.showTools, value: "showTools", footer: onOff(current.sidebar.showTools) },
+            { title: text.menu.showSubagents, value: "showSubagents", footer: onOff(current.sidebar.showSubagents) },
+            { title: text.menu.collapsed, value: "collapsed", footer: onOff(current.sidebar.collapsed) },
+          ],
+        })
+        if (choice === undefined) return
+        const next = { ...current.sidebar, [choice]: !current.sidebar[choice] }
+        await update({ ...current, sidebar: next })
+      }
+    }
+
+    /**
+     * 输入：要切换的条目。
+     * 输出：无。
+     * 预期：只改对应字段，其余设置保持不变。
+     */
+    const toggle = async (choice: Exclude<MenuChoice, "language" | "sidebar">): Promise<void> => {
+      const current = settings()
+      switch (choice) {
+        case "enabled":
+          await update({ ...current, enabled: !current.enabled })
+          return
+        case "notifications":
+          await update({
+            ...current,
+            notification: { ...current.notification, enabled: !current.notification.enabled },
+          })
+          return
+        case "goal":
+          await update({ ...current, goal: { enabled: !current.goal.enabled } })
+          return
+        case "scheduling":
+          await update({ ...current, scheduling: { enabled: !current.scheduling.enabled } })
+          return
+      }
+    }
+
+    /** 打开菜单；选择语言/侧栏进入子菜单，其余条目原地切换后重开。 */
+    const openMenu = async (): Promise<void> => {
+      for (;;) {
+        const current = settings()
+        const text = copy()
+        const onOff = (value: boolean): string => (value ? text.menu.on : text.menu.off)
+        const choice = await context.ui.dialog.select<MenuChoice>({
+          title: text.menu.title,
+          options: [
+            { title: text.menu.enabled, value: "enabled", footer: onOff(current.enabled) },
+            { title: text.menu.language, value: "language", footer: current.lang },
+            { title: text.menu.notifications, value: "notifications", footer: onOff(current.notification.enabled) },
+            { title: text.menu.goal, value: "goal", footer: onOff(current.goal.enabled) },
+            { title: text.menu.scheduling, value: "scheduling", footer: onOff(current.scheduling.enabled) },
+            { title: text.menu.sidebar, value: "sidebar", footer: onOff(current.sidebar.enabled) },
+          ],
+        })
+        if (choice === undefined) return
+        if (choice === "language") {
+          await chooseLanguage()
+          continue
+        }
+        if (choice === "sidebar") {
+          await chooseSidebar()
+          continue
+        }
+        await toggle(choice)
+      }
+    }
+
+    context.keymap.layer(() => ({
+      mode: "global",
+      commands: [
+        {
+          id: "my-opencode-toolkit.settings",
+          title: copy().command.title,
+          description: copy().command.description,
+          group: copy().command.group,
+          slash: { name: "my-opencode-toolkit" },
+          palette: true,
+          run() {
+            void openMenu()
+          },
+        },
+      ],
+    }))
+
     const disposePanel = context.ui.slot({
       append: "sidebar.content",
       render: (input) => (
@@ -281,14 +267,8 @@ export default Plugin.define({
       ),
     })
 
-    const disposeCommand = context.ui.slot({
-      append: "app",
-      render: () => <SettingsCommand context={context} settings={settings} update={update} />,
-    })
-
     return () => {
       disposePanel()
-      disposeCommand()
     }
   },
 })
