@@ -76,6 +76,14 @@ Windows 补充：只设 `HOME` 不够，`os.homedir()` 读 `USERPROFILE`，必�
 - `/loop` 是内存态（不持久化），fixed 按间隔重复，dynamic 等 `schedule_wakeup`，20 分钟没唤醒就结束。
 - `/cron` 建的任务默认 durable；命令与工具都通过 `ctx.session.prompt` 把反馈发回会话。
 
+## 通知（P3 实测）
+
+- 权限请求事件是 `permission.asked`（载荷含 `sessionID`）；V2 没有 `permission.ask/updated`。
+- 提问用 `ctx.tool.hook("execute.before")` 判断工具名 `question`。
+- V2 没有读取消息列表的 API，通知正文只能是固定文案 + 会话标题，做不了旧版的「最后一条用户/助手内容」预览。
+- 发送是 OS 级：Windows PowerShell toast、macOS osascript、Linux notify-send；命令存在性探测结果缓存。
+- `onlyMainSession` 用 `parentID` 判断子代理，等价于旧版的主会话过滤。
+
 ## 旧仓库
 
 - V1 依赖 `@opencode-ai/plugin`，导出 `./server` + `./tui`，用 tsc + esbuild 构建后复制到 `~/.config/opencode/plugins`。

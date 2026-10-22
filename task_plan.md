@@ -46,9 +46,9 @@ OpenCode V2 插件重写。功能保留：通知、Goal、cron/loop、TUI 侧栏
 
 ### P3 通知
 
-- [ ] 跨平台发送（PowerShell toast / osascript / notify-send）
-- [ ] 完成 / 提问 / 权限事件
-- [ ] 截断与多语言
+- [x] 跨平台发送（PowerShell toast / osascript / notify-send）
+- [x] 完成 / 提问 / 权限事件
+- [x] 截断与多语言
 
 ### P4 TUI
 

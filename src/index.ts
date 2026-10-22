@@ -4,6 +4,7 @@ import { hideGoalTools } from "./goal/filter.ts"
 import { registerGoal } from "./goal/index.ts"
 import { createGoalController } from "./goal/controller.ts"
 import { createSessionRoles } from "./goal/session-role.ts"
+import { createNotifier } from "./notification/index.ts"
 import { hideSchedulingTools } from "./scheduling/filter.ts"
 import { registerScheduling } from "./scheduling/index.ts"
 import { loadSettings, saveSettings } from "./shared/settings-store.ts"
@@ -54,10 +55,29 @@ export default Plugin.define({
       if (subagent || !settings.scheduling.enabled) hideSchedulingTools(event.tools)
     })
 
+    const notifier = createNotifier({ ctx, store: ctx.storage, roles })
+    const toolHook = await ctx.tool.hook("execute.before", async (input) => {
+      await notifier.handleToolBefore({ tool: input.tool, sessionID: input.sessionID })
+    })
+
+    const notifyEvents = new AbortController()
+    void (async () => {
+      try {
+        for await (const event of ctx.event.subscribe({ signal: notifyEvents.signal })) {
+          await notifier.handle({ type: event.type, data: event.data })
+        }
+      } catch {
+        // aborted 或连接断开：卸载时正常路径
+      }
+    })()
+
     // 工具注册后刷新一次工具表，让当前会话的下一次请求就能看到新工具。
     await ctx.tool.reload()
 
     return async () => {
+      notifyEvents.abort()
+      notifier.dispose()
+      await toolHook.dispose()
       await hook.dispose()
       await scheduling.dispose()
       await goal.dispose()

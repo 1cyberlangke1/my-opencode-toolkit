@@ -33,10 +33,17 @@ P2 cron / loop 完成，`pnpm check` 与隔离 e2e 全绿。
 - 命令：`/loop [interval] [prompt]`、`/loop stop`、`/cron <expr> <prompt>`、`/cron once ...`、`/cron list`、`/cron delete <id>`。
 - 注入规则：子代理跳过、goal active 让路、上一条未完成跳过；timer + idle 双通道。
 
+### P3
+
+- `src/notification/`：format / send / index。
+- OS 级通知：Windows toast、macOS osascript、Linux notify-send，命令探测缓存、长度截断。
+- 事件：`session.idle` 完成、`permission.asked` 权限、`question` 工具提问。
+- 多语言文案跟随设置语言；`onlyMainSession` 跳过子代理；idle 1 秒去重。
+
 ## 进行中
 
 无。
 
 ## 待办
 
-P3 通知。
+P4 TUI。

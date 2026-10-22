@@ -29,6 +29,12 @@ export type Messages = {
     readonly on: string
     readonly off: string
   }
+  readonly notification: {
+    readonly title: string
+    readonly completed: string
+    readonly question: string
+    readonly permission: string
+  }
   readonly tool: {
     readonly pingResult: (enabled: boolean, lang: string) => string
   }

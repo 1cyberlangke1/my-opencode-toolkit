@@ -27,6 +27,12 @@ export const zh: Messages = {
     on: "已启用",
     off: "已禁用",
   },
+  notification: {
+    title: "OpenCode",
+    completed: "任务完成",
+    question: "代理正在提问",
+    permission: "需要权限确认",
+  },
   tool: {
     pingResult: (enabled, lang) => `my-opencode-toolkit：启用=${enabled ? "是" : "否"}，语言=${lang}`,
   },

@@ -27,6 +27,12 @@ export const en: Messages = {
     on: "enabled",
     off: "disabled",
   },
+  notification: {
+    title: "OpenCode",
+    completed: "Task completed",
+    question: "The agent is asking a question",
+    permission: "Permission required",
+  },
   tool: {
     pingResult: (enabled, lang) => `my-opencode-toolkit: enabled=${String(enabled)}, lang=${lang}`,
   },
