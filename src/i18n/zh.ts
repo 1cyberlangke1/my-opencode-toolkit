@@ -1,14 +1,15 @@
 import type { Messages } from "./types.ts"
+import { PLUGIN_ID } from "../shared/identity.ts"
 
 /** 中文文案。 */
 export const zh: Messages = {
   command: {
     title: "工具包设置",
-    description: "打开 my-opencode-toolkit 设置",
+    description: `打开 ${PLUGIN_ID} 设置`,
     group: "插件",
   },
   menu: {
-    title: "my-opencode-toolkit",
+    title: PLUGIN_ID,
     enabled: "启用",
     language: "语言",
     notifications: "通知",
@@ -56,6 +57,6 @@ export const zh: Messages = {
     assistant: "助手",
   },
   tool: {
-    pingResult: (enabled, lang) => `my-opencode-toolkit：启用=${enabled ? "是" : "否"}，语言=${lang}`,
+    pingResult: (enabled, lang) => `${PLUGIN_ID}：启用=${enabled ? "是" : "否"}，语言=${lang}`,
   },
 }

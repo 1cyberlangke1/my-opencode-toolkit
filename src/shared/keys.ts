@@ -1,3 +1,11 @@
+/**
+ * 插件存储 key。
+ *
+ * 预期：这些 key 不需要带插件名前缀——OpenCode 会把它们放进
+ *       `plugin:<插件 ID>:` 命名空间。自己再拼 `my-opencode-toolkit` 只会让 key 变长，
+ *       并在改插件名时更难迁移。
+ */
+
 /** 全局设置的存储 key。 */
 export const SETTINGS_KEY = "settings"
 

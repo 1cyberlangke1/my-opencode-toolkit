@@ -8,6 +8,7 @@ import { createNotifier } from "./notification/index.ts"
 import { hideSchedulingTools } from "./scheduling/filter.ts"
 import { registerScheduling } from "./scheduling/index.ts"
 import { dispatchEvent, type EventHandler } from "./shared/events.ts"
+import { PLUGIN_ID } from "./shared/identity.ts"
 import { asRecord } from "./shared/json.ts"
 import { ToolkitRpc } from "./shared/rpc.ts"
 import { loadSettings, saveSettings } from "./shared/settings-store.ts"
@@ -16,7 +17,7 @@ import { buildStats, createStatsTracker, hitRatePercent, trackEvent } from "./st
 import { registerPingTool } from "./tools/ping.ts"
 
 export default Plugin.define({
-  id: "my-opencode-toolkit",
+  id: PLUGIN_ID,
 
   /**
    * 输入：OpenCode 注入的插件上下文。

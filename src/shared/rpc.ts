@@ -1,5 +1,6 @@
 import { Rpc } from "@opencode/plugin/rpc"
 
+import { RPC_ID } from "./identity.ts"
 import type { Settings } from "./settings.ts"
 
 /** 设置读取的输入：当前不需要参数，保留空对象以便后续扩展。 */
@@ -142,7 +143,7 @@ const PanelOutputJson = {
 
 /** 服务端与 TUI 共用的 RPC 定义。 */
 export const ToolkitRpc: Rpc.PortableDefinition = Rpc.define({
-  id: "my-opencode-toolkit",
+  id: RPC_ID,
   methods: {
     settingsGet: { input: EmptyInputJson, output: SettingsJson },
     settingsSet: { input: SettingsJson, output: SettingsJson },

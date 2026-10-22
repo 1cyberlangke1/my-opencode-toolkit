@@ -2,10 +2,11 @@ import type { Plugin } from "@opencode/plugin"
 import { Schema } from "effect"
 
 import { resolveMessages } from "../i18n/index.ts"
+import { PLUGIN_ID } from "../shared/identity.ts"
 import { loadSettings } from "../shared/settings-store.ts"
 
 const DESCRIPTION =
-  "Returns the my-opencode-toolkit status: whether the plugin is enabled and which language it uses. " +
+  `Returns the ${PLUGIN_ID} status: whether the plugin is enabled and which language it uses. ` +
   "Use it to verify the plugin is loaded."
 
 const PingInput = Schema.Struct({})

@@ -4,6 +4,7 @@ import { createSignal, onCleanup, onMount } from "solid-js"
 
 import { resolveMessages, type Messages } from "../i18n/index.ts"
 import { formatTokens } from "../shared/format.ts"
+import { SETTINGS_COMMAND_ID, SETTINGS_SLASH_NAME, TUI_PLUGIN_ID } from "../shared/identity.ts"
 import { DEFAULT_SETTINGS, type Lang, type Settings } from "../shared/settings.ts"
 import { toolkitRpc, type PanelData } from "../shared/rpc.ts"
 
@@ -126,7 +127,7 @@ export function Sidebar(props: {
  *       keymap 层在 setup 作用域注册，生命周期跟随插件，不依赖某个 slot 组件是否挂载。
  */
 export default Plugin.define({
-  id: "my-opencode-toolkit.tui",
+  id: TUI_PLUGIN_ID,
 
   async setup(context) {
     const rpc = toolkitRpc(context.client)
@@ -247,11 +248,11 @@ export default Plugin.define({
       mode: "global",
       commands: [
         {
-          id: "my-opencode-toolkit.settings",
+          id: SETTINGS_COMMAND_ID,
           title: copy().command.title,
           description: copy().command.description,
           group: copy().command.group,
-          slash: { name: "my-opencode-toolkit" },
+          slash: { name: SETTINGS_SLASH_NAME },
           palette: true,
           run() {
             void openMenu()

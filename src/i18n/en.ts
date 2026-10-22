@@ -1,14 +1,15 @@
 import type { Messages } from "./types.ts"
+import { PLUGIN_ID } from "../shared/identity.ts"
 
 /** 英文文案。 */
 export const en: Messages = {
   command: {
     title: "Toolkit settings",
-    description: "Open my-opencode-toolkit settings",
+    description: `Open ${PLUGIN_ID} settings`,
     group: "Plugins",
   },
   menu: {
-    title: "my-opencode-toolkit",
+    title: PLUGIN_ID,
     enabled: "Enabled",
     language: "Language",
     notifications: "Notifications",
@@ -56,6 +57,6 @@ export const en: Messages = {
     assistant: "Assistant",
   },
   tool: {
-    pingResult: (enabled, lang) => `my-opencode-toolkit: enabled=${String(enabled)}, lang=${lang}`,
+    pingResult: (enabled, lang) => `${PLUGIN_ID}: enabled=${String(enabled)}, lang=${lang}`,
   },
 }

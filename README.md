@@ -127,9 +127,18 @@ OpenCode v2 插件：系统通知、持久目标、定时任务与循环、TUI �
 ## 数据与隐私
 
 - 目标、任务、设置都写在 OpenCode 的插件存储里，不额外建数据库
+- 存储 key 不带插件名前缀；OpenCode 会自动放进 `plugin:<插件 ID>:` 命名空间
+- 运行时不写任何自定义文件；唯一读取的项目文件是 `loop.md`（用户提供的循环提示词）
 - 通知预览会读取当前会话最后一条用户/助手文本，只用于本地系统通知
 - 不发送任何遥测；不访问网络（通知命令与 OpenCode 自身除外）
 - 删除会话时会清掉该会话的 goal、定时任务、循环、统计与角色缓存
+
+## 并发与多实例
+
+- OpenCode 默认跑一个受管后台 server，多个 TUI 共用它，所以插件通常只有一个实例
+- 用 `--standalone` 或同时跑多个 server 时，每个 server 都会加载插件；它们共用同一个插件存储，但“读 → 改 → 写”不是跨进程事务
+- 可能出现：同一 cron/loop 被两个实例各触发一次、token 记账后写覆盖先写、设置 last-write-wins
+- 建议：同一个会话只挂一个 server；需要并行时用不同会话
 
 ## 已知限制
 
@@ -137,7 +146,6 @@ OpenCode v2 插件：系统通知、持久目标、定时任务与循环、TUI �
 - 通知依赖系统命令：Windows 用 PowerShell toast，macOS 用 `osascript`，Linux 用 `notify-send`
 - 定时任务按 OpenCode 进程的本地时区解析；不支持秒级字段与 `L` / `W` / `?` 等扩展语法
 - 夏令时：春季拨快时不存在的时间顺延到次日；秋季拨慢时重复的一小时会被跳过（每天只触发一次）
-- 同一会话不要同时开多个 OpenCode 实例执行目标/定时任务；插件存储没有跨进程锁
 - 目标进行中时 cron/loop 让路，避免和续作抢同一轮对话
 - 子代理会话不提供 goal/scheduling 工具，也不会被注入续作
 
@@ -172,7 +180,7 @@ OpenCode v2 插件：系统通知、持久目标、定时任务与循环、TUI �
 
 ```bash
 pnpm install
-pnpm check        # typecheck + lint + 175 单测 + 7 bun 测试 + 发布包内容校验
+pnpm check        # typecheck + lint + 176 单测 + 7 bun 测试 + 发布包内容校验
 pnpm test:e2e     # 需要本机 opencode 2.x 与 bun，使用隔离的 HOME/DB/config
 pnpm test:e2e:tui # 真实 TUI：PTY 启动 opencode --standalone，打开设置菜单
 ```

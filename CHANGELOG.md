@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### 重构
+
+- 插件身份常量收拢到 `src/shared/identity.ts`；运行时不再散落 `my-opencode-toolkit` 字面量
+- 存储 key 保持不带插件名前缀，依赖 OpenCode 的 `plugin:<id>:` 命名空间
+
+### 文档
+
+- README 增加“并发与多实例”说明：默认单 server 安全，多个 standalone server 共享存储但无跨进程锁
+
 ## 0.2.6
 
 ### 测试
