@@ -148,9 +148,32 @@ export function trackEvent(
 }
 
 /**
+ * 输入：插件上下文 + 父会话 ID。
+ * 输出：该会话的子代理数量。
+ * 预期：按 parentID 过滤并逐页翻完；任何一页读取失败就返回已统计的数量，不抛异常。
+ */
+async function countSubagents(ctx: Plugin.Context, sessionID: string): Promise<number> {
+  let cursor: string | undefined
+  let total = 0
+  // 翻页上限：防止异常服务端返回循环 cursor 时无限循环。
+  for (let page = 0; page < 200; page += 1) {
+    const listed = await ctx.session
+      .list({ parentID: sessionID, ...(cursor === undefined ? {} : { cursor }) })
+      .catch(() => undefined)
+    if (listed === undefined) return total
+    total += listed.data.length
+
+    const next = listed.cursor.next
+    if (next === undefined || next === null || next === cursor) return total
+    cursor = next
+  }
+  return total
+}
+
+/**
  * 输入：插件上下文 + 会话 ID。
  * 输出：从 OpenCode 已存消息重建的统计。
- * 预期：只统计 assistant 消息的 tokens 与 tool 片段；子代理数来自会话列表的 parentID。
+ * 预期：只统计 assistant 消息的 tokens 与 tool 片段；子代理数来自会话列表的 parentID 过滤。
  *       读取失败按空统计处理，不抛异常。
  */
 export async function buildStats(ctx: Plugin.Context, sessionID: string): Promise<SessionStats> {
@@ -176,8 +199,7 @@ export async function buildStats(ctx: Plugin.Context, sessionID: string): Promis
     }
   }
 
-  const listed = await ctx.session.list().catch(() => undefined)
-  const subagents = (listed?.data ?? []).filter((session) => session.parentID === sessionID).length
+  const subagents = await countSubagents(ctx, sessionID)
   return { steps, input, output, cached, tools, subagents }
 }
 

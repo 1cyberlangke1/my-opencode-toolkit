@@ -109,7 +109,7 @@ describe("hitRatePercent", () => {
 })
 
 describe("buildStats", () => {
-  /** 输入：无；输出：带消息与会话列表的假上下文。 */
+  /** 输入：无；输出：带消息与会话列表的假上下文（按 parentID 过滤，模拟服务端行为）。 */
   function fakeCtx(): Plugin.Context {
     return {
       session: {
@@ -125,9 +125,12 @@ describe("buildStats", () => {
               ],
             },
           ]),
-        list: () =>
+        list: (input?: { readonly parentID?: string }) =>
           Promise.resolve({
-            data: [{ id: SESSION }, { id: "ses_child", parentID: SESSION }],
+            data: [{ id: SESSION }, { id: "ses_child", parentID: SESSION }].filter(
+              (session) => input?.parentID === undefined || session.parentID === input.parentID,
+            ),
+            cursor: {},
           }),
       },
     } as unknown as Plugin.Context
@@ -143,6 +146,27 @@ describe("buildStats", () => {
       tools: { read: 1 },
       subagents: 1,
     })
+  })
+
+  it("子代理列表跨页累加", async () => {
+    const pages: Record<string, { data: { id: string; parentID?: string }[]; cursor: { next?: string } }> = {
+      "": { data: [{ id: "child1", parentID: SESSION }], cursor: { next: "p2" } },
+      p2: { data: [{ id: "child2", parentID: SESSION }], cursor: {} },
+    }
+    let calls = 0
+    const ctx = {
+      session: {
+        context: () => Promise.resolve([]),
+        list: (input?: { readonly cursor?: string }) => {
+          calls += 1
+          return Promise.resolve(pages[input?.cursor ?? ""] ?? { data: [], cursor: {} })
+        },
+      },
+    } as unknown as Plugin.Context
+
+    const stats = await buildStats(ctx, SESSION)
+    expect(stats.subagents).toBe(2)
+    expect(calls).toBe(2)
   })
 
   it("读取失败按空统计处理", async () => {
