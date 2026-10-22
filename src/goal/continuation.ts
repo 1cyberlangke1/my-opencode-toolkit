@@ -7,7 +7,7 @@ import { lastMessageIsUserInput } from "../shared/messages.ts"
 import { loadSettings } from "../shared/settings-store.ts"
 import type { GoalController } from "./controller.ts"
 import { classifyGoalFailure } from "./error.ts"
-import { buildContinuationPrompt } from "./prompts.ts"
+import { buildBudgetLimitPrompt, buildContinuationPrompt } from "./prompts.ts"
 import type { SessionRoles } from "./session-role.ts"
 
 /** 注入消息的 metadata 标记，用于识别“这条 user 消息是我们发的”。 */
@@ -65,14 +65,20 @@ export function createGoalContinuation(args: {
     return settings.enabled && settings.goal.enabled
   }
 
-  /** 输入：会话 ID + token 增量；输出：无。预期：只对 active 目标记账。 */
-  const account = async (sessionID: string, tokens: number): Promise<void> => {
+  /**
+   * 输入：会话 ID + token 增量。
+   * 输出：本次记账是否刚刚把 goal 从 active 推到 budget_limited。
+   * 预期：只对 active 目标记账；只有状态发生跃迁时才返回 true，后续 step 不会重复触发收尾提示。
+   */
+  const account = async (sessionID: string, tokens: number): Promise<boolean> => {
     const at = now()
     const last = lastAccountAt.get(sessionID)
     const elapsedSeconds = last === undefined ? 0 : Math.max(0, Math.floor((at - last) / 1000))
     lastAccountAt.set(sessionID, at)
-    if (tokens === 0 && elapsedSeconds === 0) return
-    await controller.accountUsage(sessionID, { tokens, elapsedSeconds })
+    if (tokens === 0 && elapsedSeconds === 0) return false
+    const before = await controller.getGoal(sessionID)
+    const after = await controller.accountUsage(sessionID, { tokens, elapsedSeconds })
+    return before?.status === "active" && after?.status === "budget_limited"
   }
 
   /** 输入：会话 ID + 文本；输出：无。预期：注入一条带标记的续作提示；并发或失败时静默跳过。 */
@@ -178,7 +184,10 @@ export function createGoalContinuation(args: {
           state.tokenLimitDetected = false
           pending.delete(sessionID)
           if (!(await enabled())) return
-          await account(sessionID, readTokens(data["tokens"]))
+          if (!(await account(sessionID, readTokens(data["tokens"])))) return
+          // 预算刚用尽：发一次收尾提示，让模型总结进度并给出下一步。
+          const goal = await controller.getGoal(sessionID)
+          if (goal !== null) await inject(sessionID, buildBudgetLimitPrompt(goal))
           return
         }
         case "session.idle":

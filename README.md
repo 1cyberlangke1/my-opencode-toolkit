@@ -165,7 +165,7 @@ OpenCode v2 插件：系统通知、持久目标、定时任务与循环、TUI �
 
 ```bash
 pnpm install
-pnpm check        # typecheck + lint + 179 单测 + 8 bun 测试 + 发布包内容校验
+pnpm check        # typecheck + lint + 180 单测 + 8 bun 测试 + 发布包内容校验
 pnpm test:e2e     # 需要本机 opencode 2.x 与 bun，使用隔离的 HOME/DB/config
 pnpm test:e2e:tui # 真实 TUI：PTY 启动 opencode --standalone，打开设置菜单
 ```

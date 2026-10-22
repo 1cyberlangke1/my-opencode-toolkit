@@ -138,6 +138,38 @@ describe("goal continuation", () => {
     expect((await controller.getGoal(SESSION))?.tokensUsed).toBe(152)
   })
 
+  it("记账达到 token 预算时发一次收尾提示", async () => {
+    const store = storeWithGoalEnabled()
+    const controller = createGoalController(store)
+    await controller.setGoal(SESSION, "ship it", 100)
+    const log: PromptLog = []
+    const continuation = createGoalContinuation({
+      ctx: fakeCtx(log),
+      store,
+      controller,
+      roles,
+      now: () => 10_000,
+    })
+
+    await continuation.handle({
+      type: "session.step.ended",
+      data: { sessionID: SESSION, tokens: { input: 60, output: 50 } },
+    })
+
+    expect((await controller.getGoal(SESSION))?.status).toBe("budget_limited")
+    expect(log).toHaveLength(1)
+    expect(log[0]?.text).toContain("reached its token budget")
+    expect(log[0]?.text).toContain("budget_limited")
+    expect(log[0]?.text).toContain("ship it")
+
+    // 后续 step 不再重复发收尾提示。
+    await continuation.handle({
+      type: "session.step.ended",
+      data: { sessionID: SESSION, tokens: { input: 10, output: 10 } },
+    })
+    expect(log).toHaveLength(1)
+  })
+
   it("用户打断会暂停目标", async () => {
     const store = storeWithGoalEnabled()
     const controller = createGoalController(store)
