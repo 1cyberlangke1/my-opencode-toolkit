@@ -1,6 +1,6 @@
 {
   "name": "my-opencode-toolkit",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "OpenCode 插件：系统通知、持久目标、定时任务与 TUI 面板",
   "type": "module",
   "license": "MIT",
@@ -50,6 +50,7 @@
     "test": "vitest run",
     "test:tui": "cd tui-test && bun test",
     "test:e2e": "bun scripts/e2e-load.mjs",
+    "test:e2e:tui": "bun scripts/e2e-tui.mjs",
     "test:watch": "vitest"
   },
   "devDependencies": {

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.6
+
+### 测试
+
+- 新增真实 TUI e2e：PTY 启动 `opencode --standalone`，输入 `/my-opencode-toolkit` 并断言设置菜单渲染
+- 新增 DST 测试：春季拨快时不存在的时间顺延到次日，秋季拨慢时重复的一小时被跳过
+- `pnpm check` 现在包含 175 单测 + 7 个 bun 测试 + 发布包内容校验
+
+### 文档
+
+- README 补充真实 TUI e2e 用法与夏令时行为
+
 ## 0.2.5
 
 ### 修复

@@ -136,7 +136,7 @@ OpenCode v2 插件：系统通知、持久目标、定时任务与循环、TUI �
 - 侧栏统计是进程内数据：重启后第一次打开面板会从已存消息重建（重建瞬间完成的一步可能漏算）
 - 通知依赖系统命令：Windows 用 PowerShell toast，macOS 用 `osascript`，Linux 用 `notify-send`
 - 定时任务按 OpenCode 进程的本地时区解析；不支持秒级字段与 `L` / `W` / `?` 等扩展语法
-- 夏令时切换当天，本地时间的 cron 可能跳过或重复一次（标准 cron 语义的固有问题）
+- 夏令时：春季拨快时不存在的时间顺延到次日；秋季拨慢时重复的一小时会被跳过（每天只触发一次）
 - 同一会话不要同时开多个 OpenCode 实例执行目标/定时任务；插件存储没有跨进程锁
 - 目标进行中时 cron/loop 让路，避免和续作抢同一轮对话
 - 子代理会话不提供 goal/scheduling 工具，也不会被注入续作
@@ -172,11 +172,12 @@ OpenCode v2 插件：系统通知、持久目标、定时任务与循环、TUI �
 
 ```bash
 pnpm install
-pnpm check        # typecheck + lint + 175 单测 + TUI 测试 + 发布包内容校验
+pnpm check        # typecheck + lint + 175 单测 + 7 bun 测试 + 发布包内容校验
 pnpm test:e2e     # 需要本机 opencode 2.x 与 bun，使用隔离的 HOME/DB/config
+pnpm test:e2e:tui # 真实 TUI：PTY 启动 opencode --standalone，打开设置菜单
 ```
 
-e2e 用假 provider 驱动工具调用，不会请求真实模型；它会在临时目录里启动一个隔离的 OpenCode server，不读写日常数据。
+e2e 用假 provider 驱动工具调用，不会请求真实模型；它会在临时目录里启动一个隔离的 OpenCode server，不读写日常数据。`test:e2e:tui` 通过 ConPTY（Windows）或 openpty（macOS/Linux）驱动真实 TUI，验证 TUI 插件加载、斜杠命令与设置菜单渲染。
 
 ## 许可证
 
