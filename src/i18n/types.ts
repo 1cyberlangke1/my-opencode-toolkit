@@ -23,6 +23,21 @@ export type Messages = {
     readonly chinese: string
     readonly english: string
     readonly back: string
+    readonly showCache: string
+    readonly showTools: string
+    readonly showSubagents: string
+    readonly collapsed: string
+  }
+  readonly panel: {
+    readonly title: string
+    readonly goal: string
+    readonly noGoal: string
+    readonly loops: string
+    readonly jobs: string
+    readonly cache: string
+    readonly tools: string
+    readonly subagents: string
+    readonly status: Readonly<Record<string, string>>
   }
   readonly sidebar: {
     readonly title: string

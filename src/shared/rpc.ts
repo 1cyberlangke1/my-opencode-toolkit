@@ -9,6 +9,14 @@ const EmptyInputJson = {
   additionalProperties: false,
 } as const
 
+/** 面板查询输入。 */
+const PanelInputJson = {
+  type: "object",
+  properties: { sessionID: { type: "string" } },
+  required: ["sessionID"],
+  additionalProperties: false,
+} as const
+
 /** 设置对象的 JSON Schema，服务端与 TUI 共用。 */
 const SettingsJson = {
   type: "object",
@@ -56,20 +64,142 @@ const SettingsJson = {
   additionalProperties: false,
 } as const
 
+/** 面板里的目标摘要。 */
+const PanelGoalJson = {
+  type: "object",
+  properties: {
+    objective: { type: "string" },
+    status: { type: "string", enum: ["active", "paused", "blocked", "budget_limited", "complete"] },
+    tokensUsed: { type: "number" },
+    tokenBudget: { type: "number" },
+    timeUsedSeconds: { type: "number" },
+  },
+  required: ["objective", "status", "tokensUsed", "timeUsedSeconds"],
+  additionalProperties: false,
+} as const
+
+/** 面板里的循环摘要。 */
+const PanelLoopJson = {
+  type: "object",
+  properties: {
+    id: { type: "string" },
+    mode: { type: "string", enum: ["fixed", "dynamic"] },
+    prompt: { type: "string" },
+    nextFireAt: { type: "number" },
+  },
+  required: ["id", "mode", "prompt"],
+  additionalProperties: false,
+} as const
+
+/** 面板里的定时任务摘要。 */
+const PanelJobJson = {
+  type: "object",
+  properties: {
+    id: { type: "string" },
+    cron: { type: "string" },
+    prompt: { type: "string" },
+    nextRunAt: { type: "number" },
+  },
+  required: ["id", "cron", "prompt"],
+  additionalProperties: false,
+} as const
+
+/** 面板里的统计。 */
+const PanelStatsJson = {
+  type: "object",
+  properties: {
+    steps: { type: "number" },
+    input: { type: "number" },
+    output: { type: "number" },
+    cached: { type: "number" },
+    hitRate: { type: "number" },
+    subagents: { type: "number" },
+    tools: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { name: { type: "string" }, count: { type: "number" } },
+        required: ["name", "count"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["steps", "input", "output", "cached", "hitRate", "subagents", "tools"],
+  additionalProperties: false,
+} as const
+
+const PanelOutputJson = {
+  type: "object",
+  properties: {
+    goal: { anyOf: [PanelGoalJson, { type: "null" }] },
+    loops: { type: "array", items: PanelLoopJson },
+    jobs: { type: "array", items: PanelJobJson },
+    stats: PanelStatsJson,
+  },
+  required: ["goal", "loops", "jobs", "stats"],
+  additionalProperties: false,
+} as const
+
 /** 服务端与 TUI 共用的 RPC 定义。 */
 export const ToolkitRpc: Rpc.PortableDefinition = Rpc.define({
   id: "my-opencode-toolkit",
   methods: {
     settingsGet: { input: EmptyInputJson, output: SettingsJson },
     settingsSet: { input: SettingsJson, output: SettingsJson },
+    panelGet: { input: PanelInputJson, output: PanelOutputJson },
   },
   events: {},
 })
+
+/** 面板目标摘要。 */
+export type PanelGoal = {
+  readonly objective: string
+  readonly status: string
+  readonly tokensUsed: number
+  readonly tokenBudget?: number
+  readonly timeUsedSeconds: number
+}
+
+/** 面板循环摘要。 */
+export type PanelLoop = {
+  readonly id: string
+  readonly mode: "fixed" | "dynamic"
+  readonly prompt: string
+  readonly nextFireAt?: number
+}
+
+/** 面板任务摘要。 */
+export type PanelJob = {
+  readonly id: string
+  readonly cron: string
+  readonly prompt: string
+  readonly nextRunAt?: number
+}
+
+/** 面板统计。 */
+export type PanelStats = {
+  readonly steps: number
+  readonly input: number
+  readonly output: number
+  readonly cached: number
+  readonly hitRate: number
+  readonly subagents: number
+  readonly tools: readonly { readonly name: string; readonly count: number }[]
+}
+
+/** 面板数据。 */
+export type PanelData = {
+  readonly goal: PanelGoal | null
+  readonly loops: readonly PanelLoop[]
+  readonly jobs: readonly PanelJob[]
+  readonly stats: PanelStats
+}
 
 /** TUI 侧对 ToolkitRpc 的类型化视图。 */
 export type ToolkitRpcClient = {
   settingsGet(input: Record<string, never>): Promise<Settings>
   settingsSet(input: Settings): Promise<Settings>
+  panelGet(input: { readonly sessionID: string }): Promise<PanelData>
 }
 
 /**

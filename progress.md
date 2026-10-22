@@ -40,10 +40,18 @@ P2 cron / loop 完成，`pnpm check` 与隔离 e2e 全绿。
 - 事件：`session.idle` 完成、`permission.asked` 权限、`question` 工具提问。
 - 多语言文案跟随设置语言；`onlyMainSession` 跳过子代理；idle 1 秒去重。
 
+### P4
+
+- `src/stats.ts`：内存统计（step token、工具计数、子代理数、命中率）。
+- RPC 新增 `panelGet`，返回 goal / loops / jobs / stats。
+- TUI 侧栏：目标、缓存命中、工具 Top3、子代理、循环与任务数量；按会话事件节流刷新。
+- `/my-opencode-toolkit` 菜单新增侧栏子菜单（启用/缓存/工具/子代理/折叠）。
+- `tui-test/`：2 个渲染测试，`pnpm check` 已包含 `test:tui`。
+
 ## 进行中
 
 无。
 
 ## 待办
 
-P4 TUI。
+P5 收尾。

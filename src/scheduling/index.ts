@@ -8,10 +8,14 @@ import { createSchedulingContinuation } from "./continuation.ts"
 import { createLoopScheduler } from "./loops.ts"
 import { createSchedulingStore } from "./store.ts"
 import { registerSchedulingTools } from "./tools.ts"
+import type { SchedulingStore } from "./store.ts"
+import type { LoopScheduler } from "./loops.ts"
 
-/** 注销句柄。 */
-export type Disposable = {
+/** 注销句柄 + 面板要用的数据源。 */
+export type SchedulingHandle = {
   dispose(): Promise<void>
+  readonly jobs: SchedulingStore
+  readonly scheduler: LoopScheduler
 }
 
 /**
@@ -25,7 +29,7 @@ export async function registerScheduling(
   store: ScannableStore,
   roles: SessionRoles,
   shouldDefer: (sessionID: string) => Promise<boolean>,
-): Promise<Disposable> {
+): Promise<SchedulingHandle> {
   const jobs = createSchedulingStore(store)
   await jobs.load()
 
@@ -59,6 +63,8 @@ export async function registerScheduling(
   })()
 
   return {
+    jobs,
+    scheduler,
     async dispose() {
       events.abort()
       continuation.dispose()

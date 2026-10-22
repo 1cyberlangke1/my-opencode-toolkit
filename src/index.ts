@@ -9,7 +9,9 @@ import { hideSchedulingTools } from "./scheduling/filter.ts"
 import { registerScheduling } from "./scheduling/index.ts"
 import { loadSettings, saveSettings } from "./shared/settings-store.ts"
 import { normalizeSettings } from "./shared/settings.ts"
+import { asRecord } from "./shared/json.ts"
 import { ToolkitRpc } from "./shared/rpc.ts"
+import { createStatsTracker, hitRatePercent, trackEvent } from "./stats.ts"
 import { registerPingTool } from "./tools/ping.ts"
 
 export default Plugin.define({
@@ -17,11 +19,22 @@ export default Plugin.define({
 
   /**
    * 输入：OpenCode 注入的插件上下文。
-   * 输出：设置 RPC、`toolkit_ping`、Goal 与定时任务功能，以及卸载回调。
+   * 输出：设置/面板 RPC、`toolkit_ping`、Goal、定时任务、通知，以及卸载回调。
    * 预期：首次启动把 options 归一化后写入存储；之后以存储里的设置为准。
    */
   async setup(ctx) {
     await loadSettings(ctx.storage, ctx.options)
+
+    const roles = createSessionRoles(ctx)
+    const goalController = createGoalController(ctx.storage)
+    const tracker = createStatsTracker()
+
+    const tool = await registerPingTool(ctx)
+    const goal = await registerGoal(ctx, ctx.storage, roles, goalController)
+    const scheduling = await registerScheduling(ctx, ctx.storage, roles, async (sessionID) => {
+      const current = await goalController.getGoal(sessionID)
+      return current?.status === "active"
+    })
 
     const rpc = await ctx.rpc.register(ToolkitRpc, {
       settingsGet: async () => loadSettings(ctx.storage, ctx.options),
@@ -30,16 +43,42 @@ export default Plugin.define({
         await saveSettings(ctx.storage, normalizeSettings(input))
         return loadSettings(ctx.storage, ctx.options)
       },
-    })
+      panelGet: async (input) => {
+        const record = asRecord(input)
+        const requested = record?.["sessionID"]
+        const sessionID = typeof requested === "string" ? requested : ""
+        const current = await goalController.getGoal(sessionID)
+        const stats = tracker.get(sessionID)
+        const tools = Object.entries(stats.tools)
+          .map(([name, count]) => ({ name, count }))
+          .sort((left, right) => right.count - left.count)
 
-    const roles = createSessionRoles(ctx)
-    const goalController = createGoalController(ctx.storage)
-
-    const tool = await registerPingTool(ctx)
-    const goal = await registerGoal(ctx, ctx.storage, roles, goalController)
-    const scheduling = await registerScheduling(ctx, ctx.storage, roles, async (sessionID) => {
-      const goal = await goalController.getGoal(sessionID)
-      return goal?.status === "active"
+        return {
+          goal:
+            current === null
+              ? null
+              : {
+                  objective: current.objective,
+                  status: current.status,
+                  tokensUsed: current.tokensUsed,
+                  timeUsedSeconds: current.timeUsedSeconds,
+                  ...(current.tokenBudget === undefined ? {} : { tokenBudget: current.tokenBudget }),
+                },
+          loops: scheduling.scheduler.listLoops(sessionID).map((loop) => ({
+            id: loop.id,
+            mode: loop.mode,
+            prompt: loop.prompt,
+            ...(loop.nextFireAt === undefined ? {} : { nextFireAt: loop.nextFireAt }),
+          })),
+          jobs: scheduling.jobs.listJobs(sessionID).map((job) => ({
+            id: job.id,
+            cron: job.cron,
+            prompt: job.prompt,
+            ...(job.nextRunAt === undefined ? {} : { nextRunAt: job.nextRunAt }),
+          })),
+          stats: { ...stats, hitRate: hitRatePercent(stats.input, stats.cached), tools },
+        }
+      },
     })
 
     // 功能关闭或子代理会话时，请求发给模型前就把对应工具从工具表移除。
@@ -56,14 +95,19 @@ export default Plugin.define({
     })
 
     const notifier = createNotifier({ ctx, store: ctx.storage, roles })
-    const toolHook = await ctx.tool.hook("execute.before", async (input) => {
+
+    const toolBefore = await ctx.tool.hook("execute.before", async (input) => {
       await notifier.handleToolBefore({ tool: input.tool, sessionID: input.sessionID })
     })
+    const toolAfter = await ctx.tool.hook("execute.after", (input) => {
+      tracker.recordTool(input.sessionID, input.tool)
+    })
 
-    const notifyEvents = new AbortController()
+    const events = new AbortController()
     void (async () => {
       try {
-        for await (const event of ctx.event.subscribe({ signal: notifyEvents.signal })) {
+        for await (const event of ctx.event.subscribe({ signal: events.signal })) {
+          trackEvent(tracker, event)
           await notifier.handle({ type: event.type, data: event.data })
         }
       } catch {
@@ -75,9 +119,11 @@ export default Plugin.define({
     await ctx.tool.reload()
 
     return async () => {
-      notifyEvents.abort()
+      events.abort()
       notifier.dispose()
-      await toolHook.dispose()
+      tracker.clear()
+      await toolAfter.dispose()
+      await toolBefore.dispose()
       await hook.dispose()
       await scheduling.dispose()
       await goal.dispose()

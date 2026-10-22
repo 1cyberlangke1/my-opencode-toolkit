@@ -1,36 +1,120 @@
 import { Plugin } from "@opencode/plugin/tui"
 import type { Context } from "@opencode/plugin/tui/context"
-import { createSignal } from "solid-js"
+import { createSignal, onCleanup, onMount } from "solid-js"
 
 import { resolveMessages, type Messages } from "../i18n/index.ts"
+import { formatTokens } from "../shared/format.ts"
 import { DEFAULT_SETTINGS, type Lang, type Settings } from "../shared/settings.ts"
-import { toolkitRpc, type ToolkitRpcClient } from "../shared/rpc.ts"
+import { toolkitRpc, type PanelData } from "../shared/rpc.ts"
 
-/** 设置菜单里可选的条目。 */
+/** 主菜单条目。 */
 type MenuChoice = "enabled" | "language" | "notifications" | "goal" | "scheduling" | "sidebar"
 
-/**
- * 输入：设置里的语言枚举。
- * 输出：`resolveMessages` 需要的 locale。
- * 预期：`auto` 传 `undefined`，让它回退到系统 locale。
- */
+/** 侧栏子菜单条目。 */
+type SidebarChoice = "enabled" | "showCache" | "showTools" | "showSubagents" | "collapsed"
+
+/** 输入：设置里的语言枚举；输出：`resolveMessages` 需要的 locale。 */
 function localeOf(lang: Lang): string | undefined {
   return lang === "auto" ? undefined : lang
 }
 
 /**
- * 输入：设置访问器 + 文案访问器。
- * 输出：侧栏里的一块状态文字。
- * 预期：设置变化时随访问器重新求值。
+ * 输入：TUI 上下文、会话 ID、设置访问器、文案访问器。
+ * 输出：侧栏面板。
+ * 预期：挂载时拉一次数据，之后按会话事件节流刷新。
  */
-function Sidebar(props: {
+export function Sidebar(props: {
+  readonly context: Context
+  readonly sessionID: string
   readonly settings: () => Settings
   readonly copy: () => Messages
 }) {
+  const rpc = toolkitRpc(props.context.client)
+  const [panel, setPanel] = createSignal<PanelData | null>(null)
+  let timer: ReturnType<typeof setTimeout> | undefined
+
+  /** 拉取面板数据；失败保留上一次结果。 */
+  const refresh = (): void => {
+    void rpc
+      .panelGet({ sessionID: props.sessionID })
+      .then((data) => {
+        setPanel(data)
+      })
+      .catch(() => undefined)
+  }
+
+  onMount(() => {
+    refresh()
+    const off = props.context.data.listen(({ details }) => {
+      if (
+        details.type !== "session.idle" &&
+        details.type !== "session.step.ended" &&
+        details.type !== "session.usage.updated"
+      ) {
+        return
+      }
+      if (timer !== undefined) clearTimeout(timer)
+      timer = setTimeout(refresh, 300)
+    })
+    onCleanup(() => {
+      off()
+      if (timer !== undefined) clearTimeout(timer)
+    })
+  })
+
+  /** 输入：状态字符串；输出：本地化状态名。 */
+  const statusLabel = (text: Messages, status: string): string => text.panel.status[status] ?? status
+
+  const goalLine = (): string => {
+    const text = props.copy()
+    const goal = panel()?.goal
+    if (goal === null || goal === undefined) return `${text.panel.goal}: ${text.panel.noGoal}`
+    const budget = goal.tokenBudget === undefined ? "" : ` / ${formatTokens(goal.tokenBudget)}`
+    return `${text.panel.goal}: ${goal.objective} · ${statusLabel(text, goal.status)} · ${formatTokens(goal.tokensUsed)}${budget}`
+  }
+
+  const cacheLine = (): string => {
+    const text = props.copy()
+    const stats = panel()?.stats
+    if (stats === undefined) return `${text.panel.cache}: --`
+    return `${text.panel.cache}: ${stats.hitRate.toFixed(2)}% · ${formatTokens(stats.input)} / ${formatTokens(stats.output)}`
+  }
+
+  const toolsLine = (): string => {
+    const text = props.copy()
+    const stats = panel()?.stats
+    if (stats === undefined || stats.tools.length === 0) return `${text.panel.tools}: --`
+    const top = stats.tools
+      .slice(0, 3)
+      .map((tool) => `${tool.name} ${String(tool.count)}`)
+      .join(" · ")
+    return `${text.panel.tools}: ${top}`
+  }
+
+  const subagentsLine = (): string => {
+    const text = props.copy()
+    return `${text.panel.subagents}: ${String(panel()?.stats.subagents ?? 0)}`
+  }
+
+  const scheduleLine = (): string => {
+    const text = props.copy()
+    const loops = panel()?.loops.length ?? 0
+    const jobs = panel()?.jobs.length ?? 0
+    return `${text.panel.loops}: ${String(loops)} · ${text.panel.jobs}: ${String(jobs)}`
+  }
+
   return (
     <box flexDirection="column">
-      <text>{props.copy().sidebar.title}</text>
-      <text>{props.settings().enabled ? props.copy().sidebar.on : props.copy().sidebar.off}</text>
+      <text>{props.copy().panel.title}</text>
+      {props.settings().sidebar.enabled && !props.settings().sidebar.collapsed ? (
+        <box flexDirection="column">
+          <text>{goalLine()}</text>
+          {props.settings().sidebar.showCache ? <text>{cacheLine()}</text> : null}
+          {props.settings().sidebar.showTools ? <text>{toolsLine()}</text> : null}
+          {props.settings().sidebar.showSubagents ? <text>{subagentsLine()}</text> : null}
+          <text>{scheduleLine()}</text>
+        </box>
+      ) : null}
     </box>
   )
 }
@@ -62,12 +146,34 @@ function SettingsCommand(props: {
     await props.update({ ...props.settings(), lang: picked })
   }
 
+  /** 侧栏子菜单：逐项切换显示开关。 */
+  const chooseSidebar = async (): Promise<void> => {
+    for (;;) {
+      const current = props.settings()
+      const text = copy()
+      const onOff = (value: boolean): string => (value ? text.menu.on : text.menu.off)
+      const choice = await props.context.ui.dialog.select<SidebarChoice>({
+        title: text.menu.sidebar,
+        options: [
+          { title: text.menu.enabled, value: "enabled", footer: onOff(current.sidebar.enabled) },
+          { title: text.menu.showCache, value: "showCache", footer: onOff(current.sidebar.showCache) },
+          { title: text.menu.showTools, value: "showTools", footer: onOff(current.sidebar.showTools) },
+          { title: text.menu.showSubagents, value: "showSubagents", footer: onOff(current.sidebar.showSubagents) },
+          { title: text.menu.collapsed, value: "collapsed", footer: onOff(current.sidebar.collapsed) },
+        ],
+      })
+      if (choice === undefined) return
+      const next = { ...current.sidebar, [choice]: !current.sidebar[choice] }
+      await props.update({ ...current, sidebar: next })
+    }
+  }
+
   /**
    * 输入：要切换的条目。
    * 输出：无。
    * 预期：只改对应字段，其余设置保持不变。
    */
-  const toggle = async (choice: Exclude<MenuChoice, "language">): Promise<void> => {
+  const toggle = async (choice: Exclude<MenuChoice, "language" | "sidebar">): Promise<void> => {
     const current = props.settings()
     switch (choice) {
       case "enabled":
@@ -85,58 +191,36 @@ function SettingsCommand(props: {
       case "scheduling":
         await props.update({ ...current, scheduling: { enabled: !current.scheduling.enabled } })
         return
-      case "sidebar":
-        await props.update({ ...current, sidebar: { ...current.sidebar, enabled: !current.sidebar.enabled } })
-        return
     }
   }
 
-  /** 打开菜单；选择语言进入子菜单，其余条目原地切换后重开。 */
+  /** 打开菜单；选择语言/侧栏进入子菜单，其余条目原地切换后重开。 */
   const openMenu = async (): Promise<void> => {
     for (;;) {
       const current = props.settings()
       const text = copy()
+      const onOff = (value: boolean): string => (value ? text.menu.on : text.menu.off)
       const choice = await props.context.ui.dialog.select<MenuChoice>({
         title: text.menu.title,
         options: [
-          {
-            title: text.menu.enabled,
-            value: "enabled",
-            footer: current.enabled ? text.menu.on : text.menu.off,
-          },
-          {
-            title: text.menu.language,
-            value: "language",
-            footer: current.lang,
-          },
-          {
-            title: text.menu.notifications,
-            value: "notifications",
-            footer: current.notification.enabled ? text.menu.on : text.menu.off,
-          },
-          {
-            title: text.menu.goal,
-            value: "goal",
-            footer: current.goal.enabled ? text.menu.on : text.menu.off,
-          },
-          {
-            title: text.menu.scheduling,
-            value: "scheduling",
-            footer: current.scheduling.enabled ? text.menu.on : text.menu.off,
-          },
-          {
-            title: text.menu.sidebar,
-            value: "sidebar",
-            footer: current.sidebar.enabled ? text.menu.on : text.menu.off,
-          },
+          { title: text.menu.enabled, value: "enabled", footer: onOff(current.enabled) },
+          { title: text.menu.language, value: "language", footer: current.lang },
+          { title: text.menu.notifications, value: "notifications", footer: onOff(current.notification.enabled) },
+          { title: text.menu.goal, value: "goal", footer: onOff(current.goal.enabled) },
+          { title: text.menu.scheduling, value: "scheduling", footer: onOff(current.scheduling.enabled) },
+          { title: text.menu.sidebar, value: "sidebar", footer: onOff(current.sidebar.enabled) },
         ],
       })
       if (choice === undefined) return
       if (choice === "language") {
         await chooseLanguage()
-      } else {
-        await toggle(choice)
+        continue
       }
+      if (choice === "sidebar") {
+        await chooseSidebar()
+        continue
+      }
+      await toggle(choice)
     }
   }
 
@@ -162,17 +246,15 @@ function SettingsCommand(props: {
 
 /**
  * 输入：TUI 插件上下文（含插件 options）。
- * 输出：侧栏状态块 + `/my-opencode-toolkit` 设置命令。
+ * 输出：侧栏面板 + `/my-opencode-toolkit` 设置命令。
  * 预期：设置以服务端存储为准，启动时通过 RPC 读取；写入失败时回滚本地值。
  */
 export default Plugin.define({
   id: "my-opencode-toolkit.tui",
 
   async setup(context) {
-    const rpc: ToolkitRpcClient = toolkitRpc(context.client)
-
+    const rpc = toolkitRpc(context.client)
     const initial = await rpc.settingsGet({}).catch((): Settings => DEFAULT_SETTINGS)
-
     const [settings, setSettings] = createSignal<Settings>(initial)
 
     /**
@@ -190,9 +272,13 @@ export default Plugin.define({
       }
     }
 
+    const copy = (): Messages => resolveMessages(localeOf(settings().lang))
+
     const disposePanel = context.ui.slot({
       append: "sidebar.content",
-      render: () => <Sidebar settings={settings} copy={() => resolveMessages(localeOf(settings().lang))} />,
+      render: (input) => (
+        <Sidebar context={context} sessionID={input.sessionID} settings={settings} copy={copy} />
+      ),
     })
 
     const disposeCommand = context.ui.slot({

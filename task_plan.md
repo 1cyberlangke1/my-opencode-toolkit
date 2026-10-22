@@ -52,10 +52,10 @@ OpenCode V2 插件重写。功能保留：通知、Goal、cron/loop、TUI 侧栏
 
 ### P4 TUI
 
-- [ ] Goal 面板
-- [ ] Scheduled 面板
-- [ ] 会话统计（缓存命中、工具、子代理）
-- [ ] `/my-opencode-toolkit` 完整菜单
+- [x] Goal 面板
+- [x] Scheduled 面板
+- [x] 会话统计（缓存命中、工具、子代理）
+- [x] `/my-opencode-toolkit` 完整菜单
 
 ### P5 收尾
 

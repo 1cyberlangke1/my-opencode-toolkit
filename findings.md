@@ -84,6 +84,15 @@ Windows 补充：只设 `HOME` 不够，`os.homedir()` 读 `USERPROFILE`，必�
 - 发送是 OS 级：Windows PowerShell toast、macOS osascript、Linux notify-send；命令存在性探测结果缓存。
 - `onlyMainSession` 用 `parentID` 判断子代理，等价于旧版的主会话过滤。
 
+## TUI（P4 实测）
+
+- 面板数据走 RPC `panelGet`，服务端从 goal 存储、scheduling 存储与内存统计组装。
+- TUI 用 `context.data.listen` 订阅 `session.idle` / `session.step.ended` / `session.usage.updated`，300ms 节流后重拉；
+  没有 `session.updated` 与 `message.updated`（当前事件联合类型里没有）。
+- 统计只在内存里，进程重启归零；`hitRate` 向下截断两位小数。
+- TUI 测试：`tui-test/bunfig.toml` preload `@opentui/solid/preload`，`testRender` + `waitForFrame`；
+  `test:tui` 必须在 `tui-test` 目录下跑，否则找不到 preload。
+
 ## 旧仓库
 
 - V1 依赖 `@opencode-ai/plugin`，导出 `./server` + `./tui`，用 tsc + esbuild 构建后复制到 `~/.config/opencode/plugins`。
