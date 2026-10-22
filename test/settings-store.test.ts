@@ -1,23 +1,9 @@
 import { describe, expect, it } from "vitest"
 
-import type { JsonStore, JsonValue } from "../src/shared/json.ts"
+import { MemoryStore } from "./helpers.ts"
 import { SETTINGS_KEY } from "../src/shared/keys.ts"
 import { loadSettings, saveSettings } from "../src/shared/settings-store.ts"
 import { DEFAULT_SETTINGS, normalizeSettings } from "../src/shared/settings.ts"
-
-/** 内存存储，模拟 ctx.storage 的读写语义。 */
-class MemoryStore implements JsonStore {
-  readonly values = new Map<string, JsonValue>()
-
-  get(key: string): Promise<unknown> {
-    return Promise.resolve(this.values.get(key))
-  }
-
-  set(key: string, value: JsonValue): Promise<void> {
-    this.values.set(key, value)
-    return Promise.resolve()
-  }
-}
 
 describe("loadSettings", () => {
   it("首次运行写入默认值并返回", async () => {

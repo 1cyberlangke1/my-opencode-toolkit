@@ -48,6 +48,21 @@ Windows 补充：只设 `HOME` 不够，`os.homedir()` 读 `USERPROFILE`，必�
 - `GET /api/plugin` 对本地插件返回空数组，不能用它判断插件是否加载；看服务端日志 `msg="loading plugin"` 或工具表。
 - 插件里的 `console.log` 不会进 `opencode serve --print-logs` 的日志；调试用文件标记。
 
+## V2 会话事件（goal 用到的）
+
+| 事件 | 载荷 | 用途 |
+|---|---|---|
+| `session.step.ended` | `sessionID`、`tokens{input,output,reasoning,cache{read,write}}` | 记账 |
+| `session.idle` | `sessionID` | 注入续作 |
+| `session.execution.failed` | `sessionID`、`error{type,message,status?}` | 余额/超长分类 |
+| `session.execution.interrupted` | `sessionID`、`reason`（`user`/`shutdown`/`superseded`/`inactivity`） | 用户打断暂停 |
+| `session.deleted` | `sessionID` | 清运行期状态 |
+
+- V2 没有 `session.error`；用 `session.execution.failed` 代替。
+- `SessionDomain` 不暴露读取消息列表的方法，只能靠事件记账；不要再照搬 V1 的 `client.session.messages()`。
+- `/goal` 这类命令要自己把反馈通过 `ctx.session.prompt` 发进对话流，`execute` 返回 `void` 不会自动发消息。
+- `Session.Info.parentID` 可用来识别子代理会话。
+
 ## 旧仓库
 
 - V1 依赖 `@opencode-ai/plugin`，导出 `./server` + `./tui`，用 tsc + esbuild 构建后复制到 `~/.config/opencode/plugins`。

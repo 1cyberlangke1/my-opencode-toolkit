@@ -21,6 +21,7 @@ export type JsonValue =
 export type JsonStore = {
   get(key: string): Promise<unknown>
   set(key: string, value: JsonValue): Promise<void>
+  remove(key: string): Promise<void>
 }
 
 /**

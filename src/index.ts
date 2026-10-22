@@ -1,5 +1,6 @@
 import { Plugin } from "@opencode/plugin"
 
+import { registerGoal } from "./goal/index.ts"
 import { loadSettings, saveSettings } from "./shared/settings-store.ts"
 import { normalizeSettings } from "./shared/settings.ts"
 import { ToolkitRpc } from "./shared/rpc.ts"
@@ -26,10 +27,12 @@ export default Plugin.define({
     })
 
     const tool = await registerPingTool(ctx)
-    // 工具注册后刷新一次工具表，让当前会话的下一次请求就能看到 toolkit_ping。
+    const goal = await registerGoal(ctx, ctx.storage)
+    // 工具注册后刷新一次工具表，让当前会话的下一次请求就能看到新工具。
     await ctx.tool.reload()
 
     return async () => {
+      await goal.dispose()
       await tool.dispose()
       await rpc.dispose()
     }

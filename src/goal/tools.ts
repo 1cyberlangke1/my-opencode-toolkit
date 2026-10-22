@@ -1,0 +1,136 @@
+import type { Plugin } from "@opencode/plugin"
+import { Schema } from "effect"
+
+import { loadSettings } from "../shared/settings-store.ts"
+import type { GoalController } from "./controller.ts"
+import type { Goal } from "./types.ts"
+
+const DESCRIPTION_CREATE =
+  "Create a persistent goal for the current session. Use this when the user asks you to set a goal, " +
+  "or when you decide a new high-level objective is needed. The goal persists across turns and is shown " +
+  "in the TUI. The objective should be concise and describe the desired outcome, not a single action. " +
+  "If this thread already has an unfinished goal, creating a new one fails; complete or clear the " +
+  "existing goal first."
+
+const DESCRIPTION_GET =
+  "Read the active goal for the current session. Returns the current objective, status, token budget " +
+  "and usage accounting. Returns null if no goal is set."
+
+const DESCRIPTION_UPDATE =
+  "Update the status of the current session's goal. Can only mark the goal as complete or blocked. " +
+  "Pause, resume, budget-limited and usage-limited status changes are controlled by the user or system. " +
+  'When you believe the goal has been achieved, first perform a completion audit against the actual ' +
+  'current state (files, tests, command output), then call update_goal with status "complete". ' +
+  'Use status "blocked" only when the same blocking condition has repeated for at least three ' +
+  "consecutive goal turns."
+
+const CreateInput = Schema.Struct({
+  objective: Schema.String,
+  token_budget: Schema.optional(Schema.Number),
+})
+
+const EmptyInput = Schema.Struct({})
+
+const UpdateInput = Schema.Struct({
+  status: Schema.Literals(["complete", "blocked"]),
+  block_reason: Schema.optional(Schema.String),
+})
+
+const EmptyOutput = Schema.Struct({})
+
+/** 输入：目标；输出：给模型看的 JSON 文本。预期：`null` 也序列化成 `null`。 */
+function formatGoal(goal: Goal | null): string {
+  return JSON.stringify({ goal }, null, 2)
+}
+
+/**
+ * 输入：插件上下文 + 存储 + 控制器。
+ * 输出：注册 `create_goal` / `get_goal` / `update_goal` 三个工具。
+ * 预期：goal 关闭或子代理会话里返回错误文本；不抛异常。
+ */
+export async function registerGoalTools(
+  ctx: Plugin.Context,
+  controller: GoalController,
+): Promise<{ dispose(): Promise<void> }> {
+  /** 输入：会话 ID；输出：是否子代理会话。预期：取不到会话按主会话处理。 */
+  const isSubagent = async (sessionID: string): Promise<boolean> => {
+    const session = await ctx.session.get({ sessionID }).catch(() => undefined)
+    const parentID = session?.parentID
+    return typeof parentID === "string" && parentID.length > 0
+  }
+
+  /** 输入：会话 ID；输出：不可用原因，可用时为 `null`。 */
+  const unavailable = async (sessionID: string): Promise<string | null> => {
+    const settings = await loadSettings(ctx.storage)
+    if (!settings.enabled || !settings.goal.enabled) return "Error: the goal feature is disabled in settings."
+    if (await isSubagent(sessionID)) return "Error: goal tools are not available to subagents."
+    return null
+  }
+
+  return ctx.tool.transform((tools) => {
+    tools.add({
+      name: "create_goal",
+      options: { codemode: false },
+      description: DESCRIPTION_CREATE,
+      input: CreateInput,
+      output: EmptyOutput,
+      execute: async (input, toolCtx) => {
+        const sessionID = toolCtx.sessionID
+        const blocked = await unavailable(sessionID)
+        if (blocked !== null) return { output: {}, content: blocked }
+
+        const existing = await controller.getGoal(sessionID)
+        if (existing !== null && existing.status !== "complete" && existing.status !== "blocked") {
+          return {
+            output: {},
+            content: "Error: this thread has an unfinished goal; complete or clear it before creating a new one.",
+          }
+        }
+
+        await controller.setGoal(sessionID, input.objective, input.token_budget)
+        return { output: {}, content: formatGoal(await controller.getGoal(sessionID)) }
+      },
+    })
+
+    tools.add({
+      name: "get_goal",
+      options: { codemode: false },
+      description: DESCRIPTION_GET,
+      input: EmptyInput,
+      output: EmptyOutput,
+      execute: async (_input, toolCtx) => {
+        const sessionID = toolCtx.sessionID
+        const blocked = await unavailable(sessionID)
+        if (blocked !== null) return { output: {}, content: blocked }
+        return { output: {}, content: formatGoal(await controller.getGoal(sessionID)) }
+      },
+    })
+
+    tools.add({
+      name: "update_goal",
+      options: { codemode: false },
+      description: DESCRIPTION_UPDATE,
+      input: UpdateInput,
+      output: EmptyOutput,
+      execute: async (input, toolCtx) => {
+        const sessionID = toolCtx.sessionID
+        const blocked = await unavailable(sessionID)
+        if (blocked !== null) return { output: {}, content: blocked }
+
+        if (input.status === "complete") {
+          const goal = await controller.markComplete(sessionID)
+          if (goal === null) return { output: {}, content: "Error: no goal set for this session." }
+          return { output: {}, content: formatGoal(goal) }
+        }
+
+        const reason = input.block_reason?.trim() ?? ""
+        if (reason.length === 0) {
+          return { output: {}, content: "Error: block_reason is required when status is blocked." }
+        }
+        const goal = await controller.markBlocked(sessionID, reason)
+        if (goal === null) return { output: {}, content: "Error: no goal set for this session." }
+        return { output: {}, content: formatGoal(goal) }
+      },
+    })
+  })
+}

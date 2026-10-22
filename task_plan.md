@@ -29,12 +29,12 @@ OpenCode V2 插件重写。功能保留：通知、Goal、cron/loop、TUI 侧栏
 
 ### P1 Goal
 
-- [ ] goal 状态存储（`goal:<sessionID>`）
-- [ ] 工具 `create_goal` / `get_goal` / `update_goal`
-- [ ] `/goal` 命令：设置 / 暂停 / 恢复 / 清除 / 查看
-- [ ] 会话空闲续作（`ctx.session.prompt`）
-- [ ] token 与时间记账
-- [ ] 用户打断自动暂停
+- [x] goal 状态存储（`goal:<sessionID>`）
+- [x] 工具 `create_goal` / `get_goal` / `update_goal`
+- [x] `/goal` 命令：设置 / 暂停 / 恢复 / 清除 / 查看
+- [x] 会话空闲续作（`ctx.session.prompt`）
+- [x] token 与时间记账
+- [x] 用户打断自动暂停
 
 ### P2 cron / loop
 
