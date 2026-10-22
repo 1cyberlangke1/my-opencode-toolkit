@@ -43,6 +43,12 @@ export type Messages = {
     readonly on: string
     readonly off: string
   }
+  readonly toast: {
+    /** Plan 模式跳过 cron 注入时的提示。 */
+    readonly planSkippedCron: string
+    /** Plan 模式跳过 loop 注入时的提示。 */
+    readonly planSkippedLoop: string
+  }
   readonly notification: {
     readonly title: string
     readonly completed: string

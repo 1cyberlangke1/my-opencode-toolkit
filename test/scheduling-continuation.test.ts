@@ -14,10 +14,11 @@ const roles = {
   forget: () => undefined,
 }
 
-/** 输入：日志数组 + 是否让 prompt 失败；输出：只实现 session.prompt 的假上下文。 */
-function fakeCtx(log: string[], rejectPrompt = false): Plugin.Context {
+/** 输入：日志数组 + 是否让 prompt 失败 + 当前 agent；输出：只实现 setup 依赖的假上下文。 */
+function fakeCtx(log: string[], rejectPrompt = false, agent = "build"): Plugin.Context {
   return {
     session: {
+      get: () => Promise.resolve({ agent }),
       prompt: (input: { text: string }) => {
         if (rejectPrompt) return Promise.reject(new Error("session busy"))
         log.push(input.text)
@@ -154,6 +155,60 @@ describe("scheduling continuation", () => {
     const job = store.getJob(added.job.id)
     expect(job).toBeDefined()
     expect(job?.nextRunAt).toBeGreaterThan(NOW)
+    continuation.dispose()
+  })
+
+  it("plan 模式跳过注入并弹提示，但仍按原计划重排", async () => {
+    const log: string[] = []
+    const skipped: string[] = []
+    const store = makeStore()
+    const added = await store.addJob({ sessionID: SESSION, cron: "0 * * * *", prompt: "ping", recurring: true })
+    expect(added.ok).toBe(true)
+    if (!added.ok) return
+    makeDue(store, added.job.id)
+
+    const continuation = createSchedulingContinuation({
+      ctx: fakeCtx(log, false, "plan"),
+      store,
+      roles,
+      shouldDefer: () => Promise.resolve(false),
+      enabled: () => Promise.resolve(true),
+      notifySkipped: (kind) => skipped.push(kind),
+      now: () => NOW,
+    })
+    await continuation.handle({ type: "session.idle", data: { sessionID: SESSION } })
+
+    expect(log).toHaveLength(0)
+    expect(skipped).toEqual(["cron"])
+    const job = store.getJob(added.job.id)
+    expect(job).toBeDefined()
+    expect(job?.nextRunAt).toBeGreaterThan(NOW)
+    continuation.dispose()
+  })
+
+  it("plan 模式跳过 one-shot 注入并按原计划消费", async () => {
+    const log: string[] = []
+    const skipped: string[] = []
+    const store = makeStore()
+    const added = await store.addJob({ sessionID: SESSION, cron: "* * * * *", prompt: "once", recurring: false })
+    expect(added.ok).toBe(true)
+    if (!added.ok) return
+    makeDue(store, added.job.id)
+
+    const continuation = createSchedulingContinuation({
+      ctx: fakeCtx(log, false, "plan"),
+      store,
+      roles,
+      shouldDefer: () => Promise.resolve(false),
+      enabled: () => Promise.resolve(true),
+      notifySkipped: (kind) => skipped.push(kind),
+      now: () => NOW,
+    })
+    await continuation.handle({ type: "session.idle", data: { sessionID: SESSION } })
+
+    expect(log).toHaveLength(0)
+    expect(skipped).toEqual(["cron"])
+    expect(store.getJob(added.job.id)).toBeUndefined()
     continuation.dispose()
   })
 

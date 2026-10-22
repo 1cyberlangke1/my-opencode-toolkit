@@ -156,6 +156,7 @@ OpenCode v2 插件：系统通知、持久目标、定时任务与循环、TUI �
 **定时任务没触发**
 
 - 检查会话是否长期处于目标 active 状态（会主动让路）
+- Plan 模式下会直接跳过并弹 toast；切回 build 后按原计划继续（one-shot 会被消费）
 - 检查任务是否已超过 7 天过期
 - 检查时区：cron 按本地时区解析
 - 用 `/cron list` 确认任务还在
@@ -164,7 +165,7 @@ OpenCode v2 插件：系统通知、持久目标、定时任务与循环、TUI �
 
 ```bash
 pnpm install
-pnpm check        # typecheck + lint + 176 单测 + 7 bun 测试 + 发布包内容校验
+pnpm check        # typecheck + lint + 179 单测 + 8 bun 测试 + 发布包内容校验
 pnpm test:e2e     # 需要本机 opencode 2.x 与 bun，使用隔离的 HOME/DB/config
 pnpm test:e2e:tui # 真实 TUI：PTY 启动 opencode --standalone，打开设置菜单
 ```

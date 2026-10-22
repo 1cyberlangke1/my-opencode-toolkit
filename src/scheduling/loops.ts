@@ -6,6 +6,7 @@ import { readEventData } from "../shared/events.ts"
 import { lastMessageIsUserInput } from "../shared/messages.ts"
 import { capTimerDelay, MAX_TIMER_DELAY_MS } from "../shared/timer.ts"
 import { DEFAULT_MAX_AGE_DAYS, type Loop } from "./types.ts"
+import { isPlanSession } from "./plan.ts"
 import type { SessionRoles } from "../goal/session-role.ts"
 
 /** 注入消息的 metadata 标记。 */
@@ -55,10 +56,12 @@ export function createLoopScheduler(args: {
   readonly ctx: Plugin.Context
   readonly roles: SessionRoles
   readonly shouldDefer: (sessionID: string) => Promise<boolean>
+  /** 输入：被 Plan 模式跳过的任务类型；输出：无。预期：只负责提示，不影响调度。 */
+  readonly notifySkipped?: (kind: "cron" | "loop") => void
   /** 输入：无；输出：scheduling 是否启用。缺省视为启用（测试与旧调用兼容）。 */
   readonly enabled?: () => Promise<boolean>
 }): LoopScheduler {
-  const { ctx, roles, shouldDefer } = args
+  const { ctx, roles, shouldDefer, notifySkipped } = args
   const isEnabled = args.enabled ?? ((): Promise<boolean> => Promise.resolve(true))
   const loops = new Map<string, Loop>()
   const timers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -96,6 +99,10 @@ export function createLoopScheduler(args: {
     // 功能关闭时循环暂停，但不销毁；重新开启后下一个 timer 继续。
     if (!(await isEnabled().catch(() => false))) return
     if (await shouldDefer(loop.sessionID).catch(() => false)) return
+    if (await isPlanSession(ctx, loop.sessionID)) {
+      notifySkipped?.("loop")
+      return
+    }
     loop.fires += 1
     await inject(loop.sessionID, loop.prompt)
   }

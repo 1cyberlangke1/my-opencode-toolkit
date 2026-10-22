@@ -18,6 +18,15 @@ type SelectCall = {
   readonly options: readonly { readonly title: string; readonly value: unknown; readonly footer?: string }[]
 }
 
+/** 一次 toast 调用。 */
+type ToastCall = {
+  readonly message: string
+  readonly variant?: string
+}
+
+/** RPC toast 事件处理器。 */
+type ToastHandler = (event: { readonly data: { readonly reason: string; readonly kind: string } }) => void
+
 /**
  * 输入：可选的对话框选择序列与设置写入实现。
  * 输出：只实现 TUI setup 依赖的假上下文 + 捕获到的注册项。
@@ -31,10 +40,14 @@ function fakeContext(options: {
   readonly slots: string[]
   readonly layers: RegisteredLayer[]
   readonly selects: SelectCall[]
+  readonly toasts: ToastCall[]
+  readonly toastHandlers: ToastHandler[]
 } {
   const slots: string[] = []
   const layers: RegisteredLayer[] = []
   const selects: SelectCall[] = []
+  const toasts: ToastCall[] = []
+  const toastHandlers: ToastHandler[] = []
   let pickIndex = 0
 
   const context = {
@@ -49,6 +62,12 @@ function fakeContext(options: {
             jobs: [],
             stats: { steps: 0, input: 0, output: 0, cached: 0, hitRate: 0, subagents: 0, tools: [] },
           }),
+        events: {
+          on: (_name: string, handler: ToastHandler) => {
+            toastHandlers.push(handler)
+            return () => undefined
+          },
+        },
       }),
     },
     ui: {
@@ -56,6 +75,11 @@ function fakeContext(options: {
         select: (call: SelectCall) => {
           selects.push(call)
           return Promise.resolve(options.picks?.[pickIndex++])
+        },
+      },
+      toast: {
+        show: (call: ToastCall) => {
+          toasts.push(call)
         },
       },
       slot: (claim: { readonly append?: string }) => {
@@ -73,7 +97,7 @@ function fakeContext(options: {
     },
   } as unknown as Context
 
-  return { context, slots, layers, selects }
+  return { context, slots, layers, selects, toasts, toastHandlers }
 }
 
 /** 输入：对话框调用 + 条目值；输出：该条目的 footer。 */
@@ -130,6 +154,22 @@ describe("tui plugin setup", () => {
     // 菜单重开后 goal 的 footer 仍是默认的“开”，说明失败后回滚了乐观更新。
     expect(selects).toHaveLength(2)
     expect(footerOf(selects[1], "goal")).toBe(footerOf(selects[0], "goal"))
+
+    await cleanup?.()
+  })
+
+  test("收到 plan skipped 事件时弹本地化 toast", async () => {
+    const { context, toastHandlers, toasts } = fakeContext({})
+    const cleanup = await plugin.setup(context)
+
+    toastHandlers[0]?.({ data: { reason: "planSkipped", kind: "cron" } })
+    expect(toasts).toHaveLength(1)
+    expect(toasts[0]?.variant).toBe("warning")
+    expect(toasts[0]?.message).toMatch(/Plan mode is read-only|Plan 模式只读/)
+
+    toastHandlers[0]?.({ data: { reason: "planSkipped", kind: "loop" } })
+    expect(toasts).toHaveLength(2)
+    expect(toasts[1]?.message).toMatch(/skipped the loop|已跳过循环/)
 
     await cleanup?.()
   })

@@ -48,6 +48,10 @@ export const en: Messages = {
     on: "enabled",
     off: "disabled",
   },
+  toast: {
+    planSkippedCron: "Plan mode is read-only; skipped the scheduled task",
+    planSkippedLoop: "Plan mode is read-only; skipped the loop",
+  },
   notification: {
     title: "OpenCode",
     completed: "Task completed",

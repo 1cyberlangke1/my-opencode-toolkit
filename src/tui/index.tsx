@@ -151,6 +151,15 @@ export default Plugin.define({
 
     const copy = (): Messages => resolveMessages(localeOf(settings().lang))
 
+    // Plan 模式跳过 cron/loop 时由服务端发 toast 事件；文案在 TUI 侧按当前语言解析。
+    const offToast = rpc.events.on("toast", (event) => {
+      const text = copy()
+      context.ui.toast.show({
+        message: event.data.kind === "cron" ? text.toast.planSkippedCron : text.toast.planSkippedLoop,
+        variant: "warning",
+      })
+    })
+
     /** 选择语言并写回。 */
     const chooseLanguage = async (): Promise<void> => {
       const picked = await context.ui.dialog.select<Lang>({
@@ -269,6 +278,7 @@ export default Plugin.define({
     })
 
     return () => {
+      offToast()
       disposePanel()
     }
   },

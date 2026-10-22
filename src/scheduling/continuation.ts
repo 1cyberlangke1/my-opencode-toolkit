@@ -4,6 +4,7 @@ import { readEventData } from "../shared/events.ts"
 import { lastMessageIsUserInput } from "../shared/messages.ts"
 import { capTimerDelay } from "../shared/timer.ts"
 import type { SessionRoles } from "../goal/session-role.ts"
+import { isPlanSession } from "./plan.ts"
 import type { SchedulingStore } from "./store.ts"
 import { isRecurringTaskAged } from "./store.ts"
 import type { ScheduledJob } from "./types.ts"
@@ -58,9 +59,11 @@ export function createSchedulingContinuation(args: {
   readonly roles: SessionRoles
   readonly shouldDefer: (sessionID: string) => Promise<boolean>
   readonly enabled: () => Promise<boolean>
+  /** 输入：被 Plan 模式跳过的任务类型；输出：无。预期：只负责提示，不影响调度。 */
+  readonly notifySkipped?: (kind: "cron" | "loop") => void
   readonly now?: () => number
 }): SchedulingContinuation {
-  const { ctx, store, roles, shouldDefer, enabled } = args
+  const { ctx, store, roles, shouldDefer, enabled, notifySkipped } = args
   const now = args.now ?? Date.now
   const timers = new Map<string, ReturnType<typeof setTimeout>>()
   const inFlight = new Set<string>()
@@ -138,6 +141,16 @@ export function createSchedulingContinuation(args: {
       return
     }
     if (isDisposed()) return
+
+    if (await isPlanSession(ctx, job.sessionID)) {
+      if (isDisposed()) return
+      notifySkipped?.("cron")
+      // 直接跳过本次注入；任务仍按正常节奏重排/删除，不做额外重试。
+      if (recurring) await store.markFired([job.id], at)
+      else await store.removeJobs([job.id])
+      armTimers()
+      return
+    }
 
     const delivered = await inject(job.sessionID, buildFirePrompt(job, new Date(at)))
     if (isDisposed()) return

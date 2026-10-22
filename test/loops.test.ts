@@ -10,10 +10,11 @@ const roles = {
   forget: () => undefined,
 }
 
-/** 输入：日志数组；输出：只实现 session.prompt 的假上下文。 */
-function fakeCtx(log: string[]): Plugin.Context {
+/** 输入：日志数组 + 当前 agent；输出：只实现 setup 依赖的假上下文。 */
+function fakeCtx(log: string[], agent = "build"): Plugin.Context {
   return {
     session: {
+      get: () => Promise.resolve({ agent }),
       prompt: (input: { text: string }) => {
         log.push(input.text)
         return Promise.resolve()
@@ -124,6 +125,25 @@ describe("loop scheduler", () => {
     await flush()
 
     expect(log).toHaveLength(0)
+    expect(scheduler.listLoops(SESSION)).toHaveLength(1)
+    scheduler.dispose()
+  })
+
+  it("plan 模式跳过注入并弹提示，循环保留", async () => {
+    const log: string[] = []
+    const skipped: string[] = []
+    const scheduler = createLoopScheduler({
+      ctx: fakeCtx(log, "plan"),
+      roles,
+      shouldDefer: () => Promise.resolve(false),
+      notifySkipped: (kind) => skipped.push(kind),
+    })
+
+    scheduler.startLoop(SESSION, "check", 5)
+    await flush()
+
+    expect(log).toHaveLength(0)
+    expect(skipped).toEqual(["loop"])
     expect(scheduler.listLoops(SESSION)).toHaveLength(1)
     scheduler.dispose()
   })

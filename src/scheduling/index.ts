@@ -31,6 +31,7 @@ export async function registerScheduling(
   store: ScannableStore,
   roles: SessionRoles,
   shouldDefer: (sessionID: string) => Promise<boolean>,
+  notifySkipped?: (kind: "cron" | "loop") => void,
 ): Promise<SchedulingHandle> {
   const jobs = createSchedulingStore(store)
   await jobs.load()
@@ -41,7 +42,13 @@ export async function registerScheduling(
     return settings.enabled && settings.scheduling.enabled
   }
 
-  const scheduler = createLoopScheduler({ ctx, roles, shouldDefer, enabled: isEnabled })
+  const scheduler = createLoopScheduler({
+    ctx,
+    roles,
+    shouldDefer,
+    ...(notifySkipped === undefined ? {} : { notifySkipped }),
+    enabled: isEnabled,
+  })
   const tools = await registerSchedulingTools(ctx, jobs, scheduler, roles)
   const commands = await registerSchedulingCommands(ctx, jobs, scheduler, roles)
 
@@ -50,6 +57,7 @@ export async function registerScheduling(
     store: jobs,
     roles,
     shouldDefer,
+    ...(notifySkipped === undefined ? {} : { notifySkipped }),
     enabled: isEnabled,
   })
   continuation.armTimers()

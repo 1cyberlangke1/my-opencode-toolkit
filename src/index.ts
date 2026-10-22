@@ -33,10 +33,20 @@ export default Plugin.define({
 
     const tool = await registerPingTool(ctx)
     const goal = await registerGoal(ctx, ctx.storage, roles, goalController)
-    const scheduling = await registerScheduling(ctx, ctx.storage, roles, async (sessionID) => {
-      const current = await goalController.getGoal(sessionID)
-      return current?.status === "active"
-    })
+    // RPC 注册在后面；先用一个可替换的发射器，避免定时器回调早于 rpc 就绪。
+    let emitToast: (kind: "cron" | "loop") => void = () => undefined
+    const scheduling = await registerScheduling(
+      ctx,
+      ctx.storage,
+      roles,
+      async (sessionID) => {
+        const current = await goalController.getGoal(sessionID)
+        return current?.status === "active"
+      },
+      (kind) => {
+        emitToast(kind)
+      },
+    )
 
     const rpc = await ctx.rpc.register(ToolkitRpc, {
       settingsGet: async () => loadSettings(ctx.storage, ctx.options),
@@ -88,6 +98,11 @@ export default Plugin.define({
         }
       },
     })
+
+    // Plan 模式跳过 cron/loop 时通知 TUI 弹 toast；只提示，不改变调度结果。
+    emitToast = (kind) => {
+      void rpc.events.emit("toast", { reason: "planSkipped", kind }).catch(() => undefined)
+    }
 
     // 功能关闭或子代理会话时，请求发给模型前就把对应工具从工具表移除。
     const hook = await ctx.session.hook("context", async (event) => {

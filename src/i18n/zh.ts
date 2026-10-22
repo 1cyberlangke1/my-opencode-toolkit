@@ -48,6 +48,10 @@ export const zh: Messages = {
     on: "已启用",
     off: "已禁用",
   },
+  toast: {
+    planSkippedCron: "Plan 模式只读，已跳过定时任务",
+    planSkippedLoop: "Plan 模式只读，已跳过循环",
+  },
   notification: {
     title: "OpenCode",
     completed: "任务完成",

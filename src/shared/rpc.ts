@@ -141,6 +141,17 @@ const PanelOutputJson = {
   additionalProperties: false,
 } as const
 
+/** Plan 模式跳过 cron/loop 时发给 TUI 的 toast 事件。 */
+const ToastEventJson = {
+  type: "object",
+  properties: {
+    reason: { type: "string", enum: ["planSkipped"] },
+    kind: { type: "string", enum: ["cron", "loop"] },
+  },
+  required: ["reason", "kind"],
+  additionalProperties: false,
+} as const
+
 /** 服务端与 TUI 共用的 RPC 定义。 */
 export const ToolkitRpc: Rpc.PortableDefinition = Rpc.define({
   id: RPC_ID,
@@ -149,7 +160,9 @@ export const ToolkitRpc: Rpc.PortableDefinition = Rpc.define({
     settingsSet: { input: SettingsJson, output: SettingsJson },
     panelGet: { input: PanelInputJson, output: PanelOutputJson },
   },
-  events: {},
+  events: {
+    toast: { schema: ToastEventJson },
+  },
 })
 
 /** 面板目标摘要。 */
@@ -196,11 +209,23 @@ export type PanelData = {
   readonly stats: PanelStats
 }
 
+/** toast 事件的载荷。 */
+export type ToolkitToastEvent = {
+  readonly reason: "planSkipped"
+  readonly kind: "cron" | "loop"
+}
+
 /** TUI 侧对 ToolkitRpc 的类型化视图。 */
 export type ToolkitRpcClient = {
   settingsGet(input: Record<string, never>): Promise<Settings>
   settingsSet(input: Settings): Promise<Settings>
   panelGet(input: { readonly sessionID: string }): Promise<PanelData>
+  events: {
+    on(
+      name: "toast",
+      handler: (event: { readonly data: ToolkitToastEvent }) => void,
+    ): () => void
+  }
 }
 
 /**
