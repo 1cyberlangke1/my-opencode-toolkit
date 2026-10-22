@@ -5,6 +5,7 @@ import { loadSettings } from "../shared/settings-store.ts"
 import type { GoalController } from "./controller.ts"
 import { classifyGoalFailure } from "./error.ts"
 import { buildContinuationPrompt } from "./prompts.ts"
+import type { SessionRoles } from "./session-role.ts"
 
 /** 会话运行期锁死标志。 */
 type RunState = {
@@ -39,9 +40,10 @@ export function createGoalContinuation(args: {
   readonly ctx: Plugin.Context
   readonly store: JsonStore
   readonly controller: GoalController
+  readonly roles: SessionRoles
   readonly now?: () => number
 }): GoalContinuation {
-  const { ctx, store, controller } = args
+  const { ctx, store, controller, roles } = args
   const now = args.now ?? Date.now
   const runStates = new Map<string, RunState>()
   const pending = new Set<string>()
@@ -87,9 +89,11 @@ export function createGoalContinuation(args: {
     }
   }
 
-  /** 输入：会话 ID；输出：无。预期：active 且未锁死时注入续作。 */
+  /** 输入：会话 ID；输出：无。预期：active 且未锁死、且不是子代理时注入续作。 */
   const handleIdle = async (sessionID: string): Promise<void> => {
     if (!(await enabled())) return
+    // 子代理不续作：子代理的生命周期由主会话的工具调用驱动。
+    if (await roles.isSubagent(sessionID)) return
 
     const state = stateOf(sessionID)
     if (state.wasCancelled || state.tokenLimitDetected || state.insufficientFundsDetected) return
@@ -176,6 +180,7 @@ export function createGoalContinuation(args: {
           pending.delete(sessionID)
           inFlight.delete(sessionID)
           lastAccountAt.delete(sessionID)
+          roles.forget(sessionID)
           return
         default:
           return

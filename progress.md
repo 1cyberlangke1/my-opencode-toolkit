@@ -25,6 +25,7 @@ P1 Goal 完成，`pnpm check` 与隔离 e2e 全绿。
 - 三个工具：`create_goal`、`get_goal`、`update_goal`，对子代理与关闭状态返回错误文本。
 - `/goal [objective|clear|edit|pause|resume]`：命令自身不发消息，反馈由 `ctx.session.prompt` 发出。
 - 续作：`session.idle` 且目标 active 时注入；打断/超长/余额锁死；一次注入无 step 时跳过一轮。
+- 子代理：`context` 钩子在请求前把三个 goal 工具从 `event.tools` 删掉，续作也直接跳过子代理会话。
 - 记账：`session.step.ended` 的 input+output+缓存读写计入目标，达到预算转 `budget_limited`。
 - 测试：55 个单测（goal 21 个 + continuation 9 个）。
 - e2e 扩展到 create_goal → get_goal → 收尾，断言工具表、工具返回与 goal 落盘。

@@ -9,6 +9,12 @@ import { SETTINGS_KEY } from "../src/shared/keys.ts"
 
 const SESSION = "ses_test"
 
+/** 续作测试里所有会话都当主会话。 */
+const roles = {
+  isSubagent: () => Promise.resolve(false),
+  forget: () => undefined,
+}
+
 /** 记录注入的续作消息。 */
 type PromptLog = { sessionID: string; text: string }[]
 
@@ -37,7 +43,7 @@ describe("goal continuation", () => {
     const controller = createGoalController(store)
     await controller.setGoal(SESSION, "ship it")
     const log: PromptLog = []
-    const continuation = createGoalContinuation({ ctx: fakeCtx(log), store, controller })
+    const continuation = createGoalContinuation({ ctx: fakeCtx(log), store, controller, roles })
 
     await continuation.handle({ type: "session.idle", data: { sessionID: SESSION } })
 
@@ -50,7 +56,7 @@ describe("goal continuation", () => {
     const store = storeWithGoalEnabled()
     const controller = createGoalController(store)
     const log: PromptLog = []
-    const continuation = createGoalContinuation({ ctx: fakeCtx(log), store, controller })
+    const continuation = createGoalContinuation({ ctx: fakeCtx(log), store, controller, roles })
 
     await continuation.handle({ type: "session.idle", data: { sessionID: SESSION } })
     await controller.setGoal(SESSION, "x")
@@ -66,7 +72,7 @@ describe("goal continuation", () => {
     const controller = createGoalController(store)
     await controller.setGoal(SESSION, "x")
     const log: PromptLog = []
-    const continuation = createGoalContinuation({ ctx: fakeCtx(log), store, controller })
+    const continuation = createGoalContinuation({ ctx: fakeCtx(log), store, controller, roles })
 
     await continuation.handle({ type: "session.idle", data: { sessionID: SESSION } })
     expect(log).toHaveLength(0)
@@ -77,7 +83,7 @@ describe("goal continuation", () => {
     const controller = createGoalController(store)
     await controller.setGoal(SESSION, "x")
     const log: PromptLog = []
-    const continuation = createGoalContinuation({ ctx: fakeCtx(log), store, controller })
+    const continuation = createGoalContinuation({ ctx: fakeCtx(log), store, controller, roles })
 
     await continuation.handle({ type: "session.idle", data: { sessionID: SESSION } })
     await continuation.handle({ type: "session.idle", data: { sessionID: SESSION } })
@@ -100,6 +106,7 @@ describe("goal continuation", () => {
       ctx: fakeCtx([]),
       store,
       controller,
+      roles,
       now: () => 10_000,
     })
 
@@ -119,7 +126,7 @@ describe("goal continuation", () => {
     const controller = createGoalController(store)
     await controller.setGoal(SESSION, "x")
     const log: PromptLog = []
-    const continuation = createGoalContinuation({ ctx: fakeCtx(log), store, controller })
+    const continuation = createGoalContinuation({ ctx: fakeCtx(log), store, controller, roles })
 
     await continuation.handle({
       type: "session.execution.interrupted",
@@ -135,7 +142,7 @@ describe("goal continuation", () => {
     const store = storeWithGoalEnabled()
     const controller = createGoalController(store)
     await controller.setGoal(SESSION, "x")
-    const continuation = createGoalContinuation({ ctx: fakeCtx([]), store, controller })
+    const continuation = createGoalContinuation({ ctx: fakeCtx([]), store, controller, roles })
 
     await continuation.handle({
       type: "session.execution.interrupted",
@@ -150,7 +157,7 @@ describe("goal continuation", () => {
     const controller = createGoalController(store)
     await controller.setGoal(SESSION, "x")
     const log: PromptLog = []
-    const continuation = createGoalContinuation({ ctx: fakeCtx(log), store, controller })
+    const continuation = createGoalContinuation({ ctx: fakeCtx(log), store, controller, roles })
 
     await continuation.handle({
       type: "session.execution.failed",
@@ -167,12 +174,27 @@ describe("goal continuation", () => {
     expect(log).toHaveLength(1)
   })
 
+  it("子代理会话不注入续作", async () => {
+    const store = storeWithGoalEnabled()
+    const controller = createGoalController(store)
+    await controller.setGoal(SESSION, "x")
+    const log: PromptLog = []
+    const subagentRoles = {
+      isSubagent: () => Promise.resolve(true),
+      forget: () => undefined,
+    }
+    const continuation = createGoalContinuation({ ctx: fakeCtx(log), store, controller, roles: subagentRoles })
+
+    await continuation.handle({ type: "session.idle", data: { sessionID: SESSION } })
+    expect(log).toHaveLength(0)
+  })
+
   it("删除会话清掉运行状态", async () => {
     const store = storeWithGoalEnabled()
     const controller = createGoalController(store)
     await controller.setGoal(SESSION, "x")
     const log: PromptLog = []
-    const continuation = createGoalContinuation({ ctx: fakeCtx(log), store, controller })
+    const continuation = createGoalContinuation({ ctx: fakeCtx(log), store, controller, roles })
 
     await continuation.handle({ type: "session.idle", data: { sessionID: SESSION } })
     await continuation.handle({ type: "session.deleted", data: { sessionID: SESSION } })

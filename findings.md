@@ -62,6 +62,9 @@ Windows 补充：只设 `HOME` 不够，`os.homedir()` 读 `USERPROFILE`，必�
 - `SessionDomain` 不暴露读取消息列表的方法，只能靠事件记账；不要再照搬 V1 的 `client.session.messages()`。
 - `/goal` 这类命令要自己把反馈通过 `ctx.session.prompt` 发进对话流，`execute` 返回 `void` 不会自动发消息。
 - `Session.Info.parentID` 可用来识别子代理会话。
+- 子代理策略（goal 已实现，cron/loop 同样适用）：
+  - 工具不进子代理：`context` 钩子里从 `event.tools` 删除，模型请求里根本看不到；
+  - 续作/定时注入不进子代理：`session.idle` 时先查 `parentID`，是子代理就直接返回。
 
 ## 旧仓库
 

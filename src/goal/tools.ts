@@ -3,6 +3,7 @@ import { Schema } from "effect"
 
 import { loadSettings } from "../shared/settings-store.ts"
 import type { GoalController } from "./controller.ts"
+import type { SessionRoles } from "./session-role.ts"
 import type { Goal } from "./types.ts"
 
 const DESCRIPTION_CREATE =
@@ -44,26 +45,20 @@ function formatGoal(goal: Goal | null): string {
 }
 
 /**
- * 输入：插件上下文 + 存储 + 控制器。
+ * 输入：插件上下文 + 存储 + 控制器 + 会话角色。
  * 输出：注册 `create_goal` / `get_goal` / `update_goal` 三个工具。
- * 预期：goal 关闭或子代理会话里返回错误文本；不抛异常。
+ * 预期：goal 关闭或子代理会话里返回错误文本；工具本身由 context 钩子从子代理工具表移除。
  */
 export async function registerGoalTools(
   ctx: Plugin.Context,
   controller: GoalController,
+  roles: SessionRoles,
 ): Promise<{ dispose(): Promise<void> }> {
-  /** 输入：会话 ID；输出：是否子代理会话。预期：取不到会话按主会话处理。 */
-  const isSubagent = async (sessionID: string): Promise<boolean> => {
-    const session = await ctx.session.get({ sessionID }).catch(() => undefined)
-    const parentID = session?.parentID
-    return typeof parentID === "string" && parentID.length > 0
-  }
-
   /** 输入：会话 ID；输出：不可用原因，可用时为 `null`。 */
   const unavailable = async (sessionID: string): Promise<string | null> => {
     const settings = await loadSettings(ctx.storage)
     if (!settings.enabled || !settings.goal.enabled) return "Error: the goal feature is disabled in settings."
-    if (await isSubagent(sessionID)) return "Error: goal tools are not available to subagents."
+    if (await roles.isSubagent(sessionID)) return "Error: goal tools are not available to subagents."
     return null
   }
 
