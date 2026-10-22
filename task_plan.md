@@ -59,7 +59,7 @@ OpenCode V2 插件重写。功能保留：通知、Goal、cron/loop、TUI 侧栏
 
 ### P5 收尾
 
-- [ ] 删除 `legacy/`
-- [ ] README / LICENSE
-- [ ] 全量测试与 e2e
-- [ ] 发版
+- [x] 删除 `legacy/`
+- [x] README / LICENSE
+- [x] 全量测试与 e2e
+- [ ] 发版（未发布，等主人决定版本号）

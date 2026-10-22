@@ -48,10 +48,18 @@ P2 cron / loop 完成，`pnpm check` 与隔离 e2e 全绿。
 - `/my-opencode-toolkit` 菜单新增侧栏子菜单（启用/缓存/工具/子代理/折叠）。
 - `tui-test/`：2 个渲染测试，`pnpm check` 已包含 `test:tui`。
 
+### P5
+
+- 删除 `legacy/` 与无用的 `.prettierrc`。
+- 重写 README：功能、安装、命令、工具、设置、优先级、开发命令。
+- `files` 补上根入口 `index.ts` / `tui.ts`，保证 npm 安装能用。
+- 全量验证：124 单测 + 2 TUI 渲染测试 + e2e 全绿。
+
 ## 进行中
 
 无。
 
 ## 待办
 
-P5 收尾。
+- 发版（版本号待定；npm 包名 `my-opencode-toolkit`）。
+- 可选：统计持久化（当前进程重启归零）。

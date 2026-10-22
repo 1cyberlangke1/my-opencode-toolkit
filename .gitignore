@@ -20,8 +20,5 @@ PLAN*.md
 .opencode/
 .opencode-toolkit/
 
-# 重写期间的旧代码参考（P5 删除）
-legacy/
-
 # vitest coverage
 coverage/

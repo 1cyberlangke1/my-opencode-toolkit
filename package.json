@@ -26,7 +26,9 @@
     "./tui": "./tui.ts"
   },
   "files": [
-    "src"
+    "src",
+    "index.ts",
+    "tui.ts"
   ],
   "dependencies": {
     "effect": "4.0.1"
