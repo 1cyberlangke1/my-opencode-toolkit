@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.5
+
+### 修复
+
+- 缓存命中率口径修正：分母改为完整提示词（`input + cache.read + cache.write`），分子只算 `cache.read`；`cache.write` 不再被当成命中
+- 命中率夹在 0..100，异常 provider 数据不会显示超过 100%
+
 ## 0.2.4
 
 ### 修复

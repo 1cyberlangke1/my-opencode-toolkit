@@ -5,8 +5,10 @@ import { asRecord } from "./shared/json.ts"
 /** 单个会话的进程内统计。 */
 export type SessionStats = {
   readonly steps: number
+  /** 总提示词 token：`input + cache.read + cache.write`。 */
   readonly input: number
   readonly output: number
+  /** 缓存命中 token：只算 `cache.read`。 */
   readonly cached: number
   readonly tools: Readonly<Record<string, number>>
   readonly subagents: number
@@ -70,9 +72,10 @@ export function createStatsTracker(): StatsTracker {
       const cache = asRecord(record["cache"]) ?? {}
       const stats = of(sessionID)
       stats.steps += 1
-      stats.input += count(record["input"])
+      // 分母是完整提示词；cache.write 是写入成本，不算命中。
+      stats.input += count(record["input"]) + count(cache["read"]) + count(cache["write"])
       stats.output += count(record["output"])
-      stats.cached += count(cache["read"]) + count(cache["write"])
+      stats.cached += count(cache["read"])
     },
 
     recordTool(sessionID, tool) {
@@ -189,9 +192,10 @@ export async function buildStats(ctx: Plugin.Context, sessionID: string): Promis
     steps += 1
     const tokens = message.tokens
     if (tokens !== undefined) {
-      input += tokens.input
+      // 与 recordStep 保持同一口径：input 是完整提示词，cached 只算读命中。
+      input += tokens.input + tokens.cache.read + tokens.cache.write
       output += tokens.output
-      cached += tokens.cache.read + tokens.cache.write
+      cached += tokens.cache.read
     }
     for (const part of message.content) {
       if (part.type !== "tool") continue
@@ -204,12 +208,11 @@ export async function buildStats(ctx: Plugin.Context, sessionID: string): Promis
 }
 
 /**
- * 输入：输入 token 与缓存 token。
+ * 输入：完整提示词 token（含缓存读写）与命中 token（`cache.read`）。
  * 输出：缓存命中率百分比，向下截断到两位小数。
- * 预期：分母为 0 时返回 0；`100` 只代表真实全命中。
+ * 预期：分母为 0 时返回 0；结果夹在 0..100；`100` 只代表真实全命中。
  */
 export function hitRatePercent(input: number, cached: number): number {
-  const total = input + cached
-  if (total <= 0) return 0
-  return Math.floor((cached / total) * 10_000) / 100
+  if (input <= 0 || cached <= 0) return 0
+  return Math.floor(Math.min(1, cached / input) * 10_000) / 100
 }

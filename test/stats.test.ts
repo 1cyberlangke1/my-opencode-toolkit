@@ -13,9 +13,9 @@ describe("stats tracker", () => {
 
     const stats = tracker.get(SESSION)
     expect(stats.steps).toBe(1)
-    expect(stats.input).toBe(100)
+    expect(stats.input).toBe(132)
     expect(stats.output).toBe(20)
-    expect(stats.cached).toBe(32)
+    expect(stats.cached).toBe(30)
   })
 
   it("忽略非法 token 值", () => {
@@ -94,17 +94,19 @@ describe("trackEvent", () => {
 
 describe("hitRatePercent", () => {
   it("向下截断两位小数", () => {
-    expect(hitRatePercent(100, 32)).toBe(24.24)
-    expect(hitRatePercent(3, 1)).toBe(25)
+    expect(hitRatePercent(132, 30)).toBe(22.72)
+    expect(hitRatePercent(3, 1)).toBe(33.33)
   })
 
   it("全命中才是 100", () => {
-    expect(hitRatePercent(0, 100)).toBe(100)
-    expect(hitRatePercent(1, 100)).toBe(99)
+    expect(hitRatePercent(100, 100)).toBe(100)
+    expect(hitRatePercent(100, 99)).toBe(99)
   })
 
-  it("没有数据时为 0", () => {
+  it("没有输入时为 0，命中数超过输入时夹到 100", () => {
     expect(hitRatePercent(0, 0)).toBe(0)
+    expect(hitRatePercent(0, 100)).toBe(0)
+    expect(hitRatePercent(100, 200)).toBe(100)
   })
 })
 
@@ -140,9 +142,9 @@ describe("buildStats", () => {
     const stats = await buildStats(fakeCtx(), SESSION)
     expect(stats).toEqual({
       steps: 1,
-      input: 100,
+      input: 132,
       output: 20,
-      cached: 32,
+      cached: 30,
       tools: { read: 1 },
       subagents: 1,
     })
