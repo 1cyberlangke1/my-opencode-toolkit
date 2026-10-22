@@ -1,10 +1,14 @@
 import type { Plugin } from "@opencode/plugin"
 
-import { asRecord } from "../shared/json.ts"
+import { readEventData } from "../shared/events.ts"
+import { lastMessageIsUserInput } from "../shared/messages.ts"
 import type { SessionRoles } from "../goal/session-role.ts"
 import type { SchedulingStore } from "./store.ts"
 import { isRecurringTaskAged } from "./store.ts"
 import type { ScheduledJob } from "./types.ts"
+
+/** 注入消息的 metadata 标记。 */
+const CRON_MARKER = "cronContinuation"
 
 /** 定时任务触发控制器。 */
 export type SchedulingContinuation = {
@@ -52,13 +56,14 @@ export function createSchedulingContinuation(args: {
   const inFlight = new Set<string>()
   const pending = new Set<string>()
 
-  /** 输入：会话 + 文本；输出：是否注入成功。预期：并发或上一条未完成时跳过。 */
+  /** 输入：会话 + 文本；输出：是否注入成功。预期：并发、上一条未完成或末条是用户输入时跳过。 */
   const inject = async (sessionID: string, text: string): Promise<boolean> => {
     if (inFlight.has(sessionID) || pending.has(sessionID)) return false
     if (await roles.isSubagent(sessionID)) return false
+    if (await lastMessageIsUserInput(ctx, sessionID, CRON_MARKER)) return false
     inFlight.add(sessionID)
     try {
-      await ctx.session.prompt({ sessionID, text, delivery: "steer" })
+      await ctx.session.prompt({ sessionID, text, delivery: "steer", metadata: { [CRON_MARKER]: true } })
       pending.add(sessionID)
       return true
     } catch {
@@ -119,7 +124,7 @@ export function createSchedulingContinuation(args: {
 
   return {
     async handle(event) {
-      const data = asRecord(event.data)
+      const data = readEventData(event)
       const sessionID = data?.["sessionID"]
       if (typeof sessionID !== "string" || sessionID.length === 0) return
 

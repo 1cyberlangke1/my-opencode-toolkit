@@ -1,3 +1,5 @@
+import type { Plugin } from "@opencode/plugin"
+
 import { asRecord } from "./shared/json.ts"
 
 /** 单个会话的进程内统计。 */
@@ -20,6 +22,10 @@ export type StatsTracker = {
   recordSubagent(parentID: string): void
   /** 输入：会话；输出：统计快照。 */
   get(sessionID: string): SessionStats
+  /** 输入：会话；输出：是否已从 OpenCode 消息重建过。 */
+  isSeeded(sessionID: string): boolean
+  /** 输入：会话 + 重建结果；输出：无。预期：覆盖当前值并标记已 seed。 */
+  seed(sessionID: string, stats: SessionStats): void
   /** 输入：会话；输出：无。预期：删除该会话统计。 */
   forget(sessionID: string): void
   /** 输入：无；输出：无。预期：清空全部统计。 */
@@ -33,6 +39,7 @@ type MutableStats = {
   cached: number
   tools: Record<string, number>
   subagents: number
+  seeded: boolean
 }
 
 /**
@@ -47,7 +54,7 @@ export function createStatsTracker(): StatsTracker {
   const of = (sessionID: string): MutableStats => {
     const existing = sessions.get(sessionID)
     if (existing !== undefined) return existing
-    const created: MutableStats = { steps: 0, input: 0, output: 0, cached: 0, tools: {}, subagents: 0 }
+    const created: MutableStats = { steps: 0, input: 0, output: 0, cached: 0, tools: {}, subagents: 0, seeded: false }
     sessions.set(sessionID, created)
     return created
   }
@@ -84,7 +91,22 @@ export function createStatsTracker(): StatsTracker {
       if (stats === undefined) {
         return { steps: 0, input: 0, output: 0, cached: 0, tools: {}, subagents: 0 }
       }
-      return { ...stats, tools: { ...stats.tools } }
+      return {
+        steps: stats.steps,
+        input: stats.input,
+        output: stats.output,
+        cached: stats.cached,
+        tools: { ...stats.tools },
+        subagents: stats.subagents,
+      }
+    },
+
+    isSeeded(sessionID) {
+      return sessions.get(sessionID)?.seeded ?? false
+    },
+
+    seed(sessionID, stats) {
+      sessions.set(sessionID, { ...stats, tools: { ...stats.tools }, seeded: true })
     },
 
     forget(sessionID) {
@@ -123,6 +145,40 @@ export function trackEvent(
     const parentID = data["parentID"]
     if (typeof parentID === "string" && parentID.length > 0) tracker.recordSubagent(parentID)
   }
+}
+
+/**
+ * 输入：插件上下文 + 会话 ID。
+ * 输出：从 OpenCode 已存消息重建的统计。
+ * 预期：只统计 assistant 消息的 tokens 与 tool 片段；子代理数来自会话列表的 parentID。
+ *       读取失败按空统计处理，不抛异常。
+ */
+export async function buildStats(ctx: Plugin.Context, sessionID: string): Promise<SessionStats> {
+  const messages = await ctx.session.context({ sessionID }).catch(() => [])
+  let steps = 0
+  let input = 0
+  let output = 0
+  let cached = 0
+  const tools: Record<string, number> = {}
+
+  for (const message of messages) {
+    if (message.type !== "assistant") continue
+    steps += 1
+    const tokens = message.tokens
+    if (tokens !== undefined) {
+      input += tokens.input
+      output += tokens.output
+      cached += tokens.cache.read + tokens.cache.write
+    }
+    for (const part of message.content) {
+      if (part.type !== "tool") continue
+      tools[part.name] = (tools[part.name] ?? 0) + 1
+    }
+  }
+
+  const listed = await ctx.session.list().catch(() => undefined)
+  const subagents = (listed?.data ?? []).filter((session) => session.parentID === sessionID).length
+  return { steps, input, output, cached, tools, subagents }
 }
 
 /**

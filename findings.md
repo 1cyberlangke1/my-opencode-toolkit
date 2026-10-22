@@ -80,7 +80,10 @@ Windows 补充：只设 `HOME` 不够，`os.homedir()` 读 `USERPROFILE`，必�
 
 - 权限请求事件是 `permission.asked`（载荷含 `sessionID`）；V2 没有 `permission.ask/updated`。
 - 提问用 `ctx.tool.hook("execute.before")` 判断工具名 `question`。
-- V2 没有读取消息列表的 API，通知正文只能是固定文案 + 会话标题，做不了旧版的「最后一条用户/助手内容」预览。
+- 消息可以读：`ctx.session.context({ sessionID })` 返回 `SessionMessageInfo[]`（user 有 `text`，assistant 有 `content[]` + `tokens`）。
+  通知预览、续作的「末条是否真实用户输入」都靠它。
+- 注入消息用 `session.prompt({ ..., metadata: { goalContinuation: true } })` 打标，读回时 `message.metadata` 可识别。
+- 统计不落盘：首次打开面板用 `session.context` + `session.list` 重建，之后事件增量。
 - 发送是 OS 级：Windows PowerShell toast、macOS osascript、Linux notify-send；命令存在性探测结果缓存。
 - `onlyMainSession` 用 `parentID` 判断子代理，等价于旧版的主会话过滤。
 

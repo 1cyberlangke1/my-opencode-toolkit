@@ -18,14 +18,15 @@ const roles = {
 /** 记录注入的续作消息。 */
 type PromptLog = { sessionID: string; text: string }[]
 
-/** 输入：注入日志；输出：只实现 session.prompt 的假上下文。 */
-function fakeCtx(log: PromptLog): Plugin.Context {
+/** 输入：注入日志 + 可选历史消息；输出：只实现 session 的假上下文。 */
+function fakeCtx(log: PromptLog, messages: unknown[] = []): Plugin.Context {
   return {
     session: {
       prompt: (input: { sessionID: string; text: string }) => {
         log.push({ sessionID: input.sessionID, text: input.text })
         return Promise.resolve()
       },
+      context: () => Promise.resolve(messages),
     },
   } as unknown as Plugin.Context
 }
@@ -170,6 +171,38 @@ describe("goal continuation", () => {
     expect(log).toHaveLength(0)
 
     continuation.resetRunState(SESSION)
+    await continuation.handle({ type: "session.idle", data: { sessionID: SESSION } })
+    expect(log).toHaveLength(1)
+  })
+
+  it("末条是真实用户输入时跳过注入", async () => {
+    const store = storeWithGoalEnabled()
+    const controller = createGoalController(store)
+    await controller.setGoal(SESSION, "x")
+    const log: PromptLog = []
+    const continuation = createGoalContinuation({
+      ctx: fakeCtx(log, [{ type: "user", text: "等一下", metadata: {} }]),
+      store,
+      controller,
+      roles,
+    })
+
+    await continuation.handle({ type: "session.idle", data: { sessionID: SESSION } })
+    expect(log).toHaveLength(0)
+  })
+
+  it("末条是我们注入的续作时继续注入", async () => {
+    const store = storeWithGoalEnabled()
+    const controller = createGoalController(store)
+    await controller.setGoal(SESSION, "x")
+    const log: PromptLog = []
+    const continuation = createGoalContinuation({
+      ctx: fakeCtx(log, [{ type: "user", text: "continue", metadata: { goalContinuation: true } }]),
+      store,
+      controller,
+      roles,
+    })
+
     await continuation.handle({ type: "session.idle", data: { sessionID: SESSION } })
     expect(log).toHaveLength(1)
   })

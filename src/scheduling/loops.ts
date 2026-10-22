@@ -2,8 +2,13 @@ import { randomUUID } from "node:crypto"
 
 import type { Plugin } from "@opencode/plugin"
 
+import { readEventData } from "../shared/events.ts"
+import { lastMessageIsUserInput } from "../shared/messages.ts"
 import { DEFAULT_MAX_AGE_DAYS, type Loop } from "./types.ts"
 import type { SessionRoles } from "../goal/session-role.ts"
+
+/** 注入消息的 metadata 标记。 */
+const LOOP_MARKER = "loopContinuation"
 
 /** dynamic 模式没有 `schedule_wakeup` 时的兜底唤醒（20 分钟）。 */
 const FALLBACK_WAKEUP_MS = 20 * 60 * 1000
@@ -57,13 +62,14 @@ export function createLoopScheduler(args: {
   const findLoop = (sessionID: string, prompt: string): Loop | undefined =>
     [...loops.values()].find((loop) => loop.sessionID === sessionID && loop.prompt === prompt)
 
-  /** 输入：会话 + 文本；输出：是否注入成功。预期：子代理、并发、上一条未完成时跳过。 */
+  /** 输入：会话 + 文本；输出：是否注入成功。预期：子代理、并发、上一条未完成、末条是用户输入时跳过。 */
   const inject = async (sessionID: string, text: string): Promise<boolean> => {
     if (inFlight.has(sessionID) || pending.has(sessionID)) return false
     if (await roles.isSubagent(sessionID)) return false
+    if (await lastMessageIsUserInput(ctx, sessionID, LOOP_MARKER)) return false
     inFlight.add(sessionID)
     try {
-      await ctx.session.prompt({ sessionID, text, delivery: "steer" })
+      await ctx.session.prompt({ sessionID, text, delivery: "steer", metadata: { [LOOP_MARKER]: true } })
       pending.add(sessionID)
       return true
     } catch {
@@ -204,8 +210,8 @@ export function createLoopScheduler(args: {
     clearSession,
 
     handleEvent(event) {
-      const data = typeof event.data === "object" && event.data !== null ? (event.data as Record<string, unknown>) : {}
-      const sessionID = data["sessionID"]
+      const data = readEventData(event)
+      const sessionID = data?.["sessionID"]
       if (typeof sessionID !== "string" || sessionID.length === 0) return Promise.resolve()
 
       if (event.type === "session.deleted") {

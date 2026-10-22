@@ -22,6 +22,7 @@ function fakeCtx(log: string[]): Plugin.Context {
         log.push(input.text)
         return Promise.resolve()
       },
+      context: () => Promise.resolve([]),
     },
   } as unknown as Plugin.Context
 }

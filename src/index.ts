@@ -7,11 +7,12 @@ import { createSessionRoles } from "./goal/session-role.ts"
 import { createNotifier } from "./notification/index.ts"
 import { hideSchedulingTools } from "./scheduling/filter.ts"
 import { registerScheduling } from "./scheduling/index.ts"
-import { loadSettings, saveSettings } from "./shared/settings-store.ts"
-import { normalizeSettings } from "./shared/settings.ts"
+import { dispatchEvent, type EventHandler } from "./shared/events.ts"
 import { asRecord } from "./shared/json.ts"
 import { ToolkitRpc } from "./shared/rpc.ts"
-import { createStatsTracker, hitRatePercent, trackEvent } from "./stats.ts"
+import { loadSettings, saveSettings } from "./shared/settings-store.ts"
+import { normalizeSettings } from "./shared/settings.ts"
+import { buildStats, createStatsTracker, hitRatePercent, trackEvent } from "./stats.ts"
 import { registerPingTool } from "./tools/ping.ts"
 
 export default Plugin.define({
@@ -47,6 +48,12 @@ export default Plugin.define({
         const record = asRecord(input)
         const requested = record?.["sessionID"]
         const sessionID = typeof requested === "string" ? requested : ""
+
+        // 统计不落盘：每个会话第一次打开面板时，从 OpenCode 已存消息重建一次。
+        if (sessionID.length > 0 && !tracker.isSeeded(sessionID)) {
+          tracker.seed(sessionID, await buildStats(ctx, sessionID))
+        }
+
         const current = await goalController.getGoal(sessionID)
         const stats = tracker.get(sessionID)
         const tools = Object.entries(stats.tools)
@@ -103,12 +110,21 @@ export default Plugin.define({
       tracker.recordTool(input.sessionID, input.tool)
     })
 
+    const handlers: EventHandler[] = [
+      (event) => {
+        trackEvent(tracker, event)
+        return Promise.resolve()
+      },
+      (event) => notifier.handle(event),
+      (event) => goal.handle(event),
+      (event) => scheduling.handle(event),
+    ]
+
     const events = new AbortController()
     void (async () => {
       try {
         for await (const event of ctx.event.subscribe({ signal: events.signal })) {
-          trackEvent(tracker, event)
-          await notifier.handle({ type: event.type, data: event.data })
+          await dispatchEvent(handlers, event)
         }
       } catch {
         // aborted 或连接断开：卸载时正常路径

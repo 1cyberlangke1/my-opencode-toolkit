@@ -1,6 +1,3 @@
-/** 由本插件注册的 goal 工具名。 */
-export const GOAL_TOOL_NAMES = ["create_goal", "get_goal", "update_goal"] as const
-
 /**
  * 输入：即将发给模型的工具表（会被原地修改）。
  * 输出：实际删掉的工具名。

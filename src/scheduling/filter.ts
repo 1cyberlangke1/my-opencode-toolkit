@@ -1,6 +1,3 @@
-/** 由本插件注册的 scheduling 工具名。 */
-export const SCHEDULING_TOOL_NAMES = ["cron_create", "cron_list", "cron_delete", "schedule_wakeup"] as const
-
 /**
  * 输入：即将发给模型的工具表（会被原地修改）。
  * 输出：实际删掉的工具名。

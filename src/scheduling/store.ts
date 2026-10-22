@@ -151,8 +151,9 @@ export function createSchedulingStore(store: ScannableStore): SchedulingStore {
       if (nextCronRunMs(cron, Date.now()) === null) {
         return { ok: false, error: `Cron expression '${cron}' does not match any calendar date in the next year.` }
       }
-      if (jobs.size >= MAX_JOBS) {
-        return { ok: false, error: `Too many scheduled jobs (max ${String(MAX_JOBS)}). Cancel one first.` }
+      const sessionJobs = [...jobs.values()].filter((job) => job.sessionID === sessionID).length
+      if (sessionJobs >= MAX_JOBS) {
+        return { ok: false, error: `Too many scheduled jobs (max ${String(MAX_JOBS)} per session). Cancel one first.` }
       }
 
       const now = Date.now()

@@ -1,11 +1,17 @@
 import type { Plugin } from "@opencode/plugin"
 
+import { readEventData } from "../shared/events.ts"
+import type { PluginEvent } from "../shared/events.ts"
 import { asRecord, type JsonStore } from "../shared/json.ts"
+import { lastMessageIsUserInput } from "../shared/messages.ts"
 import { loadSettings } from "../shared/settings-store.ts"
 import type { GoalController } from "./controller.ts"
 import { classifyGoalFailure } from "./error.ts"
 import { buildContinuationPrompt } from "./prompts.ts"
 import type { SessionRoles } from "./session-role.ts"
+
+/** 注入消息的 metadata 标记，用于识别“这条 user 消息是我们发的”。 */
+const CONTINUATION_MARKER = "goalContinuation"
 
 /** 会话运行期锁死标志。 */
 type RunState = {
@@ -17,16 +23,10 @@ type RunState = {
   insufficientFundsDetected: boolean
 }
 
-/** 事件的最小形状。 */
-export type GoalEvent = {
-  readonly type: string
-  readonly data: unknown
-}
-
 /** 续作控制器。 */
 export type GoalContinuation = {
   /** 输入：会话事件；输出：无。预期：按事件类型记账、续作或暂停。 */
-  handle(event: GoalEvent): Promise<void>
+  handle(event: PluginEvent): Promise<void>
   /** 输入：会话 ID；输出：无。预期：清除打断/超长/余额锁死与待确认注入。 */
   resetRunState(sessionID: string): void
 }
@@ -75,12 +75,12 @@ export function createGoalContinuation(args: {
     await controller.accountUsage(sessionID, { tokens, elapsedSeconds })
   }
 
-  /** 输入：会话 ID；输出：无。预期：注入一条续作提示；并发或失败时静默跳过。 */
+  /** 输入：会话 ID + 文本；输出：无。预期：注入一条带标记的续作提示；并发或失败时静默跳过。 */
   const inject = async (sessionID: string, text: string): Promise<void> => {
     if (inFlight.has(sessionID)) return
     inFlight.add(sessionID)
     try {
-      await ctx.session.prompt({ sessionID, text, delivery: "steer" })
+      await ctx.session.prompt({ sessionID, text, delivery: "steer", metadata: { [CONTINUATION_MARKER]: true } })
       pending.add(sessionID)
     } catch {
       // 注入失败：下一轮 idle 再试，不阻塞其他会话
@@ -88,6 +88,14 @@ export function createGoalContinuation(args: {
       inFlight.delete(sessionID)
     }
   }
+
+  /**
+   * 输入：会话 ID。
+   * 输出：末条消息是否是真实用户输入。
+   * 预期：委托共享 helper，读不到消息时返回 false。
+   */
+  const userInputPending = (sessionID: string): Promise<boolean> =>
+    lastMessageIsUserInput(ctx, sessionID, CONTINUATION_MARKER)
 
   /** 输入：会话 ID；输出：无。预期：active 且未锁死、且不是子代理时注入续作。 */
   const handleIdle = async (sessionID: string): Promise<void> => {
@@ -106,6 +114,9 @@ export function createGoalContinuation(args: {
 
     const goal = await controller.getGoal(sessionID)
     if (goal?.status !== "active") return
+
+    // 末条是真实用户输入（上一条续作还没被回复）时跳过，避免叠加。
+    if (await userInputPending(sessionID)) return
 
     await inject(sessionID, buildContinuationPrompt(goal))
   }
@@ -150,7 +161,7 @@ export function createGoalContinuation(args: {
 
   return {
     async handle(event) {
-      const data = asRecord(event.data)
+      const data = readEventData(event)
       if (data === undefined) return
       const sessionID = data["sessionID"]
       if (typeof sessionID !== "string" || sessionID.length === 0) return

@@ -1,28 +1,30 @@
 import type { Plugin } from "@opencode/plugin"
 
 import type { SessionRoles } from "../goal/session-role.ts"
-import { loadSettings } from "../shared/settings-store.ts"
+import type { PluginEvent } from "../shared/events.ts"
 import type { ScannableStore } from "../shared/json.ts"
+import { loadSettings } from "../shared/settings-store.ts"
+import type { Disposable } from "../shared/types.ts"
 import { registerSchedulingCommands } from "./command.ts"
 import { createSchedulingContinuation } from "./continuation.ts"
+import type { LoopScheduler } from "./loops.ts"
 import { createLoopScheduler } from "./loops.ts"
+import type { SchedulingStore } from "./store.ts"
 import { createSchedulingStore } from "./store.ts"
 import { registerSchedulingTools } from "./tools.ts"
-import type { SchedulingStore } from "./store.ts"
-import type { LoopScheduler } from "./loops.ts"
 
-/** 注销句柄 + 面板要用的数据源。 */
-export type SchedulingHandle = {
-  dispose(): Promise<void>
+/** 定时任务功能句柄 + 面板数据源。 */
+export type SchedulingHandle = Disposable & {
   readonly jobs: SchedulingStore
   readonly scheduler: LoopScheduler
+  /** 输入：插件事件；输出：无。预期：cron 触发与 loop 状态维护；由外层统一分发。 */
+  handle(event: PluginEvent): Promise<void>
 }
 
 /**
  * 输入：插件上下文、存储、会话角色、让路回调。
- * 输出：定时任务功能的注销句柄。
- * 预期：恢复 durable 任务、注册工具与命令、武装 timer、订阅事件；
- *       子代理与 goal active 时不注入。
+ * 输出：定时任务功能句柄。
+ * 预期：恢复 durable 任务、注册工具与命令、武装 timer；事件由调用方统一分发。
  */
 export async function registerScheduling(
   ctx: Plugin.Context,
@@ -49,24 +51,14 @@ export async function registerScheduling(
   })
   continuation.armTimers()
 
-  const events = new AbortController()
-  void (async () => {
-    try {
-      for await (const event of ctx.event.subscribe({ signal: events.signal })) {
-        const payload = { type: event.type, data: event.data }
-        await continuation.handle(payload)
-        await scheduler.handleEvent(payload)
-      }
-    } catch {
-      // aborted 或连接断开：卸载时正常路径
-    }
-  })()
-
   return {
     jobs,
     scheduler,
+    async handle(event) {
+      await continuation.handle(event)
+      await scheduler.handleEvent(event)
+    },
     async dispose() {
-      events.abort()
       continuation.dispose()
       scheduler.dispose()
       await tools.dispose()

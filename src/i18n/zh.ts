@@ -20,7 +20,6 @@ export const zh: Messages = {
     auto: "自动",
     chinese: "中文",
     english: "English",
-    back: "返回",
     showCache: "缓存",
     showTools: "工具",
     showSubagents: "子代理",
@@ -53,6 +52,8 @@ export const zh: Messages = {
     completed: "任务完成",
     question: "代理正在提问",
     permission: "需要权限确认",
+    user: "用户",
+    assistant: "助手",
   },
   tool: {
     pingResult: (enabled, lang) => `my-opencode-toolkit：启用=${enabled ? "是" : "否"}，语言=${lang}`,

@@ -4,13 +4,7 @@ import tseslint from "typescript-eslint"
 
 export default defineConfig([
   {
-    ignores: [
-      "node_modules/**",
-      "legacy/**",
-      "scripts/**",
-      "tui-test/**",
-      "coverage/**",
-    ],
+    ignores: ["node_modules/**", "dist/**", "coverage/**", "tmp/**", "scripts/**", "tui-test/**"],
   },
   js.configs.recommended,
   ...tseslint.configs.strictTypeChecked,

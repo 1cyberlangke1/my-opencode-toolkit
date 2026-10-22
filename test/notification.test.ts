@@ -13,11 +13,12 @@ const mainRoles = {
   forget: () => undefined,
 }
 
-/** 输入：标题；输出：只实现 session.get 的假上下文。 */
-function fakeCtx(title = "My Session"): Plugin.Context {
+/** 输入：标题 + 可选历史消息；输出：只实现 session 的假上下文。 */
+function fakeCtx(title = "My Session", messages: unknown[] = []): Plugin.Context {
   return {
     session: {
       get: () => Promise.resolve({ title }),
+      context: () => Promise.resolve(messages),
     },
   } as unknown as Plugin.Context
 }
@@ -64,6 +65,31 @@ describe("notifier", () => {
     now += 1000
     await notifier.handle({ type: "session.idle", data: { sessionID: SESSION } })
     expect(sent).toHaveLength(2)
+  })
+
+  it("idle 与 execution.succeeded 合并成一次通知", async () => {
+    const { sent, send } = makeSender()
+    const notifier = createNotifier({ ctx: fakeCtx(), store: makeStore(), roles: mainRoles, send })
+
+    await notifier.handle({ type: "session.execution.succeeded", data: { sessionID: SESSION } })
+    await notifier.handle({ type: "session.idle", data: { sessionID: SESSION } })
+    expect(sent).toHaveLength(1)
+  })
+
+  it("完成通知带最后一条用户与助手文本", async () => {
+    const { sent, send } = makeSender()
+    const messages = [
+      { type: "user", text: "把 bug 修一下" },
+      { type: "assistant", content: [{ type: "text", text: "修好了" }] },
+    ]
+    const notifier = createNotifier({ ctx: fakeCtx("会话", messages), store: makeStore(), roles: mainRoles, send })
+
+    await notifier.handle({ type: "session.idle", data: { sessionID: SESSION } })
+
+    const body = sent[0]?.[1] ?? ""
+    expect(body).toContain("Task completed")
+    expect(body).toContain("User: 把 bug 修一下")
+    expect(body).toContain("Assistant: 修好了")
   })
 
   it("通知总开关关闭时不发", async () => {

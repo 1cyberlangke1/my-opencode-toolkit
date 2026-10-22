@@ -116,26 +116,6 @@ export function normalizeSettings(raw: unknown): Settings {
 }
 
 /**
- * 输入：当前设置 + 局部补丁。
- * 输出：合并后的完整设置。
- * 预期：顶层字段直接覆盖，四个子对象逐字段合并；补丁不是对象时原样返回当前设置。
- */
-export function patchSettings(current: Settings, patch: unknown): Settings {
-  const record = asRecord(patch)
-  if (record === undefined) return current
-
-  const merged: Record<string, unknown> = { ...current }
-  for (const [key, value] of Object.entries(record)) merged[key] = value
-
-  for (const section of ["notification", "goal", "scheduling", "sidebar"] as const) {
-    const nested = asRecord(record[section])
-    if (nested !== undefined) merged[section] = { ...current[section], ...nested }
-  }
-
-  return normalizeSettings(merged)
-}
-
-/**
  * 输入：任意值 + 默认值。
  * 输出：布尔值，非布尔时用默认值。
  * 预期：不做字符串/数字到布尔的隐式转换。

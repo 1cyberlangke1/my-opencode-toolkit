@@ -177,7 +177,7 @@ const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Frid
  * 输入：cron 字符串。
  * 输出：常见模式的结构化描述，无法识别时回退 `raw`。
  */
-export function parseCronHuman(cron: string): CronHuman {
+function parseCronHuman(cron: string): CronHuman {
   const parts = cron.trim().split(/\s+/)
   if (parts.length !== 5) return { kind: "raw", text: cron }
   const [minute = "", hour = "", dayOfMonth = "", month = "", dayOfWeek = ""] = parts

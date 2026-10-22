@@ -53,7 +53,18 @@ P2 cron / loop 完成，`pnpm check` 与隔离 e2e 全绿。
 - 删除 `legacy/` 与无用的 `.prettierrc`。
 - 重写 README：功能、安装、命令、工具、设置、优先级、开发命令。
 - `files` 补上根入口 `index.ts` / `tui.ts`，保证 npm 安装能用。
-- 全量验证：124 单测 + 2 TUI 渲染测试 + e2e 全绿。
+- 全量验证：143 单测 + 2 TUI 渲染测试 + e2e 全绿。
+
+### 加固（0.2.1）
+
+- 事件订阅合并成一个 dispatcher，单 handler 抛错不影响其他 handler 与后续事件。
+- 完成信号补 `session.execution.succeeded`，与 `session.idle` 1 秒去重。
+- 通知带最后一条用户/助手文本预览。
+- 续作/定时/循环注入带 metadata 标记，注入前检查末条是否真实用户输入。
+- `MAX_JOBS` 改为按会话计数。
+- 统计改为按需从 OpenCode 消息重建，不落盘。
+- 删除死代码：`GoalUpdate`、`GOAL_TOOL_NAMES`、`SCHEDULING_TOOL_NAMES`、`menu.back`、`patchSettings`；`parseCronHuman` 取消导出。
+- 新增 `shared/events.ts`（事件读取 + dispatcher）、`shared/messages.ts`（末条用户输入判断）、`shared/types.ts`（Disposable）。
 
 ## 进行中
 

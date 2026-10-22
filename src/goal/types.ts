@@ -20,16 +20,6 @@ export type Goal = {
   readonly blockedStreak?: number
 }
 
-/** 控制器允许的更新字段。 */
-export type GoalUpdate = {
-  readonly status?: GoalStatus
-  readonly tokensUsed?: number
-  readonly timeUsedSeconds?: number
-  readonly tokenBudget?: number
-  readonly lastBlockedReason?: string
-  readonly blockedStreak?: number
-}
-
 /**
  * 输入：任意值。
  * 输出：是否为合法状态字符串。

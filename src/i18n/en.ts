@@ -20,7 +20,6 @@ export const en: Messages = {
     auto: "auto",
     chinese: "Chinese",
     english: "English",
-    back: "Back",
     showCache: "Cache",
     showTools: "Tools",
     showSubagents: "Subagents",
@@ -53,6 +52,8 @@ export const en: Messages = {
     completed: "Task completed",
     question: "The agent is asking a question",
     permission: "Permission required",
+    user: "User",
+    assistant: "Assistant",
   },
   tool: {
     pingResult: (enabled, lang) => `my-opencode-toolkit: enabled=${String(enabled)}, lang=${lang}`,

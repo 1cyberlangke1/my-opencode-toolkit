@@ -22,7 +22,6 @@ export type Messages = {
     readonly auto: string
     readonly chinese: string
     readonly english: string
-    readonly back: string
     readonly showCache: string
     readonly showTools: string
     readonly showSubagents: string
@@ -49,6 +48,8 @@ export type Messages = {
     readonly completed: string
     readonly question: string
     readonly permission: string
+    readonly user: string
+    readonly assistant: string
   }
   readonly tool: {
     readonly pingResult: (enabled: boolean, lang: string) => string
