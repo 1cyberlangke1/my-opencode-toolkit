@@ -74,6 +74,17 @@ export async function registerGoalTools(
         const blocked = await unavailable(sessionID)
         if (blocked !== null) return { output: {}, content: blocked }
 
+        const objective = input.objective.trim()
+        if (objective.length === 0) {
+          return { output: {}, content: "Error: objective cannot be empty." }
+        }
+        if (
+          input.token_budget !== undefined &&
+          (!Number.isFinite(input.token_budget) || input.token_budget <= 0)
+        ) {
+          return { output: {}, content: "Error: token_budget must be a positive number." }
+        }
+
         const existing = await controller.getGoal(sessionID)
         if (existing !== null && existing.status !== "complete" && existing.status !== "blocked") {
           return {
@@ -82,7 +93,7 @@ export async function registerGoalTools(
           }
         }
 
-        await controller.setGoal(sessionID, input.objective, input.token_budget)
+        await controller.setGoal(sessionID, objective, input.token_budget)
         return { output: {}, content: formatGoal(await controller.getGoal(sessionID)) }
       },
     })

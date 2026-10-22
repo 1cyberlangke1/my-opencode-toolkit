@@ -4,6 +4,7 @@ import type { SessionRoles } from "../goal/session-role.ts"
 import { resolveMessages, type Messages } from "../i18n/index.ts"
 import { readEventSessionID } from "../shared/events.ts"
 import type { JsonStore } from "../shared/json.ts"
+import { isSyntheticUserMessage } from "../shared/messages.ts"
 import { loadSettings } from "../shared/settings-store.ts"
 import type { Settings } from "../shared/settings.ts"
 import { createSender, type NotificationSender } from "./send.ts"
@@ -77,7 +78,9 @@ export function createNotifier(args: {
     for (let index = history.length - 1; index >= 0; index -= 1) {
       const message = history[index]
       if (message === undefined) continue
-      if (userText === "" && message.type === "user") userText = collapse(message.text)
+      if (userText === "" && message.type === "user" && !isSyntheticUserMessage(message)) {
+        userText = collapse(message.text)
+      }
       if (assistantText === "" && message.type === "assistant") {
         const text = message.content
           .filter((part) => part.type === "text")

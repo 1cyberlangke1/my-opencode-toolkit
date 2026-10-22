@@ -110,6 +110,17 @@ describe("scheduling store", () => {
     const overflow = await store.addJob({ sessionID: SESSION, cron: "0 * * * *", prompt: "one more" })
     expect(overflow.ok).toBe(false)
   })
+
+  it("load 跳过永远算不出下一次的任务", async () => {
+    const { memory, store } = makeStore()
+    memory.values.set(scheduleKey(SESSION), {
+      version: 1,
+      jobs: [{ id: "bad00001", sessionID: SESSION, cron: "0 0 31 2 *", prompt: "x", createdAt: Date.now() }],
+    })
+
+    await store.load()
+    expect(store.listJobs(SESSION)).toHaveLength(0)
+  })
 })
 
 describe("isRecurringTaskAged", () => {

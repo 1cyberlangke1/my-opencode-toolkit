@@ -33,8 +33,11 @@ export function createGoalController(store: JsonStore): GoalController {
     async setGoal(sessionID, objective, tokenBudget) {
       await clearGoal(store, sessionID)
       const goal = await createGoal(store, sessionID, objective)
-      if (tokenBudget === undefined) return goal
-      const withBudget: Goal = { ...goal, tokenBudget }
+      // 非法预算（0/负数/NaN）当作没设置，避免第一次记账就直接 budget_limited。
+      const budget =
+        tokenBudget !== undefined && Number.isFinite(tokenBudget) && tokenBudget > 0 ? tokenBudget : undefined
+      if (budget === undefined) return goal
+      const withBudget: Goal = { ...goal, tokenBudget: budget }
       await writeGoal(store, withBudget)
       return withBudget
     },
@@ -87,8 +90,8 @@ export function createGoalController(store: JsonStore): GoalController {
       const goal = await readGoal(store, sessionID)
       if (goal?.status !== "active") return goal
 
-      const tokenDelta = Math.max(0, usage.tokens)
-      const timeDelta = Math.max(0, usage.elapsedSeconds)
+      const tokenDelta = Number.isFinite(usage.tokens) ? Math.max(0, usage.tokens) : 0
+      const timeDelta = Number.isFinite(usage.elapsedSeconds) ? Math.max(0, usage.elapsedSeconds) : 0
       if (tokenDelta === 0 && timeDelta === 0) return goal
 
       const nextTokens = goal.tokensUsed + tokenDelta

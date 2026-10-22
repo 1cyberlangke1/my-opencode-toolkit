@@ -184,6 +184,27 @@ describe("goal controller", () => {
     expect(after?.timeUsedSeconds).toBe(0)
   })
 
+  it("非有限增量被忽略", async () => {
+    const store = new MemoryStore()
+    const c = controller(store)
+    await c.setGoal(SESSION, "x")
+    const after = await c.accountUsage(SESSION, {
+      tokens: Number.NaN,
+      elapsedSeconds: Number.POSITIVE_INFINITY,
+    })
+    expect(after?.tokensUsed).toBe(0)
+    expect(after?.timeUsedSeconds).toBe(0)
+  })
+
+  it("非法预算被忽略，不会一创建就 budget_limited", async () => {
+    const store = new MemoryStore()
+    const c = controller(store)
+    for (const budget of [0, -5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const goal = await c.setGoal(SESSION, "x", budget)
+      expect(goal.tokenBudget).toBeUndefined()
+    }
+  })
+
   it("setGoalStatus 对不存在的目标返回 null", async () => {
     const store = new MemoryStore()
     expect(await setGoalStatus(store, SESSION, "paused")).toBeNull()

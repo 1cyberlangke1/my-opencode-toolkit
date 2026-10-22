@@ -4,6 +4,7 @@ import type { Plugin } from "@opencode/plugin"
 
 import { readEventData } from "../shared/events.ts"
 import { lastMessageIsUserInput } from "../shared/messages.ts"
+import { capTimerDelay, MAX_TIMER_DELAY_MS } from "../shared/timer.ts"
 import { DEFAULT_MAX_AGE_DAYS, type Loop } from "./types.ts"
 import type { SessionRoles } from "../goal/session-role.ts"
 
@@ -14,6 +15,9 @@ const LOOP_MARKER = "loopContinuation"
 const FALLBACK_WAKEUP_MS = 20 * 60 * 1000
 const WAKEUP_MIN_S = 60
 const WAKEUP_MAX_S = 3600
+
+/** fixed 循环的最大间隔：与 7 天过期对齐，避免 setTimeout 超出 32 位范围。 */
+const MAX_LOOP_INTERVAL_SECONDS = 7 * 24 * 60 * 60
 
 /** `schedule_wakeup` 的结果。 */
 export type ScheduleWakeupResult =
@@ -57,6 +61,7 @@ export function createLoopScheduler(args: {
   const timers = new Map<string, ReturnType<typeof setTimeout>>()
   const inFlight = new Set<string>()
   const pending = new Set<string>()
+  const lifecycle = { disposed: false }
 
   /** 输入：会话 + prompt；输出：匹配的循环。预期：同一 prompt 只保留一个。 */
   const findLoop = (sessionID: string, prompt: string): Loop | undefined =>
@@ -85,26 +90,36 @@ export function createLoopScheduler(args: {
       stopLoop(loop.sessionID, loop.id)
       return
     }
-    if (await shouldDefer(loop.sessionID)) return
+    if (await shouldDefer(loop.sessionID).catch(() => false)) return
     loop.fires += 1
     await inject(loop.sessionID, loop.prompt)
   }
 
   /** 输入：循环 + 延迟毫秒；输出：无。预期：重设 timer，`unref` 不阻止进程退出。 */
   const armLoop = (loop: Loop, delayMs: number): void => {
+    if (lifecycle.disposed) return
     const existing = timers.get(loop.id)
     if (existing !== undefined) clearTimeout(existing)
-    loop.nextFireAt = Date.now() + delayMs
+    const target = Number.isFinite(delayMs) ? Math.max(0, delayMs) : MAX_TIMER_DELAY_MS
+    loop.nextFireAt = Date.now() + target
     const handle = setTimeout(() => {
       timers.delete(loop.id)
-      void handleFire(loop)
-    }, Math.max(0, delayMs))
+      // 24 小时上限导致提前醒来时继续等剩余时间，而不是提前触发。
+      const remaining = (loop.nextFireAt ?? 0) - Date.now()
+      if (remaining > 0) {
+        armLoop(loop, remaining)
+        return
+      }
+      // timer 回调里必须吞掉异常，否则未处理的 rejection 会打断整个进程。
+      void handleFire(loop).catch(() => undefined)
+    }, capTimerDelay(target))
     handle.unref()
     timers.set(loop.id, handle)
   }
 
   /** 输入：循环；输出：无。预期：触发后按模式决定下一次。 */
   const handleFire = async (loop: Loop): Promise<void> => {
+    if (lifecycle.disposed) return
     const hadWakeup = loop.pendingWakeup
     await fireLoop(loop)
     if (!loops.has(loop.id)) return
@@ -129,20 +144,26 @@ export function createLoopScheduler(args: {
     const existing = findLoop(sessionID, prompt)
     if (existing !== undefined) stopLoop(sessionID, existing.id)
 
+    // 非法/非正间隔退化为 dynamic，避免 0 或负数把 setTimeout 变成忙循环。
+    const interval =
+      intervalSeconds !== undefined && Number.isFinite(intervalSeconds) && intervalSeconds > 0
+        ? Math.min(intervalSeconds, MAX_LOOP_INTERVAL_SECONDS)
+        : undefined
+
     const now = Date.now()
     const loop: Loop = {
       id: randomUUID().slice(0, 8),
       sessionID,
       prompt,
-      mode: intervalSeconds === undefined ? "dynamic" : "fixed",
-      ...(intervalSeconds === undefined ? {} : { intervalSeconds }),
+      mode: interval === undefined ? "dynamic" : "fixed",
+      ...(interval === undefined ? {} : { intervalSeconds: interval }),
       createdAt: now,
       expiresAt: now + DEFAULT_MAX_AGE_DAYS * 24 * 60 * 60 * 1000,
       fires: 0,
     }
     loops.set(loop.id, loop)
-    void fireLoop(loop)
-    armLoop(loop, intervalSeconds === undefined ? FALLBACK_WAKEUP_MS : intervalSeconds * 1000)
+    void fireLoop(loop).catch(() => undefined)
+    armLoop(loop, interval === undefined ? FALLBACK_WAKEUP_MS : interval * 1000)
     return loop
   }
 
@@ -186,7 +207,8 @@ export function createLoopScheduler(args: {
         error: "schedule_wakeup is only available inside an active dynamic /loop for this session and prompt.",
       }
     }
-    const clamped = Math.min(Math.max(Math.round(delaySeconds), WAKEUP_MIN_S), WAKEUP_MAX_S)
+    const requested = Number.isFinite(delaySeconds) ? delaySeconds : WAKEUP_MIN_S
+    const clamped = Math.min(Math.max(Math.round(requested), WAKEUP_MIN_S), WAKEUP_MAX_S)
     const now = Date.now()
     const fireAt = Math.ceil((now + clamped * 1000) / 60_000) * 60_000
     loop.pendingWakeup = { fireAt, delaySeconds: clamped, prompt, reason }
@@ -225,6 +247,7 @@ export function createLoopScheduler(args: {
     },
 
     dispose() {
+      lifecycle.disposed = true
       for (const timer of timers.values()) clearTimeout(timer)
       timers.clear()
       loops.clear()

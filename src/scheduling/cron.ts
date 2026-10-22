@@ -95,8 +95,9 @@ export function parseCronExpression(expr: string): CronFields | null {
 
 /**
  * 输入：展开后的字段 + 起点时间。
- * 输出：严格晚于起点、第一个匹配的本地时刻，一年内无匹配返回 `null`。
+ * 输出：严格晚于起点、第一个匹配的本地时刻，四年内无匹配返回 `null`。
  * 预期：dayOfMonth 与 dayOfWeek 都受限时任一匹配即可（OR 语义）。
+ *       窗口取四年而不是一年，保证 `0 0 29 2 *`（闰日）能算出下一次。
  */
 export function computeNextCronRun(fields: CronFields, from: Date): Date | null {
   const minuteSet = new Set(fields.minute)
@@ -112,7 +113,8 @@ export function computeNextCronRun(fields: CronFields, from: Date): Date | null 
   t.setSeconds(0, 0)
   t.setMinutes(t.getMinutes() + 1)
 
-  const maxIter = 366 * 24 * 60
+  // 四年覆盖一个完整闰年周期；月份/日期跳过让稀疏表达式远达不到这个上限。
+  const maxIter = 4 * 366 * 24 * 60
   for (let i = 0; i < maxIter; i += 1) {
     if (!monthSet.has(t.getMonth() + 1)) {
       t.setMonth(t.getMonth() + 1, 1)

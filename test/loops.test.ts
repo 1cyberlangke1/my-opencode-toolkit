@@ -127,4 +127,39 @@ describe("loop scheduler", () => {
     expect(scheduler.listLoops(SESSION)).toHaveLength(1)
     scheduler.dispose()
   })
+
+  it("非正间隔退化为 dynamic，不会忙循环", async () => {
+    const log: string[] = []
+    const scheduler = createLoopScheduler({ ctx: fakeCtx(log), roles, shouldDefer: () => Promise.resolve(false) })
+
+    const loop = scheduler.startLoop(SESSION, "zero", 0)
+    await flush()
+
+    expect(loop.mode).toBe("dynamic")
+    expect(loop.intervalSeconds).toBeUndefined()
+    scheduler.dispose()
+  })
+
+  it("NaN 唤醒延迟夹到 60 秒", () => {
+    const log: string[] = []
+    const scheduler = createLoopScheduler({ ctx: fakeCtx(log), roles, shouldDefer: () => Promise.resolve(false) })
+    const loop = scheduler.startLoop(SESSION, "check", undefined)
+
+    const result = scheduler.scheduleWakeup(SESSION, "check", Number.NaN, "retry later")
+
+    expect(result.ok).toBe(true)
+    expect(loop.pendingWakeup?.delaySeconds).toBe(60)
+    scheduler.dispose()
+  })
+
+  it("超大固定间隔夹到 7 天", () => {
+    const log: string[] = []
+    const scheduler = createLoopScheduler({ ctx: fakeCtx(log), roles, shouldDefer: () => Promise.resolve(false) })
+
+    const loop = scheduler.startLoop(SESSION, "long", 30 * 24 * 3600)
+
+    expect(loop.mode).toBe("fixed")
+    expect(loop.intervalSeconds).toBe(7 * 24 * 3600)
+    scheduler.dispose()
+  })
 })

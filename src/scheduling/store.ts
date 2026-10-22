@@ -136,7 +136,9 @@ export function createSchedulingStore(store: ScannableStore): SchedulingStore {
           if (stored === null) continue
           const job: ScheduledJob = { ...stored, durable: true }
           const next = computeNext(job, job.lastFiredAt ?? job.createdAt)
-          if (next !== null) job.nextRunAt = next
+          // 算不出下一次的任务不会再触发，跳过而不是留下一个永远过期的 nextRunAt。
+          if (next === null) continue
+          job.nextRunAt = next
           jobs.set(job.id, job)
         }
         return Promise.resolve()
@@ -149,7 +151,7 @@ export function createSchedulingStore(store: ScannableStore): SchedulingStore {
         return { ok: false, error: `Invalid cron expression '${cron}'. Expected 5 fields: M H DoM Mon DoW.` }
       }
       if (nextCronRunMs(cron, Date.now()) === null) {
-        return { ok: false, error: `Cron expression '${cron}' does not match any calendar date in the next year.` }
+        return { ok: false, error: `Cron expression '${cron}' does not match any calendar date in the next 4 years.` }
       }
       const sessionJobs = [...jobs.values()].filter((job) => job.sessionID === sessionID).length
       if (sessionJobs >= MAX_JOBS) {
@@ -157,8 +159,11 @@ export function createSchedulingStore(store: ScannableStore): SchedulingStore {
       }
 
       const now = Date.now()
+      // 8 位 hex 理论上会碰撞；撞了就换一个，避免静默覆盖已有任务。
+      let id = randomUUID().slice(0, JOB_ID_LENGTH)
+      while (jobs.has(id)) id = randomUUID().slice(0, JOB_ID_LENGTH)
       const job: ScheduledJob = {
-        id: randomUUID().slice(0, JOB_ID_LENGTH),
+        id,
         sessionID,
         cron,
         prompt,
@@ -202,7 +207,12 @@ export function createSchedulingStore(store: ScannableStore): SchedulingStore {
         touched.add(job.sessionID)
         job.lastFiredAt = firedAt
         const next = computeNext(job, firedAt)
-        if (next !== null) job.nextRunAt = next
+        if (next === null) {
+          // 再也没有下一次：删掉任务，避免 nextRunAt 永远停在过去、每次 idle 都重复触发。
+          jobs.delete(id)
+          continue
+        }
+        job.nextRunAt = next
       }
       for (const sessionID of touched) await persist(sessionID)
     },

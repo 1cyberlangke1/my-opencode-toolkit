@@ -57,6 +57,15 @@ describe("computeNextCronRun", () => {
     const next = nextCronRunMs("0 0 1 * 1", from.getTime())
     expect(next).toBe(new Date(2026, 0, 5, 0, 0, 0).getTime())
   })
+
+  it("闰日 2 月 29 日在四年窗口内可解析", () => {
+    const from = new Date(2026, 0, 1, 0, 0, 0)
+    expect(nextCronRunMs("0 0 29 2 *", from.getTime())).toBe(new Date(2028, 1, 29, 0, 0, 0).getTime())
+  })
+
+  it("不可能日期返回 null", () => {
+    expect(nextCronRunMs("0 0 31 2 *", new Date(2026, 0, 1, 0, 0, 0).getTime())).toBeNull()
+  })
 })
 
 describe("jitter", () => {

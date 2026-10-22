@@ -14,11 +14,12 @@ const roles = {
   forget: () => undefined,
 }
 
-/** 输入：日志数组；输出：只实现 session.prompt 的假上下文。 */
-function fakeCtx(log: string[]): Plugin.Context {
+/** 输入：日志数组 + 是否让 prompt 失败；输出：只实现 session.prompt 的假上下文。 */
+function fakeCtx(log: string[], rejectPrompt = false): Plugin.Context {
   return {
     session: {
       prompt: (input: { text: string }) => {
+        if (rejectPrompt) return Promise.reject(new Error("session busy"))
         log.push(input.text)
         return Promise.resolve()
       },
@@ -131,7 +132,7 @@ describe("scheduling continuation", () => {
     continuation.dispose()
   })
 
-  it("goal active 时让路", async () => {
+  it("goal active 时让路且不消费任务", async () => {
     const log: string[] = []
     const store = makeStore()
     const added = await store.addJob({ sessionID: SESSION, cron: "* * * * *", prompt: "ping", recurring: true })
@@ -150,10 +151,61 @@ describe("scheduling continuation", () => {
     await continuation.handle({ type: "session.idle", data: { sessionID: SESSION } })
 
     expect(log).toHaveLength(0)
+    const job = store.getJob(added.job.id)
+    expect(job).toBeDefined()
+    expect(job?.nextRunAt).toBeGreaterThan(NOW)
     continuation.dispose()
   })
 
-  it("功能关闭时不注入但仍重排", async () => {
+  it("功能关闭时 one-shot 不被消费", async () => {
+    const log: string[] = []
+    const store = makeStore()
+    const added = await store.addJob({ sessionID: SESSION, cron: "* * * * *", prompt: "once", recurring: false })
+    expect(added.ok).toBe(true)
+    if (!added.ok) return
+    makeDue(store, added.job.id)
+
+    const continuation = createSchedulingContinuation({
+      ctx: fakeCtx(log),
+      store,
+      roles,
+      shouldDefer: () => Promise.resolve(false),
+      enabled: () => Promise.resolve(false),
+      now: () => NOW,
+    })
+    await continuation.handle({ type: "session.idle", data: { sessionID: SESSION } })
+
+    expect(log).toHaveLength(0)
+    expect(store.getJob(added.job.id)).toBeDefined()
+    continuation.dispose()
+  })
+
+  it("注入失败时 one-shot 顺延而不是丢失", async () => {
+    const log: string[] = []
+    const store = makeStore()
+    const added = await store.addJob({ sessionID: SESSION, cron: "* * * * *", prompt: "once", recurring: false })
+    expect(added.ok).toBe(true)
+    if (!added.ok) return
+    makeDue(store, added.job.id)
+
+    const continuation = createSchedulingContinuation({
+      ctx: fakeCtx(log, true),
+      store,
+      roles,
+      shouldDefer: () => Promise.resolve(false),
+      enabled: () => Promise.resolve(true),
+      now: () => NOW,
+    })
+    await continuation.handle({ type: "session.idle", data: { sessionID: SESSION } })
+
+    expect(log).toHaveLength(0)
+    const job = store.getJob(added.job.id)
+    expect(job).toBeDefined()
+    expect(job?.nextRunAt).toBeGreaterThan(NOW)
+    continuation.dispose()
+  })
+
+  it("功能关闭时不注入也不推进 lastFiredAt", async () => {
     const log: string[] = []
     const store = makeStore()
     const added = await store.addJob({ sessionID: SESSION, cron: "0 * * * *", prompt: "ping", recurring: true })
@@ -172,7 +224,7 @@ describe("scheduling continuation", () => {
     await continuation.handle({ type: "session.idle", data: { sessionID: SESSION } })
 
     expect(log).toHaveLength(0)
-    expect(store.getJob(added.job.id)).toBeDefined()
+    expect(store.getJob(added.job.id)?.lastFiredAt).toBeUndefined()
     continuation.dispose()
   })
 

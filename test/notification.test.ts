@@ -92,6 +92,26 @@ describe("notifier", () => {
     expect(body).toContain("Assistant: 修好了")
   })
 
+  it("完成预览跳过插件注入的续作消息", async () => {
+    const { sent, send } = makeSender()
+    const messages = [
+      { type: "user", text: "真实问题" },
+      { type: "assistant", content: [{ type: "text", text: "回答" }] },
+      {
+        type: "user",
+        text: "Continue working toward the active thread goal.",
+        metadata: { goalContinuation: true },
+      },
+    ]
+    const notifier = createNotifier({ ctx: fakeCtx("会话", messages), store: makeStore(), roles: mainRoles, send })
+
+    await notifier.handle({ type: "session.idle", data: { sessionID: SESSION } })
+
+    const body = sent[0]?.[1] ?? ""
+    expect(body).toContain("User: 真实问题")
+    expect(body).not.toContain("Continue working")
+  })
+
   it("通知总开关关闭时不发", async () => {
     const { sent, send } = makeSender()
     const settings: Settings = { ...DEFAULT_SETTINGS, notification: { ...DEFAULT_SETTINGS.notification, enabled: false } }
