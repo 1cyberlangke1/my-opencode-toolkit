@@ -72,6 +72,28 @@ describe("goal continuation", () => {
     expect(log[0]?.text).toContain("ship it")
   })
 
+  it("两个会话的目标与 pending 互不影响", async () => {
+    const store = storeWithGoalEnabled()
+    const controller = createGoalController(store)
+    await controller.setGoal("ses_a", "goal-a")
+    await controller.setGoal("ses_b", "goal-b")
+    const log: PromptLog = []
+    const continuation = createGoalContinuation({ ctx: fakeCtx(log), store, controller, roles })
+
+    await continuation.handle({ type: "session.idle", data: { sessionID: "ses_a" } })
+    expect(log).toHaveLength(1)
+    expect(log[0]?.sessionID).toBe("ses_a")
+    expect(log[0]?.text).toContain("goal-a")
+
+    // A 的 pending 只挡 A；B 仍然可以立即注入。
+    await continuation.handle({ type: "session.idle", data: { sessionID: "ses_a" } })
+    expect(log).toHaveLength(1)
+    await continuation.handle({ type: "session.idle", data: { sessionID: "ses_b" } })
+    expect(log).toHaveLength(2)
+    expect(log[1]?.sessionID).toBe("ses_b")
+    expect(log[1]?.text).toContain("goal-b")
+  })
+
   it("session.execution.succeeded 也视为 idle 并注入续作", async () => {
     const store = storeWithGoalEnabled()
     const controller = createGoalController(store)

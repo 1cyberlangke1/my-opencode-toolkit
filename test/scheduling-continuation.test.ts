@@ -79,6 +79,40 @@ describe("scheduling continuation", () => {
     continuation.dispose()
   })
 
+  it("两个会话的到点任务互不影响", async () => {
+    const log: string[] = []
+    const store = makeStore()
+    const a = await store.addJob({ sessionID: "ses_a", cron: "* * * * *", prompt: "job-a", recurring: true })
+    const b = await store.addJob({ sessionID: "ses_b", cron: "* * * * *", prompt: "job-b", recurring: true })
+    expect(a.ok).toBe(true)
+    expect(b.ok).toBe(true)
+    if (!a.ok || !b.ok) return
+    makeDue(store, a.job.id)
+    makeDue(store, b.job.id)
+
+    const continuation = createSchedulingContinuation({
+      ctx: fakeCtx(log),
+      store,
+      roles,
+      shouldDefer: () => Promise.resolve(false),
+      enabled: () => Promise.resolve(true),
+      now: () => NOW,
+    })
+
+    await continuation.handle({ type: "session.idle", data: { sessionID: "ses_a" } })
+    expect(log).toHaveLength(1)
+    expect(log[0]).toContain("job-a")
+    // A 是 recurring，触发后重排；B 仍保持到点状态，等自己的会话 idle。
+    expect(store.getJob(a.job.id)?.nextRunAt).toBeGreaterThan(NOW)
+    expect(store.getJob(b.job.id)?.nextRunAt).toBeLessThanOrEqual(NOW)
+
+    await continuation.handle({ type: "session.idle", data: { sessionID: "ses_b" } })
+    expect(log).toHaveLength(2)
+    expect(log[1]).toContain("job-b")
+    expect(store.getJob(b.job.id)?.nextRunAt).toBeGreaterThan(NOW)
+    continuation.dispose()
+  })
+
   it("session.execution.succeeded 也触发已到点任务", async () => {
     const log: string[] = []
     const store = makeStore()
