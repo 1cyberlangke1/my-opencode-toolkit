@@ -5,6 +5,8 @@
 
 OpenCode v2 插件：系统通知、持久目标、定时任务与循环、TUI 状态面板。
 
+维护、架构与发布流程见 [docs/maintenance.md](docs/maintenance.md)。
+
 ## 要求
 
 - OpenCode `2.x`
