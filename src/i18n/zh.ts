@@ -7,6 +7,9 @@ export const zh: Messages = {
     title: "工具包设置",
     description: `打开 ${PLUGIN_ID} 设置`,
     group: "插件",
+    goal: "设置、查看、暂停、恢复或清除当前会话的持久目标",
+    loop: "启动或停止当前会话的循环提示",
+    cron: "创建、列出或删除当前会话的定时任务",
   },
   menu: {
     title: PLUGIN_ID,

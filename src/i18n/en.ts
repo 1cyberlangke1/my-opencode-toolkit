@@ -7,6 +7,9 @@ export const en: Messages = {
     title: "Toolkit settings",
     description: `Open ${PLUGIN_ID} settings`,
     group: "Plugins",
+    goal: "Set, inspect, pause, resume or clear the persistent goal for this session",
+    loop: "Start or stop a recurring prompt loop in this session",
+    cron: "Create, list or delete scheduled prompts for this session",
   },
   menu: {
     title: PLUGIN_ID,

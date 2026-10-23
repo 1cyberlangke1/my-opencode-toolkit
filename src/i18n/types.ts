@@ -8,6 +8,9 @@ export type Messages = {
     readonly title: string
     readonly description: string
     readonly group: string
+    readonly goal: string
+    readonly loop: string
+    readonly cron: string
   }
   readonly menu: {
     readonly title: string

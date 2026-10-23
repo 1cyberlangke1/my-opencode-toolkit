@@ -1,11 +1,10 @@
 import type { Plugin } from "@opencode/plugin"
 
+import { resolveMessages } from "../i18n/index.ts"
 import { loadSettings } from "../shared/settings-store.ts"
 import type { GoalContinuation } from "./continuation.ts"
 import type { GoalController } from "./controller.ts"
 import { parseGoalCommand } from "./parse-command.ts"
-
-const DESCRIPTION = "Set, inspect, pause, resume or clear the persistent goal for this session"
 
 const USAGE = "Usage: /goal [<objective>|clear|edit|pause|resume]"
 
@@ -64,10 +63,13 @@ export async function registerGoalCommand(
   controller: GoalController,
   continuation: GoalContinuation,
 ): Promise<{ dispose(): Promise<void> }> {
+  const settings = await loadSettings(ctx.storage)
+  const messages = resolveMessages(settings.lang === "auto" ? undefined : settings.lang)
+
   const registration = await ctx.command.transform((editor) => {
     editor.add({
       name: "goal",
-      description: DESCRIPTION,
+      description: messages.command.goal,
       execute: async (input) => {
         const settings = await loadSettings(ctx.storage)
         const parsed = parseGoalCommand(input.prompt.text)

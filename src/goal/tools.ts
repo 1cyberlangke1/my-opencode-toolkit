@@ -27,7 +27,8 @@ const DESCRIPTION_UPDATE =
 
 const CreateInput = Schema.Struct({
   objective: Schema.String,
-  token_budget: Schema.optional(Schema.Number),
+  // 工具 schema 对外暴露 nullable；null 与不传同义，避免调用方传 null 时被 schema 拒绝。
+  token_budget: Schema.optional(Schema.NullOr(Schema.Number)),
 })
 
 const EmptyInput = Schema.Struct({})
@@ -78,10 +79,8 @@ export async function registerGoalTools(
         if (objective.length === 0) {
           return { output: {}, content: "Error: objective cannot be empty." }
         }
-        if (
-          input.token_budget !== undefined &&
-          (!Number.isFinite(input.token_budget) || input.token_budget <= 0)
-        ) {
+        const tokenBudget = input.token_budget ?? undefined
+        if (tokenBudget !== undefined && (!Number.isFinite(tokenBudget) || tokenBudget <= 0)) {
           return { output: {}, content: "Error: token_budget must be a positive number." }
         }
 
@@ -93,7 +92,7 @@ export async function registerGoalTools(
           }
         }
 
-        await controller.setGoal(sessionID, objective, input.token_budget)
+        await controller.setGoal(sessionID, objective, tokenBudget)
         return { output: {}, content: formatGoal(await controller.getGoal(sessionID)) }
       },
     })

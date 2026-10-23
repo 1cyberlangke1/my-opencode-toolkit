@@ -3,6 +3,7 @@ import { join } from "node:path"
 
 import type { Plugin } from "@opencode/plugin"
 
+import { resolveMessages } from "../i18n/index.ts"
 import type { SessionRoles } from "../goal/session-role.ts"
 import { loadSettings } from "../shared/settings-store.ts"
 import type { LoopScheduler } from "./loops.ts"
@@ -101,10 +102,13 @@ export async function registerSchedulingCommands(
     return null
   }
 
+  const settings = await loadSettings(ctx.storage)
+  const messages = resolveMessages(settings.lang === "auto" ? undefined : settings.lang)
+
   const registration = await ctx.command.transform((editor) => {
     editor.add({
       name: "loop",
-      description: "Start or stop a recurring prompt loop in this session",
+      description: messages.command.loop,
       execute: async (input) => {
         const parsed = parseLoopCommand(input.prompt.text)
         // stop 即使功能关闭也要能执行，否则用户没法停掉正在跑的循环。
@@ -127,7 +131,7 @@ export async function registerSchedulingCommands(
 
     editor.add({
       name: "cron",
-      description: "Create, list or delete scheduled prompts for this session",
+      description: messages.command.cron,
       execute: async (input) => {
         const raw = input.prompt.text.trim()
         // list / delete 属于清理操作，功能关闭时也允许；只有创建需要开关。

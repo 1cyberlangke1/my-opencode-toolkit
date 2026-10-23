@@ -33,6 +33,7 @@ describe("detectLocale", () => {
 describe("文案完整性", () => {
   it("中英文案键一致", () => {
     expect(Object.keys(zh).sort()).toEqual(Object.keys(en).sort())
+    expect(Object.keys(zh.command).sort()).toEqual(Object.keys(en.command).sort())
     expect(Object.keys(zh.menu).sort()).toEqual(Object.keys(en.menu).sort())
     expect(Object.keys(zh.sidebar).sort()).toEqual(Object.keys(en.sidebar).sort())
     expect(Object.keys(zh.toast).sort()).toEqual(Object.keys(en.toast).sort())
