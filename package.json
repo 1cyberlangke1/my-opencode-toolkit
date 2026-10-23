@@ -1,6 +1,6 @@
 {
   "name": "my-opencode-toolkit",
-  "version": "0.2.11",
+  "version": "0.2.12",
   "description": "OpenCode 插件：系统通知、持久目标、定时任务与 TUI 面板",
   "type": "module",
   "license": "MIT",
