@@ -332,6 +332,27 @@ describe("goal continuation", () => {
     expect(log).toHaveLength(0)
   })
 
+  it("pending 时重复 idle 只发一次，完成后不再续作", async () => {
+    const store = storeWithGoalEnabled()
+    const controller = createGoalController(store)
+    await controller.setGoal(SESSION, "x")
+    const log: PromptLog = []
+    const continuation = createGoalContinuation({ ctx: fakeCtx(log), settings: DEFAULT_SETTINGS, controller, roles })
+
+    await continuation.handle({ type: "session.idle", data: { sessionID: SESSION } })
+    await continuation.handle({ type: "session.idle", data: { sessionID: SESSION } })
+    expect(log).toHaveLength(1)
+
+    // 真实 step 消费 pending；随后完成目标，下一次 idle 不得再催。
+    await continuation.handle({
+      type: "session.step.ended",
+      data: { sessionID: SESSION, tokens: { input: 1, output: 1, cache: { read: 0, write: 0 } } },
+    })
+    await controller.markComplete(SESSION)
+    await continuation.handle({ type: "session.idle", data: { sessionID: SESSION } })
+    expect(log).toHaveLength(1)
+  })
+
   it("删除会话清掉运行状态与目标", async () => {
     const store = storeWithGoalEnabled()
     const controller = createGoalController(store)
