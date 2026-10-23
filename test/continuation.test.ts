@@ -72,6 +72,19 @@ describe("goal continuation", () => {
     expect(log[0]?.text).toContain("ship it")
   })
 
+  it("session.execution.succeeded 也视为 idle 并注入续作", async () => {
+    const store = storeWithGoalEnabled()
+    const controller = createGoalController(store)
+    await controller.setGoal(SESSION, "ship it")
+    const log: PromptLog = []
+    const continuation = createGoalContinuation({ ctx: fakeCtx(log), store, controller, roles })
+
+    await continuation.handle({ type: "session.execution.succeeded", data: { sessionID: SESSION } })
+
+    expect(log).toHaveLength(1)
+    expect(log[0]?.text).toContain("Continue working toward the active thread goal.")
+  })
+
   it("没有目标或已暂停时不注入", async () => {
     const store = storeWithGoalEnabled()
     const controller = createGoalController(store)

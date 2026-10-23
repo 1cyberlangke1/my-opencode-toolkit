@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { dispatchEvent, readEventData, readEventSessionID, type PluginEvent } from "../src/shared/events.ts"
+import { dispatchEvent, isIdleEvent, readEventData, readEventSessionID, type PluginEvent } from "../src/shared/events.ts"
 
 const EVENT: PluginEvent = { type: "session.idle", data: { sessionID: "ses_a" } }
 
@@ -21,6 +21,26 @@ describe("readEventData", () => {
   it("对象返回自身，非对象返回 undefined", () => {
     expect(readEventData(EVENT)).toEqual({ sessionID: "ses_a" })
     expect(readEventData({ type: "x", data: [1] })).toBeUndefined()
+  })
+})
+
+describe("isIdleEvent", () => {
+  it("兼容旧 session.idle", () => {
+    expect(isIdleEvent({ type: "session.idle", data: { sessionID: "ses_a" } })).toBe(true)
+  })
+
+  it("durable session.execution.succeeded 视为一轮结束", () => {
+    expect(isIdleEvent({ type: "session.execution.succeeded", data: { sessionID: "ses_a" } })).toBe(true)
+  })
+
+  it("session.status 只有 idle 才算", () => {
+    expect(isIdleEvent({ type: "session.status", data: { sessionID: "ses_a", status: { type: "idle" } } })).toBe(true)
+    expect(isIdleEvent({ type: "session.status", data: { sessionID: "ses_a", status: { type: "busy" } } })).toBe(false)
+    expect(isIdleEvent({ type: "session.status", data: { sessionID: "ses_a", status: { type: "retry" } } })).toBe(false)
+  })
+
+  it("其他事件不算 idle", () => {
+    expect(isIdleEvent({ type: "session.step.ended", data: { sessionID: "ses_a" } })).toBe(false)
   })
 })
 

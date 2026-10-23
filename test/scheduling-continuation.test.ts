@@ -70,6 +70,29 @@ describe("scheduling continuation", () => {
     continuation.dispose()
   })
 
+  it("session.execution.succeeded 也触发已到点任务", async () => {
+    const log: string[] = []
+    const store = makeStore()
+    const added = await store.addJob({ sessionID: SESSION, cron: "* * * * *", prompt: "ping", recurring: true })
+    expect(added.ok).toBe(true)
+    if (!added.ok) return
+    makeDue(store, added.job.id)
+
+    const continuation = createSchedulingContinuation({
+      ctx: fakeCtx(log),
+      store,
+      roles,
+      shouldDefer: () => Promise.resolve(false),
+      enabled: () => Promise.resolve(true),
+      now: () => NOW,
+    })
+    await continuation.handle({ type: "session.execution.succeeded", data: { sessionID: SESSION } })
+
+    expect(log).toHaveLength(1)
+    expect(log[0]).toContain("ping")
+    continuation.dispose()
+  })
+
   it("one-shot 触发后自删", async () => {
     const log: string[] = []
     const store = makeStore()

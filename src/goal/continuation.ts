@@ -1,6 +1,6 @@
 import type { Plugin } from "@opencode/plugin"
 
-import { readEventData } from "../shared/events.ts"
+import { isIdleEvent, readEventData } from "../shared/events.ts"
 import type { PluginEvent } from "../shared/events.ts"
 import { asRecord, type JsonStore } from "../shared/json.ts"
 import { lastMessageIsUserInput } from "../shared/messages.ts"
@@ -203,7 +203,9 @@ export function createGoalContinuation(args: {
           return
         }
         case "session.idle":
-          await handleIdle(sessionID)
+        case "session.execution.succeeded":
+        case "session.status":
+          if (isIdleEvent(event)) await handleIdle(sessionID)
           return
         case "session.execution.failed":
           await handleFailure(sessionID, data["error"])

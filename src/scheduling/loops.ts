@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto"
 
 import type { Plugin } from "@opencode/plugin"
 
-import { readEventData } from "../shared/events.ts"
+import { isIdleEvent, readEventData } from "../shared/events.ts"
 import { lastMessageIsUserInput } from "../shared/messages.ts"
 import { capTimerDelay, MAX_TIMER_DELAY_MS } from "../shared/timer.ts"
 import { DEFAULT_MAX_AGE_DAYS, type Loop } from "./types.ts"
@@ -271,7 +271,7 @@ export function createLoopScheduler(args: {
       if (
         event.type === "session.execution.failed" ||
         event.type === "session.execution.interrupted" ||
-        event.type === "session.idle"
+        isIdleEvent(event)
       ) {
         pending.delete(sessionID)
       }

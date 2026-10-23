@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
 /**
  * 输入：无（需要本机 opencode 2.x 与 bun）。
- * 输出：在隔离的临时 HOME/DB/config 里启动 opencode，用假 provider 驱动四次工具调用。
+ * 输出：在隔离的临时 HOME/DB/config 里启动 opencode，用假 provider 驱动五次工具调用。
  * 预期：工具表包含 toolkit_ping、三个 goal 工具与四个 scheduling 工具；
- *       create_goal / get_goal / cron_create 依次执行成功；
+ *       create_goal / get_goal / cron_create / update_goal 依次执行成功；
  *       默认设置、goal 与 durable cron 任务写入隔离数据库。不会读写日常使用的 OpenCode 数据。
  *
  * 用法：bun scripts/e2e-load.mjs
@@ -88,7 +88,8 @@ function toolCallResponse(stream, name, args, usage) {
 /**
  * 输入：OpenAI chat 请求体。
  * 输出：流式响应。
- * 预期：第 1 轮调用 create_goal，第 2 轮调用 get_goal，第 3 轮返回 done。
+ * 预期：第 1 轮调用 create_goal，第 2 轮调用 get_goal，第 3 轮创建 cron，
+ *       第 4 轮把 goal 标为 complete，第 5 轮返回 done。
  */
 function handle(body) {
   const stream = body?.stream === true
@@ -113,7 +114,12 @@ function handle(body) {
     return toolCallResponse(stream, "cron_create", { cron: "*/5 * * * *", prompt: "e2e cron", durable: true }, usage)
   }
 
-  served = 4
+  if (served === 3) {
+    served = 4
+    return toolCallResponse(stream, "update_goal", { status: "complete" }, usage)
+  }
+
+  served = 5
   toolResultText = messages
     .filter((message) => message?.role === "tool")
     .map((message) => (typeof message.content === "string" ? message.content : JSON.stringify(message.content)))
@@ -276,7 +282,7 @@ if (!toolNames.includes("create_goal")) {
   console.log("logs saved to:", root)
 }
 
-assert.equal(served, 4, "provider must serve four requests (create goal, read goal, cron, finish)")
+assert.equal(served, 5, "provider must serve five requests (create goal, read goal, cron, complete goal, finish)")
 for (const name of [
   "toolkit_ping",
   "create_goal",
@@ -293,7 +299,7 @@ assert.ok(toolResultText.includes(GOAL_OBJECTIVE), `goal result missing objectiv
 assert.ok(toolResultText.includes('"status": "active"'), `goal result missing active status, got ${toolResultText}`)
 assert.equal(settings?.lang, "auto", "default settings must be written to storage")
 assert.equal(goal?.objective, GOAL_OBJECTIVE, "goal must be persisted under the session key")
-assert.equal(goal?.status, "active", "new goal must be active")
+assert.equal(goal?.status, "complete", "goal must be completed before idle so no continuation follows")
 assert.equal(schedule?.jobs?.length, 1, "durable cron job must be persisted")
 assert.equal(schedule?.jobs?.[0]?.cron, "*/5 * * * *", "cron expression must round-trip")
 

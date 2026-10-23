@@ -167,9 +167,10 @@ OpenCode v2 插件：系统通知、持久目标、定时任务与循环、TUI �
 
 ```bash
 pnpm install
-pnpm check        # typecheck + lint + 180 单测 + 8 bun 测试 + 发布包内容校验
-pnpm test:e2e     # 需要本机 opencode 2.x 与 bun，使用隔离的 HOME/DB/config
-pnpm test:e2e:tui # 真实 TUI：PTY 启动 opencode --standalone，打开设置菜单
+pnpm check            # typecheck + lint + 186 单测 + 8 bun 测试 + 发布包内容校验
+pnpm test:e2e         # 插件加载/工具持久化 + synthetic 自动续作真实触发
+pnpm test:e2e:synthetic # 只跑 synthetic 自动续作触发
+pnpm test:e2e:tui     # 真实 TUI：PTY 启动 opencode --standalone，打开设置菜单
 ```
 
 e2e 用假 provider 驱动工具调用，不会请求真实模型；它会在临时目录里启动一个隔离的 OpenCode server，不读写日常数据。`test:e2e:tui` 通过 ConPTY（Windows）或 openpty（macOS/Linux）驱动真实 TUI，验证 TUI 插件加载、斜杠命令与设置菜单渲染。

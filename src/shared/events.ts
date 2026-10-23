@@ -25,6 +25,21 @@ export function readEventData(event: PluginEvent): Record<string, unknown> | und
   return asRecord(event.data)
 }
 
+/**
+ * 输入：插件事件。
+ * 输出：会话是否进入 idle。
+ * 预期：兼容新的 `session.status`（`status.type === "idle"`）与旧的 `session.idle`；
+ *       其他状态（busy/retry）返回 false。
+ */
+export function isIdleEvent(event: PluginEvent): boolean {
+  // 2.1.x 的插件事件流只送 durable/server 事件；session.idle 是 ephemeral，
+  // 实际到达的是 session.execution.succeeded。两者都视为一轮结束。
+  if (event.type === "session.idle" || event.type === "session.execution.succeeded") return true
+  if (event.type !== "session.status") return false
+  const status = asRecord(readEventData(event)?.["status"])
+  return status?.["type"] === "idle"
+}
+
 /** 事件处理函数。 */
 export type EventHandler = (event: PluginEvent) => Promise<void>
 

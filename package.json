@@ -49,7 +49,8 @@
     "check:package": "node scripts/check-package.mjs",
     "test": "vitest run",
     "test:tui": "cd tui-test && bun test",
-    "test:e2e": "bun scripts/e2e-load.mjs",
+    "test:e2e": "bun scripts/e2e-load.mjs && bun scripts/e2e-synthetic.mjs",
+    "test:e2e:synthetic": "bun scripts/e2e-synthetic.mjs",
     "test:e2e:tui": "bun scripts/e2e-tui.mjs",
     "test:watch": "vitest"
   },
