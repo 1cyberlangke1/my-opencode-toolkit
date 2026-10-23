@@ -20,20 +20,31 @@ export type NotificationSettings = {
 /** 持久目标开关。 */
 export type GoalSettings = {
   readonly enabled: boolean
+  /** 是否在侧栏显示目标分区；关闭不影响功能。 */
+  readonly showInSidebar: boolean
 }
 
 /** 定时任务开关。 */
 export type SchedulingSettings = {
   readonly enabled: boolean
+  /** 是否在侧栏显示定时分区；关闭不影响功能。 */
+  readonly showInSidebar: boolean
 }
 
 /** TUI 侧栏显示项。 */
 export type SidebarSettings = {
   readonly enabled: boolean
-  readonly showCache: boolean
   readonly showTools: boolean
   readonly showSubagents: boolean
-  readonly collapsed: boolean
+}
+
+/** 底部上下文统计行。 */
+export type ContextStatsSettings = {
+  readonly enabled: boolean
+  readonly showInput: boolean
+  readonly showOutput: boolean
+  readonly showCache: boolean
+  readonly showHitRate: boolean
 }
 
 /** 插件全部设置。 */
@@ -45,6 +56,7 @@ export type Settings = {
   readonly goal: GoalSettings
   readonly scheduling: SchedulingSettings
   readonly sidebar: SidebarSettings
+  readonly contextStats: ContextStatsSettings
 }
 
 /**
@@ -63,14 +75,19 @@ export const DEFAULT_SETTINGS: Settings = {
     onPermission: true,
     onlyMainSession: true,
   },
-  goal: { enabled: true },
-  scheduling: { enabled: true },
+  goal: { enabled: true, showInSidebar: true },
+  scheduling: { enabled: true, showInSidebar: true },
   sidebar: {
     enabled: true,
-    showCache: true,
     showTools: true,
     showSubagents: true,
-    collapsed: false,
+  },
+  contextStats: {
+    enabled: true,
+    showInput: true,
+    showOutput: true,
+    showCache: true,
+    showHitRate: true,
   },
 }
 
@@ -85,6 +102,8 @@ export function normalizeSettings(raw: unknown): Settings {
   const goal = asRecord(record["goal"]) ?? {}
   const scheduling = asRecord(record["scheduling"]) ?? {}
   const sidebar = asRecord(record["sidebar"]) ?? {}
+  const contextStats = asRecord(record["contextStats"]) ?? {}
+  const legacyShowCache = typeof sidebar["showCache"] === "boolean" ? sidebar["showCache"] : undefined
 
   return {
     lang: readLang(record["lang"], DEFAULT_SETTINGS.lang),
@@ -101,16 +120,26 @@ export function normalizeSettings(raw: unknown): Settings {
     },
     goal: {
       enabled: readBoolean(goal["enabled"], DEFAULT_SETTINGS.goal.enabled),
+      showInSidebar: readBoolean(goal["showInSidebar"], DEFAULT_SETTINGS.goal.showInSidebar),
     },
     scheduling: {
       enabled: readBoolean(scheduling["enabled"], DEFAULT_SETTINGS.scheduling.enabled),
+      showInSidebar: readBoolean(scheduling["showInSidebar"], DEFAULT_SETTINGS.scheduling.showInSidebar),
     },
     sidebar: {
       enabled: readBoolean(sidebar["enabled"], DEFAULT_SETTINGS.sidebar.enabled),
-      showCache: readBoolean(sidebar["showCache"], DEFAULT_SETTINGS.sidebar.showCache),
       showTools: readBoolean(sidebar["showTools"], DEFAULT_SETTINGS.sidebar.showTools),
       showSubagents: readBoolean(sidebar["showSubagents"], DEFAULT_SETTINGS.sidebar.showSubagents),
-      collapsed: readBoolean(sidebar["collapsed"], DEFAULT_SETTINGS.sidebar.collapsed),
+    },
+    contextStats: {
+      enabled: readBoolean(
+        contextStats["enabled"],
+        legacyShowCache ?? DEFAULT_SETTINGS.contextStats.enabled,
+      ),
+      showInput: readBoolean(contextStats["showInput"], DEFAULT_SETTINGS.contextStats.showInput),
+      showOutput: readBoolean(contextStats["showOutput"], DEFAULT_SETTINGS.contextStats.showOutput),
+      showCache: readBoolean(contextStats["showCache"], DEFAULT_SETTINGS.contextStats.showCache),
+      showHitRate: readBoolean(contextStats["showHitRate"], DEFAULT_SETTINGS.contextStats.showHitRate),
     },
   }
 }

@@ -78,9 +78,13 @@ OpenCode v2 插件：系统通知、持久目标、定时任务与循环、TUI �
 
 ### TUI 面板
 
-- 侧栏显示目标、缓存命中率、工具使用 Top3、子代理数量、循环与定时任务数量
-- 统计不单独存一份：每个会话第一次打开面板时，从 OpenCode 已存消息（`session.context`）重建
-- 设置菜单：`/my-opencode-toolkit`，可热改语言、通知、Goal、定时任务与侧栏显示项
+- 侧栏显示目标、定时任务、工具使用情况、子代理；没有内容的分区直接隐藏
+- 工具列表完整显示、可折叠；调用次数为 0 的工具不显示
+- 子代理默认折叠，展开后显示它的输入、输出、缓存、命中率与工具调用
+- 底部 prompt footer 显示当前会话累计的 `↑ 输入 ↓ 输出 ♻ 缓存 🎯 命中率`
+- 命中率只有 `🎯` 数字染色，0% 红、100% 绿，固定两位小数
+- 统计按会话独立，每个会话第一次打开面板时从 OpenCode 已存消息重建
+- 设置菜单：`/my-opencode-toolkit`，语言、通知、Goal、定时任务、侧栏、上下文统计都能热改
 - 设置写入失败会回滚本地显示
 
 ## 命令与工具
@@ -112,19 +116,23 @@ OpenCode v2 插件：系统通知、持久目标、定时任务与循环、TUI �
 | 字段 | 默认 | 说明 |
 |---|---|---|
 | `lang` | `auto` | `auto` / `zh` / `en` |
-| `enabled` | `true` | 插件总开关；关闭后隐藏工具、停止注入与通知 |
 | `notification.enabled` | `true` | 通知总开关 |
 | `notification.onComplete` | `true` | 会话完成通知 |
 | `notification.onQuestion` | `true` | 代理提问通知 |
 | `notification.onPermission` | `true` | 权限请求通知 |
 | `notification.onlyMainSession` | `true` | 只通知主会话，忽略子代理 |
 | `goal.enabled` | `true` | 持久目标功能 |
+| `goal.showInSidebar` | `true` | 在侧栏显示目标；关闭不影响功能 |
 | `scheduling.enabled` | `true` | 定时任务与循环功能 |
+| `scheduling.showInSidebar` | `true` | 在侧栏显示定时任务；关闭不影响功能 |
 | `sidebar.enabled` | `true` | 侧栏面板 |
-| `sidebar.showCache` | `true` | 显示缓存命中率 |
-| `sidebar.showTools` | `true` | 显示工具使用 Top3 |
-| `sidebar.showSubagents` | `true` | 显示子代理数量 |
-| `sidebar.collapsed` | `false` | 折叠侧栏内容 |
+| `sidebar.showTools` | `true` | 显示工具使用情况 |
+| `sidebar.showSubagents` | `true` | 显示子代理 |
+| `contextStats.enabled` | `true` | 底部上下文统计行 |
+| `contextStats.showInput` | `true` | 显示 `↑` 输入 |
+| `contextStats.showOutput` | `true` | 显示 `↓` 输出 |
+| `contextStats.showCache` | `true` | 显示 `♻` 缓存 |
+| `contextStats.showHitRate` | `true` | 显示 `🎯` 命中率 |
 
 ## 数据与隐私
 
@@ -167,11 +175,12 @@ OpenCode v2 插件：系统通知、持久目标、定时任务与循环、TUI �
 
 ```bash
 pnpm install
-pnpm check            # typecheck + lint + 186 单测 + 8 bun 测试 + 发布包内容校验
-pnpm test:e2e           # 加载/持久化 + synthetic 触发 + 原生压缩后仍触发
+pnpm check            # typecheck + lint + 195 单测 + 11 bun 测试 + 发布包内容校验
+pnpm test:e2e           # 加载/持久化 + 子代理/关闭功能工具隐藏 + synthetic 触发 + 原生压缩后仍触发
 pnpm test:e2e:synthetic # 只跑 synthetic 自动续作触发
 pnpm test:e2e:compact   # 只跑“原生压缩后自动续作仍触发”
 pnpm test:e2e:tui       # 真实 TUI：PTY 启动 opencode --standalone，打开设置菜单
+pnpm test:e2e:tool-visibility # 真实 OpenCode：子代理和关闭功能后 goal/scheduling 工具不可见
 ```
 
 e2e 用假 provider 驱动工具调用，不会请求真实模型；它会在临时目录里启动一个隔离的 OpenCode server，不读写日常数据。`test:e2e:tui` 通过 ConPTY（Windows）或 openpty（macOS/Linux）驱动真实 TUI，验证 TUI 插件加载、斜杠命令与设置菜单渲染。

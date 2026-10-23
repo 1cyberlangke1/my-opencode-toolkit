@@ -1,28 +1,41 @@
 import { Plugin } from "@opencode/plugin/tui"
 import type { Context } from "@opencode/plugin/tui/context"
-import { createSignal, onCleanup, onMount } from "solid-js"
+import { createSignal, For, onCleanup, onMount, Show } from "solid-js"
 
 import { resolveMessages, type Messages } from "../i18n/index.ts"
 import { formatTokens } from "../shared/format.ts"
 import { SETTINGS_COMMAND_ID, SETTINGS_SLASH_NAME, TUI_PLUGIN_ID } from "../shared/identity.ts"
 import { DEFAULT_SETTINGS, type Lang, type Settings } from "../shared/settings.ts"
-import { toolkitRpc, type PanelData } from "../shared/rpc.ts"
+import { toolkitRpc, type PanelData, type PanelSubagent, type PanelSubagentDetail } from "../shared/rpc.ts"
+import { countdownColor, hitRateColor } from "./color.ts"
+import { formatAgo, formatCountdown, padRight, truncate } from "./format.ts"
 
 /** 主菜单条目。 */
-type MenuChoice = "enabled" | "language" | "notifications" | "goal" | "scheduling" | "sidebar"
+type MenuChoice = "language" | "goal" | "scheduling" | "sidebar" | "contextStats" | "notifications"
+
+/** 目标子菜单条目。 */
+type GoalChoice = "enabled" | "showInSidebar"
+
+/** 定时任务子菜单条目。 */
+type SchedulingChoice = "enabled" | "showInSidebar"
 
 /** 侧栏子菜单条目。 */
-type SidebarChoice = "enabled" | "showCache" | "showTools" | "showSubagents" | "collapsed"
+type SidebarChoice = "enabled" | "showTools" | "showSubagents"
+
+/** 上下文统计子菜单条目。 */
+type ContextStatsChoice = "enabled" | "showInput" | "showOutput" | "showCache" | "showHitRate"
+
+/** 通知子菜单条目。 */
+type NotificationChoice = "enabled" | "onComplete" | "onQuestion" | "onPermission" | "onlyMainSession"
 
 /** 输入：设置里的语言枚举；输出：`resolveMessages` 需要的 locale。 */
 function localeOf(lang: Lang): string | undefined {
   return lang === "auto" ? undefined : lang
 }
 
-/**
- * 输入：TUI 上下文、会话 ID、设置访问器、文案访问器。
+/** 输入：TUI 上下文、会话 ID、设置访问器、文案访问器。
  * 输出：侧栏面板。
- * 预期：挂载时拉一次数据，之后按会话事件节流刷新。
+ * 预期：挂载时拉一次数据，之后按会话事件节流刷新；子代理详情只在展开时请求。
  */
 export function Sidebar(props: {
   readonly context: Context
@@ -32,6 +45,15 @@ export function Sidebar(props: {
 }) {
   const rpc = toolkitRpc(props.context.client)
   const [panel, setPanel] = createSignal<PanelData | null>(null)
+  const [now, setNow] = createSignal(Date.now())
+  const [goalOpen, setGoalOpen] = createSignal(true)
+  const [schedulingOpen, setSchedulingOpen] = createSignal(true)
+  const [toolsOpen, setToolsOpen] = createSignal(true)
+  const [subagentsOpen, setSubagentsOpen] = createSignal(true)
+  const [expanded, setExpanded] = createSignal<ReadonlySet<string>>(new Set())
+  const [details, setDetails] = createSignal<
+    Readonly<Record<string, PanelSubagentDetail | "loading" | "error">>
+  >({})
   let timer: ReturnType<typeof setTimeout> | undefined
 
   /** 拉取面板数据；失败保留上一次结果。 */
@@ -40,8 +62,284 @@ export function Sidebar(props: {
       .panelGet({ sessionID: props.sessionID })
       .then((data) => {
         setPanel(data)
+        setNow(Date.now())
       })
       .catch(() => undefined)
+  }
+
+  onMount(() => {
+    refresh()
+    const off = props.context.data.listen(({ details: event }) => {
+      if (
+        event.type !== "session.idle" &&
+        event.type !== "session.step.ended" &&
+        event.type !== "session.usage.updated"
+      ) {
+        return
+      }
+      if (timer !== undefined) clearTimeout(timer)
+      timer = setTimeout(refresh, 300)
+    })
+    const clock = setInterval(() => setNow(Date.now()), 30_000)
+    onCleanup(() => {
+      off()
+      if (timer !== undefined) clearTimeout(timer)
+      clearInterval(clock)
+    })
+  })
+
+  const theme = props.context.theme
+  const base = () => theme.text.base
+  const muted = () => theme.text.muted
+  const success = () => theme.text.feedback.success.base
+  const warning = () => theme.text.feedback.warning.base
+  const error = () => theme.text.feedback.error.base
+
+  /** 输入：状态字符串；输出：本地化状态名。 */
+  const statusLabel = (text: Messages, status: string): string => text.panel.status[status] ?? status
+
+  /** 输入：状态字符串；输出：目标状态颜色。 */
+  const goalStatusColor = (status: string) => {
+    if (status === "active") return success()
+    if (status === "paused" || status === "budget_limited") return warning()
+    if (status === "blocked") return error()
+    return base()
+  }
+
+  /** 输入：子代理 outcome；输出：状态颜色。 */
+  const subagentStatusColor = (outcome: PanelSubagent["outcome"]) => {
+    if (outcome === "succeeded") return success()
+    if (outcome === "failed" || outcome === "interrupted") return error()
+    return warning()
+  }
+
+  /** 输入：标签 + 值 + 颜色；输出：对齐后的单行。 */
+  const labelRow = (
+    label: string,
+    value: string,
+    color: string | ReturnType<typeof base> = base(),
+  ) => (
+    <text>
+      <span style={{ fg: muted() }}>{padRight(`${label}:`, 10)}</span>
+      <span style={{ fg: color }}>{value}</span>
+    </text>
+  )
+
+  /** 输入：标题 + 展开状态 + 切换函数；输出：可点击的分区标题。 */
+  const sectionHeader = (label: string, open: boolean, toggle: () => void) => (
+    <text onMouseUp={toggle}>
+      <span style={{ fg: base() }}>{open ? "▼ " : "▶ "}</span>
+      <b>
+        <span style={{ fg: base() }}>{label}</span>
+      </b>
+    </text>
+  )
+
+  /** 输入：子代理；输出：无；预期：切换折叠，首次展开时拉详情。 */
+  const toggleSubagent = (subagent: PanelSubagent): void => {
+    const wasOpen = expanded().has(subagent.id)
+    const next = new Set(expanded())
+    if (wasOpen) next.delete(subagent.id)
+    else next.add(subagent.id)
+    setExpanded(next)
+
+    if (!wasOpen && details()[subagent.id] === undefined) {
+      setDetails((current) => ({ ...current, [subagent.id]: "loading" }))
+      void rpc
+        .subagentGet({ sessionID: subagent.id })
+        .then((detail) => {
+          setDetails((current) => ({ ...current, [subagent.id]: detail }))
+        })
+        .catch(() => {
+          setDetails((current) => ({ ...current, [subagent.id]: "error" }))
+        })
+    }
+  }
+
+  const goal = (): PanelData["goal"] => panel()?.goal ?? null
+  const subagents = (): readonly PanelSubagent[] => panel()?.subagents ?? []
+  const visibleTools = (): readonly { readonly name: string; readonly count: number }[] =>
+    (panel()?.stats.tools ?? []).filter((tool) => tool.count > 0)
+
+  return (
+    <Show when={props.settings().sidebar.enabled}>
+      <box flexDirection="column" gap={1}>
+        <Show
+          when={
+            props.settings().goal.enabled &&
+            props.settings().goal.showInSidebar &&
+            goal() !== null
+          }
+        >
+          <box flexDirection="column" gap={0}>
+            {sectionHeader(props.copy().panel.goal, goalOpen(), () => {
+              setGoalOpen(!goalOpen())
+            })}
+            <Show when={goalOpen()}>
+              <box paddingLeft={2} flexDirection="column" gap={0}>
+                {labelRow(props.copy().panel.goal, truncate(goal()?.objective ?? "", 22))}
+                {labelRow(
+                  props.copy().panel.state,
+                  statusLabel(props.copy(), goal()?.status ?? ""),
+                  goalStatusColor(goal()?.status ?? ""),
+                )}
+                {labelRow(
+                  props.copy().panel.usage,
+                  `${formatTokens(goal()?.tokensUsed ?? 0)}${
+                    goal()?.tokenBudget === undefined ? "" : ` / ${formatTokens(goal()?.tokenBudget ?? 0)}`
+                  }`,
+                )}
+                {labelRow(props.copy().panel.time, formatCountdown((goal()?.timeUsedSeconds ?? 0) * 1000))}
+              </box>
+            </Show>
+          </box>
+        </Show>
+
+        <Show
+          when={
+            props.settings().scheduling.enabled &&
+            props.settings().scheduling.showInSidebar &&
+            ((panel()?.jobs.length ?? 0) > 0 || (panel()?.loops.length ?? 0) > 0)
+          }
+        >
+          <box flexDirection="column" gap={0}>
+            {sectionHeader(props.copy().panel.scheduling, schedulingOpen(), () => {
+              setSchedulingOpen(!schedulingOpen())
+            })}
+            <Show when={schedulingOpen()}>
+              <box paddingLeft={2} flexDirection="column" gap={0}>
+                <For each={panel()?.jobs ?? []}>
+                  {(job) => (
+                    <text>
+                      <span style={{ fg: muted() }}>⏰ </span>
+                      <span style={{ fg: base() }}>{truncate(job.cron, 12)}</span>
+                      <span style={{ fg: muted() }}> · {props.copy().panel.next} </span>
+                      <span style={{ fg: countdownColor((job.nextRunAt ?? now()) - now()) }}>
+                        {formatCountdown((job.nextRunAt ?? now()) - now())}
+                      </span>
+                    </text>
+                  )}
+                </For>
+                <For each={panel()?.loops ?? []}>
+                  {(loop) => (
+                    <text>
+                      <span style={{ fg: muted() }}>🔁 </span>
+                      <span style={{ fg: base() }}>{truncate(loop.prompt, 12)}</span>
+                      <span style={{ fg: muted() }}> · {props.copy().panel.next} </span>
+                      <span style={{ fg: countdownColor((loop.nextFireAt ?? now()) - now()) }}>
+                        {formatCountdown((loop.nextFireAt ?? now()) - now())}
+                      </span>
+                    </text>
+                  )}
+                </For>
+              </box>
+            </Show>
+          </box>
+        </Show>
+
+        <Show when={props.settings().sidebar.showTools && visibleTools().length > 0}>
+          <box flexDirection="column" gap={0}>
+            {sectionHeader(
+              `${props.copy().panel.tools} (${visibleTools().length.toString()})`,
+              toolsOpen(),
+              () => {
+                setToolsOpen(!toolsOpen())
+              },
+            )}
+            <Show when={toolsOpen()}>
+              <box paddingLeft={2} flexDirection="column" gap={0}>
+                <For each={visibleTools()}>
+                  {(tool) => labelRow(tool.name, String(tool.count))}
+                </For>
+              </box>
+            </Show>
+          </box>
+        </Show>
+
+        <Show when={props.settings().sidebar.showSubagents && subagents().length > 0}>
+          <box flexDirection="column" gap={0}>
+            {sectionHeader(props.copy().panel.subagents, subagentsOpen(), () => {
+              setSubagentsOpen(!subagentsOpen())
+            })}
+            <Show when={subagentsOpen()}>
+              <box paddingLeft={2} flexDirection="column" gap={0}>
+                <For each={subagents()}>
+                  {(subagent) => {
+                    const open = (): boolean => expanded().has(subagent.id)
+                    return (
+                      <box flexDirection="column" gap={0}>
+                        <text
+                          onMouseUp={() => {
+                            toggleSubagent(subagent)
+                          }}
+                        >
+                          <span style={{ fg: base() }}>{open() ? "▼ " : "▶ "}</span>
+                          <span style={{ fg: subagentStatusColor(subagent.outcome) }}>● </span>
+                          <span style={{ fg: base() }}>{truncate(subagent.title, 16)}</span>
+                          <span style={{ fg: muted() }}>
+                            {" "}
+                            · {formatAgo(subagent.updatedAt, now())} {props.copy().panel.ago}
+                          </span>
+                        </text>
+                        <Show when={open()}>
+                          <box paddingLeft={2} flexDirection="column" gap={0}>
+                            {labelRow(props.copy().panel.input, formatTokens(subagent.input))}
+                            {labelRow(props.copy().panel.output, formatTokens(subagent.output))}
+                            {labelRow(props.copy().panel.cached, formatTokens(subagent.cached))}
+                            {(() => {
+                              const detail = details()[subagent.id]
+                              if (detail === undefined || detail === "loading") {
+                                return <text fg={muted()}>{props.copy().panel.loading}</text>
+                              }
+                              if (detail === "error") {
+                                return <text fg={error()}>{props.copy().panel.error}</text>
+                              }
+                              return (
+                                <box flexDirection="column" gap={0}>
+                                  {labelRow(props.copy().panel.hitRate, `${detail.hitRate.toFixed(2)}%`, hitRateColor(detail.hitRate))}
+                                  <Show
+                                    when={detail.tools.length > 0}
+                                    fallback={<text fg={muted()}>{props.copy().panel.noGoal}</text>}
+                                  >
+                                    <For each={detail.tools.filter((tool) => tool.count > 0)}>
+                                      {(tool) => labelRow(tool.name, String(tool.count))}
+                                    </For>
+                                  </Show>
+                                </box>
+                              )
+                            })()}
+                          </box>
+                        </Show>
+                      </box>
+                    )
+                  }}
+                </For>
+              </box>
+            </Show>
+          </box>
+        </Show>
+      </box>
+    </Show>
+  )
+}
+
+/**
+ * 输入：TUI 上下文 + 会话 ID + 设置访问器 + 文案访问器。
+ * 输出：prompt footer 的上下文统计单行。
+ * 预期：只有命中率染色；字段由 contextStats 设置逐项开关。
+ */
+export function ContextStats(props: {
+  readonly context: Context
+  readonly sessionID: string
+  readonly settings: () => Settings
+  readonly copy: () => Messages
+}) {
+  const rpc = toolkitRpc(props.context.client)
+  const [panel, setPanel] = createSignal<PanelData | null>(null)
+  let timer: ReturnType<typeof setTimeout> | undefined
+
+  const refresh = (): void => {
+    void rpc.panelGet({ sessionID: props.sessionID }).then(setPanel).catch(() => undefined)
   }
 
   onMount(() => {
@@ -63,60 +361,42 @@ export function Sidebar(props: {
     })
   })
 
-  /** 输入：状态字符串；输出：本地化状态名。 */
-  const statusLabel = (text: Messages, status: string): string => text.panel.status[status] ?? status
+  const theme = props.context.theme
+  const base = () => theme.text.base
+  const muted = () => theme.text.muted
 
-  const goalLine = (): string => {
-    const text = props.copy()
-    const goal = panel()?.goal
-    if (goal === null || goal === undefined) return `${text.panel.goal}: ${text.panel.noGoal}`
-    const budget = goal.tokenBudget === undefined ? "" : ` / ${formatTokens(goal.tokenBudget)}`
-    return `${text.panel.goal}: ${goal.objective} · ${statusLabel(text, goal.status)} · ${formatTokens(goal.tokensUsed)}${budget}`
-  }
-
-  const cacheLine = (): string => {
-    const text = props.copy()
+  const parts = (): readonly { readonly text: string; readonly color?: string }[] => {
+    const settings = props.settings().contextStats
+    if (!settings.enabled) return []
     const stats = panel()?.stats
-    if (stats === undefined) return `${text.panel.cache}: --`
-    return `${text.panel.cache}: ${stats.hitRate.toFixed(2)}% · ${formatTokens(stats.input)} / ${formatTokens(stats.output)}`
-  }
-
-  const toolsLine = (): string => {
-    const text = props.copy()
-    const stats = panel()?.stats
-    if (stats === undefined || stats.tools.length === 0) return `${text.panel.tools}: --`
-    const top = stats.tools
-      .slice(0, 3)
-      .map((tool) => `${tool.name} ${String(tool.count)}`)
-      .join(" · ")
-    return `${text.panel.tools}: ${top}`
-  }
-
-  const subagentsLine = (): string => {
-    const text = props.copy()
-    return `${text.panel.subagents}: ${String(panel()?.stats.subagents ?? 0)}`
-  }
-
-  const scheduleLine = (): string => {
-    const text = props.copy()
-    const loops = panel()?.loops.length ?? 0
-    const jobs = panel()?.jobs.length ?? 0
-    return `${text.panel.loops}: ${String(loops)} · ${text.panel.jobs}: ${String(jobs)}`
+    const result: { text: string; color?: string }[] = []
+    if (settings.showInput) result.push({ text: `↑ ${formatTokens(stats?.input ?? 0)}` })
+    if (settings.showOutput) result.push({ text: `↓ ${formatTokens(stats?.output ?? 0)}` })
+    if (settings.showCache) result.push({ text: `♻  ${formatTokens(stats?.cached ?? 0)}` })
+    if (settings.showHitRate) {
+      result.push({
+        text: `🎯 ${(stats?.hitRate ?? 0).toFixed(2)}%`,
+        color: hitRateColor(stats?.hitRate ?? 0),
+      })
+    }
+    return result
   }
 
   return (
-    <box flexDirection="column">
-      <text>{props.copy().panel.title}</text>
-      {props.settings().sidebar.enabled && !props.settings().sidebar.collapsed ? (
-        <box flexDirection="column">
-          <text>{goalLine()}</text>
-          {props.settings().sidebar.showCache ? <text>{cacheLine()}</text> : null}
-          {props.settings().sidebar.showTools ? <text>{toolsLine()}</text> : null}
-          {props.settings().sidebar.showSubagents ? <text>{subagentsLine()}</text> : null}
-          <text>{scheduleLine()}</text>
-        </box>
-      ) : null}
-    </box>
+    <Show when={props.settings().contextStats.enabled && parts().length > 0}>
+      <text wrapMode="none">
+        <For each={parts()}>
+          {(part, index) => (
+            <>
+              <Show when={index() > 0}>
+                <span style={{ fg: muted() }}> </span>
+              </Show>
+              <span style={{ fg: part.color ?? base() }}>{part.text}</span>
+            </>
+          )}
+        </For>
+      </text>
+    </Show>
   )
 }
 
@@ -124,7 +404,6 @@ export function Sidebar(props: {
  * 输入：TUI 插件上下文（含插件 options）。
  * 输出：侧栏面板 + `/my-opencode-toolkit` 设置命令。
  * 预期：设置以服务端存储为准，启动时通过 RPC 读取；写入失败时回滚本地值。
- *       keymap 层在 setup 作用域注册，生命周期跟随插件，不依赖某个 slot 组件是否挂载。
  */
 export default Plugin.define({
   id: TUI_PLUGIN_ID,
@@ -134,11 +413,7 @@ export default Plugin.define({
     const initial = await rpc.settingsGet({}).catch((): Settings => DEFAULT_SETTINGS)
     const [settings, setSettings] = createSignal<Settings>(initial)
 
-    /**
-     * 输入：新设置。
-     * 输出：无。
-     * 预期：先乐观更新界面，服务端确认后用返回值覆盖；失败则回滚。
-     */
+    /** 输入：新设置；输出：无；预期：先乐观更新，失败回滚。 */
     const update = async (next: Settings): Promise<void> => {
       const previous = settings()
       setSettings(next)
@@ -151,7 +426,6 @@ export default Plugin.define({
 
     const copy = (): Messages => resolveMessages(localeOf(settings().lang))
 
-    // Plan 模式跳过 cron/loop 时由服务端发 toast 事件；文案在 TUI 侧按当前语言解析。
     const offToast = rpc.events.on("toast", (event) => {
       const text = copy()
       context.ui.toast.show({
@@ -175,69 +449,134 @@ export default Plugin.define({
       await update({ ...settings(), lang: picked })
     }
 
-    /** 侧栏子菜单：逐项切换显示开关。 */
+    const onOff = (value: boolean): string => (value ? copy().menu.on : copy().menu.off)
+
+    /** 目标子菜单：功能与侧栏显示独立。 */
+    const chooseGoal = async (): Promise<void> => {
+      for (;;) {
+        const current = settings()
+        const text = copy()
+        const choice = await context.ui.dialog.select<GoalChoice>({
+          title: text.menu.goal,
+          options: [
+            { title: text.menu.function, value: "enabled", footer: onOff(current.goal.enabled) },
+            { title: text.menu.showInSidebar, value: "showInSidebar", footer: onOff(current.goal.showInSidebar) },
+          ],
+        })
+        if (choice === undefined) return
+        await update({
+          ...current,
+          goal: { ...current.goal, [choice]: !current.goal[choice] },
+        })
+      }
+    }
+
+    /** 定时任务子菜单：功能与侧栏显示独立。 */
+    const chooseScheduling = async (): Promise<void> => {
+      for (;;) {
+        const current = settings()
+        const text = copy()
+        const choice = await context.ui.dialog.select<SchedulingChoice>({
+          title: text.menu.scheduling,
+          options: [
+            { title: text.menu.function, value: "enabled", footer: onOff(current.scheduling.enabled) },
+            {
+              title: text.menu.showInSidebar,
+              value: "showInSidebar",
+              footer: onOff(current.scheduling.showInSidebar),
+            },
+          ],
+        })
+        if (choice === undefined) return
+        await update({
+          ...current,
+          scheduling: { ...current.scheduling, [choice]: !current.scheduling[choice] },
+        })
+      }
+    }
+
+    /** 侧栏显示子菜单。 */
     const chooseSidebar = async (): Promise<void> => {
       for (;;) {
         const current = settings()
         const text = copy()
-        const onOff = (value: boolean): string => (value ? text.menu.on : text.menu.off)
         const choice = await context.ui.dialog.select<SidebarChoice>({
           title: text.menu.sidebar,
           options: [
             { title: text.menu.enabled, value: "enabled", footer: onOff(current.sidebar.enabled) },
-            { title: text.menu.showCache, value: "showCache", footer: onOff(current.sidebar.showCache) },
             { title: text.menu.showTools, value: "showTools", footer: onOff(current.sidebar.showTools) },
             { title: text.menu.showSubagents, value: "showSubagents", footer: onOff(current.sidebar.showSubagents) },
-            { title: text.menu.collapsed, value: "collapsed", footer: onOff(current.sidebar.collapsed) },
           ],
         })
         if (choice === undefined) return
-        const next = { ...current.sidebar, [choice]: !current.sidebar[choice] }
-        await update({ ...current, sidebar: next })
+        await update({ ...current, sidebar: { ...current.sidebar, [choice]: !current.sidebar[choice] } })
       }
     }
 
-    /**
-     * 输入：要切换的条目。
-     * 输出：无。
-     * 预期：只改对应字段，其余设置保持不变。
-     */
-    const toggle = async (choice: Exclude<MenuChoice, "language" | "sidebar">): Promise<void> => {
-      const current = settings()
-      switch (choice) {
-        case "enabled":
-          await update({ ...current, enabled: !current.enabled })
-          return
-        case "notifications":
-          await update({
-            ...current,
-            notification: { ...current.notification, enabled: !current.notification.enabled },
-          })
-          return
-        case "goal":
-          await update({ ...current, goal: { enabled: !current.goal.enabled } })
-          return
-        case "scheduling":
-          await update({ ...current, scheduling: { enabled: !current.scheduling.enabled } })
-          return
+    /** 底部上下文统计子菜单。 */
+    const chooseContextStats = async (): Promise<void> => {
+      for (;;) {
+        const current = settings()
+        const text = copy()
+        const choice = await context.ui.dialog.select<ContextStatsChoice>({
+          title: text.menu.contextStats,
+          options: [
+            { title: text.menu.showLine, value: "enabled", footer: onOff(current.contextStats.enabled) },
+            { title: text.menu.showInput, value: "showInput", footer: onOff(current.contextStats.showInput) },
+            { title: text.menu.showOutput, value: "showOutput", footer: onOff(current.contextStats.showOutput) },
+            { title: text.menu.showCache, value: "showCache", footer: onOff(current.contextStats.showCache) },
+            { title: text.menu.showHitRate, value: "showHitRate", footer: onOff(current.contextStats.showHitRate) },
+          ],
+        })
+        if (choice === undefined) return
+        await update({
+          ...current,
+          contextStats: { ...current.contextStats, [choice]: !current.contextStats[choice] },
+        })
       }
     }
 
-    /** 打开菜单；选择语言/侧栏进入子菜单，其余条目原地切换后重开。 */
+    /** 通知子菜单。 */
+    const chooseNotifications = async (): Promise<void> => {
+      for (;;) {
+        const current = settings()
+        const text = copy()
+        const choice = await context.ui.dialog.select<NotificationChoice>({
+          title: text.menu.notifications,
+          options: [
+            { title: text.menu.notificationEnabled, value: "enabled", footer: onOff(current.notification.enabled) },
+            { title: text.menu.onComplete, value: "onComplete", footer: onOff(current.notification.onComplete) },
+            { title: text.menu.onQuestion, value: "onQuestion", footer: onOff(current.notification.onQuestion) },
+            { title: text.menu.onPermission, value: "onPermission", footer: onOff(current.notification.onPermission) },
+            {
+              title: text.menu.onlyMainSession,
+              value: "onlyMainSession",
+              footer: onOff(current.notification.onlyMainSession),
+            },
+          ],
+        })
+        if (choice === undefined) return
+        await update({
+          ...current,
+          notification: { ...current.notification, [choice]: !current.notification[choice] },
+        })
+      }
+    }
+
+    /** 主菜单：进入分类子菜单。 */
     const openMenu = async (): Promise<void> => {
       for (;;) {
         const current = settings()
         const text = copy()
-        const onOff = (value: boolean): string => (value ? text.menu.on : text.menu.off)
         const choice = await context.ui.dialog.select<MenuChoice>({
           title: text.menu.title,
           options: [
-            { title: text.menu.enabled, value: "enabled", footer: onOff(current.enabled) },
             { title: text.menu.language, value: "language", footer: current.lang },
-            { title: text.menu.notifications, value: "notifications", footer: onOff(current.notification.enabled) },
             { title: text.menu.goal, value: "goal", footer: onOff(current.goal.enabled) },
             { title: text.menu.scheduling, value: "scheduling", footer: onOff(current.scheduling.enabled) },
             { title: text.menu.sidebar, value: "sidebar", footer: onOff(current.sidebar.enabled) },
+            { title: text.menu.contextStats, value: "contextStats", footer: onOff(current.contextStats.enabled) },
+            { title: text.menu.notifications, value: "notifications", footer: onOff(current.notification.enabled) },
           ],
         })
         if (choice === undefined) return
@@ -245,11 +584,11 @@ export default Plugin.define({
           await chooseLanguage()
           continue
         }
-        if (choice === "sidebar") {
-          await chooseSidebar()
-          continue
-        }
-        await toggle(choice)
+        if (choice === "goal") await chooseGoal()
+        else if (choice === "scheduling") await chooseScheduling()
+        else if (choice === "sidebar") await chooseSidebar()
+        else if (choice === "contextStats") await chooseContextStats()
+        else await chooseNotifications()
       }
     }
 
@@ -277,9 +616,18 @@ export default Plugin.define({
       ),
     })
 
+    const disposeStats = context.ui.slot({
+      append: "prompt.footer",
+      render: (input) =>
+        input.sessionID === undefined ? null : (
+          <ContextStats context={context} sessionID={input.sessionID} settings={settings} copy={copy} />
+        ),
+    })
+
     return () => {
       offToast()
       disposePanel()
+      disposeStats()
     }
   },
 })

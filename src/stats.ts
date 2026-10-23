@@ -1,5 +1,6 @@
 import type { Plugin } from "@opencode/plugin"
 
+import type { PanelSubagent, PanelSubagentDetail } from "./shared/rpc.ts"
 import { asRecord } from "./shared/json.ts"
 
 /** 单个会话的进程内统计。 */
@@ -74,7 +75,7 @@ export function createStatsTracker(): StatsTracker {
       stats.steps += 1
       // 分母是完整提示词；cache.write 是写入成本，不算命中。
       stats.input += count(record["input"]) + count(cache["read"]) + count(cache["write"])
-      stats.output += count(record["output"])
+      stats.output += count(record["output"]) + count(record["reasoning"])
       stats.cached += count(cache["read"])
     },
 
@@ -152,25 +153,86 @@ export function trackEvent(
 
 /**
  * 输入：插件上下文 + 父会话 ID。
- * 输出：该会话的子代理数量。
- * 预期：按 parentID 过滤并逐页翻完；任何一页读取失败就返回已统计的数量，不抛异常。
+ * 输出：子会话列表；预期：按 parentID 过滤并逐页翻完，失败返回已收集部分。
  */
-async function countSubagents(ctx: Plugin.Context, sessionID: string): Promise<number> {
+type SubagentSession = Awaited<ReturnType<Plugin.Context["session"]["list"]>>["data"][number]
+
+async function collectSubagentSessions(ctx: Plugin.Context, sessionID: string): Promise<SubagentSession[]> {
+  const result: SubagentSession[] = []
   let cursor: string | undefined
-  let total = 0
   // 翻页上限：防止异常服务端返回循环 cursor 时无限循环。
   for (let page = 0; page < 200; page += 1) {
     const listed = await ctx.session
       .list({ parentID: sessionID, ...(cursor === undefined ? {} : { cursor }) })
       .catch(() => undefined)
-    if (listed === undefined) return total
-    total += listed.data.length
+    if (listed === undefined) return result
+    result.push(...listed.data)
 
     const next = listed.cursor.next
-    if (next === undefined || next === null || next === cursor) return total
+    if (next === undefined || next === null || next === cursor) return result
     cursor = next
   }
-  return total
+  return result
+}
+
+/**
+ * 输入：插件上下文 + 父会话 ID。
+ * 输出：该会话的子代理数量。
+ * 预期：翻页读取失败时返回已统计的数量，不抛异常。
+ */
+async function countSubagents(ctx: Plugin.Context, sessionID: string): Promise<number> {
+  return (await collectSubagentSessions(ctx, sessionID)).length
+}
+
+/**
+ * 输入：插件上下文 + 父会话 ID。
+ * 输出：按更新时间倒序的子代理摘要。
+ * 预期：只返回列表所需字段，不读子会话消息；数量上限由调用方决定。
+ */
+export async function listSubagents(
+  ctx: Plugin.Context,
+  sessionID: string,
+  limit = 20,
+): Promise<readonly PanelSubagent[]> {
+  const sessions = await collectSubagentSessions(ctx, sessionID)
+  return sessions
+    .map((session) => {
+      const cache = session.tokens.cache
+      return {
+        id: session.id,
+        title: session.title ?? session.id,
+        ...(session.agent === undefined ? {} : { agent: session.agent }),
+        ...(session.outcome === undefined ? {} : { outcome: session.outcome }),
+        updatedAt: session.time.updated,
+        input: session.tokens.input + cache.read + cache.write,
+        output: session.tokens.output,
+        cached: cache.read,
+      }
+    })
+    .sort((left, right) => right.updatedAt - left.updatedAt)
+    .slice(0, limit)
+}
+
+/**
+ * 输入：插件上下文 + 子会话 ID。
+ * 输出：子会话的 token/tool 详情。
+ * 预期：复用 buildStats；读取失败由调用方处理。
+ */
+export async function buildSubagentDetail(
+  ctx: Plugin.Context,
+  sessionID: string,
+): Promise<PanelSubagentDetail> {
+  const stats = await buildStats(ctx, sessionID)
+  return {
+    steps: stats.steps,
+    input: stats.input,
+    output: stats.output,
+    cached: stats.cached,
+    hitRate: hitRatePercent(stats.input, stats.cached),
+    tools: Object.entries(stats.tools)
+      .map(([name, count]) => ({ name, count }))
+      .sort((left, right) => right.count - left.count),
+  }
 }
 
 /**
@@ -194,7 +256,7 @@ export async function buildStats(ctx: Plugin.Context, sessionID: string): Promis
     if (tokens !== undefined) {
       // 与 recordStep 保持同一口径：input 是完整提示词，cached 只算读命中。
       input += tokens.input + tokens.cache.read + tokens.cache.write
-      output += tokens.output
+      output += tokens.output + tokens.reasoning
       cached += tokens.cache.read
     }
     for (const part of message.content) {

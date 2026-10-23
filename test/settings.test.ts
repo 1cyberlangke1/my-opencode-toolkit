@@ -18,7 +18,7 @@ describe("normalizeSettings", () => {
       lang: "fr",
       enabled: "yes",
       notification: { enabled: 1, onComplete: false },
-      sidebar: { collapsed: "no" },
+      sidebar: { showTools: "no" },
     })
 
     expect(got.lang).toBe(DEFAULT_SETTINGS.lang)
@@ -26,13 +26,18 @@ describe("normalizeSettings", () => {
     expect(got.notification.enabled).toBe(DEFAULT_SETTINGS.notification.enabled)
     expect(got.notification.onComplete).toBe(false)
     expect(got.notification.onQuestion).toBe(DEFAULT_SETTINGS.notification.onQuestion)
-    expect(got.sidebar.collapsed).toBe(DEFAULT_SETTINGS.sidebar.collapsed)
+    expect(got.sidebar.showTools).toBe(DEFAULT_SETTINGS.sidebar.showTools)
+  })
+
+  it("旧 sidebar.showCache 迁移到 contextStats.enabled", () => {
+    expect(normalizeSettings({ sidebar: { showCache: false } }).contextStats.enabled).toBe(false)
+    expect(normalizeSettings({ contextStats: { enabled: true } }).contextStats.enabled).toBe(true)
   })
 
   it("丢弃未知字段", () => {
     const got = normalizeSettings({ unknown: true, notification: { nope: 1 } })
     expect(Object.keys(got).sort()).toEqual(
-      ["enabled", "goal", "lang", "notification", "scheduling", "sidebar"].sort(),
+      ["contextStats", "enabled", "goal", "lang", "notification", "scheduling", "sidebar"].sort(),
     )
     expect(Object.keys(got.notification).sort()).toEqual(
       ["enabled", "onComplete", "onPermission", "onQuestion", "onlyMainSession"].sort(),

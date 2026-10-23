@@ -38,30 +38,40 @@ const SettingsJson = {
     },
     goal: {
       type: "object",
-      properties: { enabled: { type: "boolean" } },
-      required: ["enabled"],
+      properties: { enabled: { type: "boolean" }, showInSidebar: { type: "boolean" } },
+      required: ["enabled", "showInSidebar"],
       additionalProperties: false,
     },
     scheduling: {
       type: "object",
-      properties: { enabled: { type: "boolean" } },
-      required: ["enabled"],
+      properties: { enabled: { type: "boolean" }, showInSidebar: { type: "boolean" } },
+      required: ["enabled", "showInSidebar"],
       additionalProperties: false,
     },
     sidebar: {
       type: "object",
       properties: {
         enabled: { type: "boolean" },
-        showCache: { type: "boolean" },
         showTools: { type: "boolean" },
         showSubagents: { type: "boolean" },
-        collapsed: { type: "boolean" },
       },
-      required: ["enabled", "showCache", "showTools", "showSubagents", "collapsed"],
+      required: ["enabled", "showTools", "showSubagents"],
+      additionalProperties: false,
+    },
+    contextStats: {
+      type: "object",
+      properties: {
+        enabled: { type: "boolean" },
+        showInput: { type: "boolean" },
+        showOutput: { type: "boolean" },
+        showCache: { type: "boolean" },
+        showHitRate: { type: "boolean" },
+      },
+      required: ["enabled", "showInput", "showOutput", "showCache", "showHitRate"],
       additionalProperties: false,
     },
   },
-  required: ["lang", "enabled", "notification", "goal", "scheduling", "sidebar"],
+  required: ["lang", "enabled", "notification", "goal", "scheduling", "sidebar", "contextStats"],
   additionalProperties: false,
 } as const
 
@@ -129,6 +139,46 @@ const PanelStatsJson = {
   additionalProperties: false,
 } as const
 
+/** 面板里的子代理摘要。 */
+const PanelSubagentJson = {
+  type: "object",
+  properties: {
+    id: { type: "string" },
+    title: { type: "string" },
+    agent: { type: "string" },
+    outcome: { type: "string", enum: ["succeeded", "failed", "interrupted"] },
+    updatedAt: { type: "number" },
+    input: { type: "number" },
+    output: { type: "number" },
+    cached: { type: "number" },
+  },
+  required: ["id", "title", "updatedAt", "input", "output", "cached"],
+  additionalProperties: false,
+} as const
+
+/** 子代理展开后的详细统计。 */
+const PanelSubagentDetailJson = {
+  type: "object",
+  properties: {
+    steps: { type: "number" },
+    input: { type: "number" },
+    output: { type: "number" },
+    cached: { type: "number" },
+    hitRate: { type: "number" },
+    tools: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { name: { type: "string" }, count: { type: "number" } },
+        required: ["name", "count"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["steps", "input", "output", "cached", "hitRate", "tools"],
+  additionalProperties: false,
+} as const
+
 const PanelOutputJson = {
   type: "object",
   properties: {
@@ -136,8 +186,9 @@ const PanelOutputJson = {
     loops: { type: "array", items: PanelLoopJson },
     jobs: { type: "array", items: PanelJobJson },
     stats: PanelStatsJson,
+    subagents: { type: "array", items: PanelSubagentJson },
   },
-  required: ["goal", "loops", "jobs", "stats"],
+  required: ["goal", "loops", "jobs", "stats", "subagents"],
   additionalProperties: false,
 } as const
 
@@ -159,6 +210,7 @@ export const ToolkitRpc: Rpc.PortableDefinition = Rpc.define({
     settingsGet: { input: EmptyInputJson, output: SettingsJson },
     settingsSet: { input: SettingsJson, output: SettingsJson },
     panelGet: { input: PanelInputJson, output: PanelOutputJson },
+    subagentGet: { input: PanelInputJson, output: PanelSubagentDetailJson },
   },
   events: {
     toast: { schema: ToastEventJson },
@@ -201,12 +253,35 @@ export type PanelStats = {
   readonly tools: readonly { readonly name: string; readonly count: number }[]
 }
 
+/** 面板子代理摘要。 */
+export type PanelSubagent = {
+  readonly id: string
+  readonly title: string
+  readonly agent?: string
+  readonly outcome?: "succeeded" | "failed" | "interrupted"
+  readonly updatedAt: number
+  readonly input: number
+  readonly output: number
+  readonly cached: number
+}
+
+/** 子代理展开详情。 */
+export type PanelSubagentDetail = {
+  readonly steps: number
+  readonly input: number
+  readonly output: number
+  readonly cached: number
+  readonly hitRate: number
+  readonly tools: readonly { readonly name: string; readonly count: number }[]
+}
+
 /** 面板数据。 */
 export type PanelData = {
   readonly goal: PanelGoal | null
   readonly loops: readonly PanelLoop[]
   readonly jobs: readonly PanelJob[]
   readonly stats: PanelStats
+  readonly subagents: readonly PanelSubagent[]
 }
 
 /** toast 事件的载荷。 */
@@ -220,6 +295,7 @@ export type ToolkitRpcClient = {
   settingsGet(input: Record<string, never>): Promise<Settings>
   settingsSet(input: Settings): Promise<Settings>
   panelGet(input: { readonly sessionID: string }): Promise<PanelData>
+  subagentGet(input: { readonly sessionID: string }): Promise<PanelSubagentDetail>
   events: {
     on(
       name: "toast",

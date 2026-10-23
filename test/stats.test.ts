@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import type { Plugin } from "@opencode/plugin"
 
-import { buildStats, createStatsTracker, hitRatePercent, trackEvent } from "../src/stats.ts"
+import { buildStats, buildSubagentDetail, createStatsTracker, hitRatePercent, listSubagents, trackEvent } from "../src/stats.ts"
 
 const SESSION = "ses_test"
 
@@ -14,7 +14,7 @@ describe("stats tracker", () => {
     const stats = tracker.get(SESSION)
     expect(stats.steps).toBe(1)
     expect(stats.input).toBe(132)
-    expect(stats.output).toBe(20)
+    expect(stats.output).toBe(25)
     expect(stats.cached).toBe(30)
   })
 
@@ -143,7 +143,7 @@ describe("buildStats", () => {
     expect(stats).toEqual({
       steps: 1,
       input: 132,
-      output: 20,
+      output: 25,
       cached: 30,
       tools: { read: 1 },
       subagents: 1,
@@ -180,6 +180,65 @@ describe("buildStats", () => {
     } as unknown as Plugin.Context
     const stats = await buildStats(ctx, SESSION)
     expect(stats).toEqual({ steps: 0, input: 0, output: 0, cached: 0, tools: {}, subagents: 0 })
+  })
+})
+
+describe("子代理摘要", () => {
+  it("按更新时间倒序并累计输入/缓存", async () => {
+    const ctx = {
+      session: {
+        list: () =>
+          Promise.resolve({
+            data: [
+              {
+                id: "child-old",
+                title: "old",
+                parentID: SESSION,
+                time: { updated: 1 },
+                tokens: { input: 10, output: 2, reasoning: 1, cache: { read: 3, write: 1 } },
+              },
+              {
+                id: "child-new",
+                title: "new",
+                parentID: SESSION,
+                time: { updated: 2 },
+                tokens: { input: 20, output: 4, reasoning: 2, cache: { read: 5, write: 2 } },
+              },
+            ],
+            cursor: {},
+          }),
+      },
+    } as unknown as Plugin.Context
+
+    const list = await listSubagents(ctx, SESSION)
+    expect(list.map((item) => item.id)).toEqual(["child-new", "child-old"])
+    expect(list[0]).toMatchObject({ input: 27, output: 4, cached: 5 })
+  })
+
+  it("详情复用 buildStats 的工具与命中率", async () => {
+    const ctx = {
+      session: {
+        context: () =>
+          Promise.resolve([
+            {
+              type: "assistant",
+              tokens: { input: 10, output: 2, reasoning: 1, cache: { read: 5, write: 0 } },
+              content: [{ type: "tool", name: "read" }],
+            },
+          ]),
+        list: () => Promise.resolve({ data: [], cursor: {} }),
+      },
+    } as unknown as Plugin.Context
+
+    const detail = await buildSubagentDetail(ctx, "ses_child")
+    expect(detail).toEqual({
+      steps: 1,
+      input: 15,
+      output: 3,
+      cached: 5,
+      hitRate: 33.33,
+      tools: [{ name: "read", count: 1 }],
+    })
   })
 })
 

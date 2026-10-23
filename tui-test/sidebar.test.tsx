@@ -20,8 +20,15 @@ const PANEL: PanelData = {
     cached: 500,
     hitRate: 33.33,
     subagents: 1,
-    tools: [{ name: "read", count: 2 }],
+    tools: [
+      { name: "read", count: 2 },
+      { name: "zero", count: 0 },
+      { name: "very_long_tool_name", count: 1 },
+    ],
   },
+  subagents: [
+    { id: "child1", title: "review", updatedAt: Date.now(), input: 1200, output: 20, cached: 500 },
+  ],
 }
 
 /** 输入：无；输出：只实现侧栏依赖的假上下文。 */
@@ -30,10 +37,23 @@ function fakeContext(): Context {
     client: {
       rpc: () => ({
         panelGet: () => Promise.resolve(PANEL),
+        subagentGet: () =>
+          Promise.resolve({ steps: 1, input: 1200, output: 20, cached: 500, hitRate: 41.67, tools: [{ name: "read", count: 2 }] }),
       }),
     },
     data: {
       listen: () => () => {},
+    },
+    theme: {
+      text: {
+        base: "#ffffff",
+        muted: "#888888",
+        feedback: {
+          success: { base: "#00ff00" },
+          warning: { base: "#ffff00" },
+          error: { base: "#ff0000" },
+        },
+      },
     },
   } as unknown as Context
 }
@@ -59,13 +79,17 @@ describe("sidebar panel", () => {
     const app = await mount("en")
     const frame = await app.waitForFrame((text) => text.includes("ship it"))
 
-    expect(frame).toContain("Toolkit")
-    expect(frame).toContain("Goal: ship it")
-    expect(frame).toContain("33.33%")
-    expect(frame).toContain("read 2")
-    expect(frame).toContain("Subagents: 1")
-    expect(frame).toContain("Loops: 1")
-    expect(frame).toContain("Jobs: 1")
+    expect(frame).toContain("Goal")
+    expect(frame).toContain("ship it")
+    expect(frame).toContain("read")
+    expect(frame).toContain("very_long_tool_name")
+    expect(frame).not.toContain("zero")
+    expect(frame).not.toContain("+1")
+    expect(frame).toContain("Scheduled")
+    expect(frame).toContain("0 * * * *")
+    expect(frame).toContain("loop prompt")
+    expect(frame).toContain("Subagents")
+    expect(frame).toContain("review")
 
     await app.dispose()
   })
@@ -74,9 +98,10 @@ describe("sidebar panel", () => {
     const app = await mount("zh")
     const frame = await app.waitForFrame((text) => text.includes("目标"))
 
-    expect(frame).toContain("工具包")
-    expect(frame).toContain("目标: ship it")
-    expect(frame).toContain("子代理: 1")
+    expect(frame).toContain("目标")
+    expect(frame).toContain("ship it")
+    expect(frame).toContain("子代理")
+    expect(frame).toContain("review")
 
     await app.dispose()
   })

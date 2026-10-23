@@ -17,6 +17,18 @@ export type Messages = {
     readonly goal: string
     readonly scheduling: string
     readonly sidebar: string
+    readonly contextStats: string
+    readonly function: string
+    readonly showInSidebar: string
+    readonly showLine: string
+    readonly showInput: string
+    readonly showOutput: string
+    readonly showHitRate: string
+    readonly notificationEnabled: string
+    readonly onComplete: string
+    readonly onQuestion: string
+    readonly onPermission: string
+    readonly onlyMainSession: string
     readonly on: string
     readonly off: string
     readonly auto: string
@@ -25,17 +37,30 @@ export type Messages = {
     readonly showCache: string
     readonly showTools: string
     readonly showSubagents: string
-    readonly collapsed: string
   }
   readonly panel: {
     readonly title: string
+    readonly context: string
     readonly goal: string
     readonly noGoal: string
+    readonly scheduling: string
     readonly loops: string
     readonly jobs: string
+    readonly next: string
     readonly cache: string
+    readonly hitRate: string
+    readonly input: string
+    readonly output: string
+    readonly cached: string
+    readonly steps: string
     readonly tools: string
     readonly subagents: string
+    readonly state: string
+    readonly usage: string
+    readonly time: string
+    readonly ago: string
+    readonly loading: string
+    readonly error: string
     readonly status: Readonly<Record<string, string>>
   }
   readonly sidebar: {

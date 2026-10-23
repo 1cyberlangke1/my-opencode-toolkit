@@ -61,6 +61,7 @@ function fakeContext(options: {
             loops: [],
             jobs: [],
             stats: { steps: 0, input: 0, output: 0, cached: 0, hitRate: 0, subagents: 0, tools: [] },
+            subagents: [],
           }),
         events: {
           on: (_name: string, handler: ToastHandler) => {
@@ -110,7 +111,7 @@ describe("tui plugin setup", () => {
     const { context, slots, layers } = fakeContext({})
     const cleanup = await plugin.setup(context)
 
-    expect(slots).toEqual(["sidebar.content"])
+    expect(slots).toEqual(["sidebar.content", "prompt.footer"])
     expect(layers).toHaveLength(1)
     expect(layers[0]?.commands?.[0]?.slash?.name).toBe("my-opencode-toolkit")
 
@@ -120,8 +121,8 @@ describe("tui plugin setup", () => {
   test("设置菜单切换 goal 并通过 RPC 写回", async () => {
     const saved: Settings[] = []
     const { context, layers } = fakeContext({
-      // 第一次选 goal，第二次 Esc 退出菜单。
-      picks: ["goal", undefined],
+      // 第一次选 goal 分类，第二次点功能开关，第三次 Esc 退出子菜单/主菜单。
+      picks: ["goal", "enabled", undefined],
       onSettingsSet: (next) => {
         saved.push(next)
         return Promise.resolve(next)
@@ -143,7 +144,7 @@ describe("tui plugin setup", () => {
 
   test("写回失败时回滚本地设置", async () => {
     const { context, layers, selects } = fakeContext({
-      picks: ["goal", undefined],
+      picks: ["goal", "enabled", undefined],
       onSettingsSet: () => Promise.reject(new Error("storage down")),
     })
 
@@ -152,8 +153,8 @@ describe("tui plugin setup", () => {
     await Bun.sleep(20)
 
     // 菜单重开后 goal 的 footer 仍是默认的“开”，说明失败后回滚了乐观更新。
-    expect(selects).toHaveLength(2)
-    expect(footerOf(selects[1], "goal")).toBe(footerOf(selects[0], "goal"))
+    expect(selects).toHaveLength(4)
+    expect(footerOf(selects.at(-1), "goal")).toBe(footerOf(selects[0], "goal"))
 
     await cleanup?.()
   })

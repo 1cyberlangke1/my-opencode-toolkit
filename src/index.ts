@@ -13,7 +13,7 @@ import { asRecord } from "./shared/json.ts"
 import { ToolkitRpc } from "./shared/rpc.ts"
 import { loadSettings, saveSettings } from "./shared/settings-store.ts"
 import { normalizeSettings } from "./shared/settings.ts"
-import { buildStats, createStatsTracker, hitRatePercent, trackEvent } from "./stats.ts"
+import { buildStats, buildSubagentDetail, createStatsTracker, hitRatePercent, listSubagents, trackEvent } from "./stats.ts"
 import { registerPingTool } from "./tools/ping.ts"
 
 export default Plugin.define({
@@ -95,7 +95,17 @@ export default Plugin.define({
             ...(job.nextRunAt === undefined ? {} : { nextRunAt: job.nextRunAt }),
           })),
           stats: { ...stats, hitRate: hitRatePercent(stats.input, stats.cached), tools },
+          subagents: await listSubagents(ctx, sessionID),
         }
+      },
+      subagentGet: async (input) => {
+        const record = asRecord(input)
+        const requested = record?.["sessionID"]
+        const sessionID = typeof requested === "string" ? requested : ""
+        if (sessionID.length === 0) {
+          return { steps: 0, input: 0, output: 0, cached: 0, hitRate: 0, tools: [] }
+        }
+        return buildSubagentDetail(ctx, sessionID)
       },
     })
 
