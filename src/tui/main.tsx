@@ -20,7 +20,7 @@ type GoalChoice = "enabled" | "showInSidebar"
 type SchedulingChoice = "enabled" | "showInSidebar"
 
 /** 侧栏子菜单条目。 */
-type SidebarChoice = "enabled" | "showTools" | "showSubagents"
+type SidebarChoice = "showTools" | "showSubagents"
 
 /** 上下文统计子菜单条目。 */
 type ContextStatsChoice = "enabled" | "showInput" | "showOutput" | "showCache" | "showHitRate"
@@ -171,8 +171,7 @@ export function Sidebar(props: {
     (panel()?.stats.tools ?? []).filter((tool) => tool.count > 0)
 
   return (
-    <Show when={props.settings().sidebar.enabled}>
-      <>
+    <>
         <Show
           when={
             props.section === "goal" &&
@@ -347,8 +346,7 @@ export function Sidebar(props: {
             </Show>
           </box>
         </Show>
-      </>
-    </Show>
+    </>
   )
 }
 
@@ -532,7 +530,6 @@ export default Plugin.define({
         const choice = await context.ui.dialog.select<SidebarChoice>({
           title: text.menu.sidebar,
           options: [
-            { title: text.menu.enabled, value: "enabled", footer: onOff(current.sidebar.enabled) },
             { title: text.menu.showTools, value: "showTools", footer: onOff(current.sidebar.showTools) },
             { title: text.menu.showSubagents, value: "showSubagents", footer: onOff(current.sidebar.showSubagents) },
           ],
@@ -603,7 +600,7 @@ export default Plugin.define({
             { title: text.menu.language, value: "language", footer: current.lang },
             { title: text.menu.goal, value: "goal", footer: onOff(current.goal.enabled) },
             { title: text.menu.scheduling, value: "scheduling", footer: onOff(current.scheduling.enabled) },
-            { title: text.menu.sidebar, value: "sidebar", footer: onOff(current.sidebar.enabled) },
+            { title: text.menu.sidebar, value: "sidebar" },
             { title: text.menu.contextStats, value: "contextStats", footer: onOff(current.contextStats.enabled) },
             { title: text.menu.notifications, value: "notifications", footer: onOff(current.notification.enabled) },
           ],

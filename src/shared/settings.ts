@@ -33,7 +33,6 @@ export type SchedulingSettings = {
 
 /** TUI 侧栏显示项。 */
 export type SidebarSettings = {
-  readonly enabled: boolean
   readonly showTools: boolean
   readonly showSubagents: boolean
 }
@@ -78,7 +77,6 @@ export const DEFAULT_SETTINGS: Settings = {
   goal: { enabled: true, showInSidebar: true },
   scheduling: { enabled: true, showInSidebar: true },
   sidebar: {
-    enabled: true,
     showTools: true,
     showSubagents: true,
   },
@@ -127,7 +125,6 @@ export function normalizeSettings(raw: unknown): Settings {
       showInSidebar: readBoolean(scheduling["showInSidebar"], DEFAULT_SETTINGS.scheduling.showInSidebar),
     },
     sidebar: {
-      enabled: readBoolean(sidebar["enabled"], DEFAULT_SETTINGS.sidebar.enabled),
       showTools: readBoolean(sidebar["showTools"], DEFAULT_SETTINGS.sidebar.showTools),
       showSubagents: readBoolean(sidebar["showSubagents"], DEFAULT_SETTINGS.sidebar.showSubagents),
     },

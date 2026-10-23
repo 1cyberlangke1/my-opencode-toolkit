@@ -95,7 +95,6 @@ OpenCode v2 插件，提供系统桌面通知、持久目标追踪（Goal）、�
 | `goal.showInSidebar` | `true` | 是否在侧栏展示目标进度 |
 | `scheduling.enabled` | `true` | 是否启用定时任务与循环功能 |
 | `scheduling.showInSidebar` | `true` | 是否在侧栏展示定时任务 |
-| `sidebar.enabled` | `true` | 是否启用 TUI 侧栏扩展 |
 | `sidebar.showTools` | `true` | 是否在侧栏展示工具调用计数 |
 | `sidebar.showSubagents` | `true` | 是否在侧栏展示子代理详情 |
 | `contextStats.enabled` | `true` | 是否在底部状态栏展示 Token 统计 |

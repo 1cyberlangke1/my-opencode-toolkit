@@ -140,6 +140,20 @@ describe("tui plugin setup", () => {
     await cleanup?.()
   })
 
+  test("侧栏子菜单没有全局开关", async () => {
+    const { context, layers, selects } = fakeContext({ picks: ["sidebar", undefined, undefined] })
+    const cleanup = await plugin.setup(context)
+
+    layers[0]?.commands?.[0]?.run()
+    await Bun.sleep(20)
+
+    expect(footerOf(selects[0], "sidebar")).toBeUndefined()
+    expect(selects[1]?.title).toMatch(/Sidebar|侧栏/)
+    expect(selects[1]?.options.map((option) => option.value)).toEqual(["showTools", "showSubagents"])
+
+    await cleanup?.()
+  })
+
   test("设置菜单切换 goal 并通过 RPC 写回", async () => {
     const saved: Settings[] = []
     const { context, layers } = fakeContext({

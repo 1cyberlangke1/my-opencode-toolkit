@@ -51,11 +51,10 @@ const SettingsJson = {
     sidebar: {
       type: "object",
       properties: {
-        enabled: { type: "boolean" },
         showTools: { type: "boolean" },
         showSubagents: { type: "boolean" },
       },
-      required: ["enabled", "showTools", "showSubagents"],
+      required: ["showTools", "showSubagents"],
       additionalProperties: false,
     },
     contextStats: {
