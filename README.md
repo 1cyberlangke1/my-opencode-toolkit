@@ -3,19 +3,17 @@
 [![ci](https://github.com/1cyberlangke1/my-opencode-toolkit/actions/workflows/ci.yml/badge.svg)](https://github.com/1cyberlangke1/my-opencode-toolkit/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/my-opencode-toolkit)](https://www.npmjs.com/package/my-opencode-toolkit)
 
-OpenCode v2 插件：系统通知、持久目标、定时任务与循环、TUI 状态面板。
+OpenCode v2 插件，提供系统桌面通知、持久目标追踪（Goal）、定时与循环任务（Cron / Loop）以及 TUI 状态面板。
 
-维护、架构与发布流程见 [docs/maintenance.md](docs/maintenance.md)。
-
-## 要求
+## 环境要求
 
 - OpenCode `2.x`
-- Node `>= 20`（OpenCode 自带 Bun 运行时，插件本身也用 Node API）
+- Node `>= 20`
 - Windows / macOS / Linux
 
 ## 安装
 
-在全局或项目级 `opencode.json` 里把包名加进 **`plugins`** 数组（注意是 `plugins`，不是 `plugin`）：
+在全局或项目级 `opencode.json` 中将插件添加到 `plugins` 数组：
 
 ```json
 {
@@ -23,170 +21,119 @@ OpenCode v2 插件：系统通知、持久目标、定时任务与循环、TUI �
 }
 ```
 
-本地开发时可以直接指向目录：
+本地开发调试时，也可以直接指定本地目录路径：
 
 ```json
 {
-  "plugins": ["D:\\Git_Repository\\my-opencode-toolkit"]
+  "plugins": ["./path/to/my-opencode-toolkit"]
 }
 ```
 
-重启 OpenCode 后生效。TUI 面板和 `/my-opencode-toolkit` 设置菜单由包内的 `tui` 入口提供，不需要额外配置。
+配置后重启 OpenCode 即可生效。
 
-## 功能
+## 功能说明
 
-### 系统通知
-
-- 会话空闲（任务完成）、权限请求（`permission.asked`）、代理提问（`question` 工具）三种通知
-- 平台：Windows toast（PowerShell）、macOS（osascript）、Linux（notify-send）
-- 标题带会话名；正文按设置语言本地化；完成通知附带最后一条用户/助手文本
-- 通知是尽力而为：系统关闭通知、专注助手拦截或缺少对应命令时静默跳过，不影响会话
+### 系统桌面通知
+- 当会话空闲（任务完成）、请求权限（`permission.asked`）或模型提问（`question`）时发送系统通知。
+- 跨平台支持：Windows Toast（PowerShell）、macOS（osascript）、Linux（notify-send）。
+- 当系统处于静音、专注助手拦截或缺少对应命令时静默跳过，不影响正常交互。
 
 ### 持久目标（Goal）
+- 为会话设定高层目标后，会在每次空闲边界自动注入续作提示，直到任务标记完成或遇到明确阻塞。
+- 自动累计每一步的 Token 输入、输出与缓存消耗；超出预设 Token 预算时自动暂停并等待确认。
+- 用户手动打断时自动暂停；对子代理会话完全隔离，避免递归干扰。
 
-- 工具：`create_goal`、`get_goal`、`update_goal`
-- 命令：`/goal <objective>`、`/goal pause|resume|clear|edit`、裸 `/goal` 查看
-- 目标 active 时会话空闲自动注入续作提示；同一阻塞原因连续 3 次才标记 `blocked`
-- 自动注入以灰字 notice 显示，notice 正文与发送给模型的内容完全一致
-- 记账：每步的输入、输出、缓存读写都计入；达到 token 预算自动转 `budget_limited`
-- 用户打断自动暂停；余额不足暂停并锁死，需显式 `/goal resume`
-- 子代理会话看不到 goal 工具，也不会被注入续作
+### 定时任务与循环（Cron / Loop）
+- 支持标准 5 字段 Cron 表达式（本地时区），支持创建重复或一次性任务。
+- 支持循环任务（固定时间间隔或由模型动态决策下一次唤醒时机）。
+- 仅在会话空闲时触发，会话繁忙或有待处理的用户输入时自动顺延，避免打断交互。
 
-### 定时任务与循环
-
-- 工具：`cron_create`、`cron_list`、`cron_delete`、`schedule_wakeup`
-- 命令：
-  - `/cron <expr> <prompt>` 创建重复任务
-  - `/cron once <expr> <prompt>` 一次性任务
-  - `/cron list`、`/cron delete <id>`
-  - `/loop [interval] [prompt]` 启动循环，`/loop stop` 停止
-- 5 字段 cron（本地时区）：`分 时 日 月 周`
-  - 支持 `*`、步进 `*/n`、范围 `a-b`、范围步进 `a-b/n`、列表 `a,b`
-  - 周字段 `0` 和 `7` 都表示周日
-  - 下一次触发在四年窗口内搜索，支持 `2 月 29 日`；永远不存在的日期会被拒绝
-- 每会话最多 50 个任务；重复任务 7 天后自动过期
-- durable 任务存插件存储，重启恢复并重新武装 timer；非 durable 只留内存
-- 循环只存在内存，重启后消失；需要跨重启请用 cron
-- 循环：固定间隔或动态（模型用 `schedule_wakeup` 决定下次，60–3600 秒，20 分钟兜底）
-- 固定间隔范围 60 秒 – 7 天；裸 `/loop` 使用内置维护提示词，项目根目录有非空 `loop.md` 时优先用它
-
-#### 触发语义
-
-- 任务只在会话空闲时注入；会话忙或末条是用户输入时**顺延重试**，不会静默丢失
-- 自动注入以灰字 notice 显示，notice 正文与发送给模型的内容完全一致
-- 功能关闭或目标进行中时任务让路，同样只顺延、不消费；重新开启后一分钟内恢复
-- 重启后已过点的任务会补触发一次，不会把错过的每个时间点都补一遍
-- 重复任务错过的时间点只补一次；一次性任务会一直重试到成功注入或会话被删除
-
-### TUI 面板
-
-- 侧栏显示目标、定时任务、工具使用情况、子代理；没有内容的分区直接隐藏
-- 工具列表完整显示、可折叠；调用次数为 0 的工具不显示
-- 子代理默认折叠，展开后显示它的输入、输出、缓存、命中率与工具调用
-- 底部 prompt footer 显示当前会话累计的 `↑ 输入 ↓ 输出 ♻ 缓存 🎯 命中率`
-- 命中率只有 `🎯` 数字染色，0% 红、100% 绿，固定两位小数
-- 统计按会话独立，每个会话第一次打开面板时从 OpenCode 已存消息重建
-- 设置菜单：`/my-opencode-toolkit`，语言、通知、Goal、定时任务、侧栏、上下文统计都能热改
-- 设置写入失败会回滚本地显示
+### TUI 状态面板
+- 在侧栏展示当前持久目标、生效中的定时任务、工具调用频次与子代理运行状态。
+- 在底部状态栏实时显示累计 Token 输入、输出、缓存及命中率。
+- 提供图形化设置菜单（`/my-opencode-toolkit`），支持热切换所有开关与参数。
 
 ## 命令与工具
 
-| 命令 | 作用 |
+### 斜杠命令（用户交互）
+
+| 命令 | 说明 |
 |---|---|
-| `/my-opencode-toolkit` | 打开设置菜单（TUI） |
-| `/goal <objective>` | 设置/覆盖当前会话的持久目标 |
-| `/goal` | 查看当前目标 |
-| `/goal pause` / `resume` / `clear` / `edit` | 暂停 / 恢复 / 清除 / 编辑目标 |
-| `/cron <expr> <prompt>` | 创建重复任务 |
-| `/cron once <expr> <prompt>` | 创建一次性任务 |
-| `/cron list` | 列出任务 |
-| `/cron delete <id>` | 删除任务 |
-| `/loop [interval] [prompt]` | 启动循环；不带间隔为 dynamic 模式 |
-| `/loop stop` | 停止当前会话全部循环 |
+| `/my-opencode-toolkit` | 打开插件图形化设置菜单 |
+| `/goal <objective>` | 设置或覆盖当前会话的持久目标 |
+| `/goal` | 查看当前目标状态与进度 |
+| `/goal pause` / `resume` / `clear` / `edit` | 暂停 / 恢复 / 清除 / 编辑当前目标 |
+| `/cron <expr> <prompt>` | 创建重复定时任务（5 字段 cron，本地时区） |
+| `/cron once <expr> <prompt>` | 创建一次性定时任务 |
+| `/cron list` | 查看当前会话的定时任务列表 |
+| `/cron delete <id>` | 按 ID 删除指定的定时任务 |
+| `/loop [interval] [prompt]` | 启动循环任务（不带间隔则为 dynamic 动态决策模式） |
+| `/loop stop` | 停止当前会话的所有循环任务 |
 
-| 工具 | 作用 |
+### Agent 工具箱（模型调用）
+
+| 工具 | 说明 |
 |---|---|
-| `toolkit_ping` | 返回插件是否启用与当前语言，用于验证加载 |
-| `create_goal` / `get_goal` / `update_goal` | 目标读写与完成/阻塞标记 |
-| `cron_create` / `cron_list` / `cron_delete` | 定时任务管理 |
-| `schedule_wakeup` | dynamic 循环的下次唤醒时间 |
+| `toolkit_ping` | 验证插件加载状态与当前语言配置 |
+| `create_goal` / `get_goal` / `update_goal` | 创建、查询当前目标以及更新目标状态（完成或阻塞） |
+| `cron_create` / `cron_list` / `cron_delete` | 创建、查询与删除定时任务 |
+| `schedule_wakeup` | 动态循环模式下设置下一次唤醒间隔时间 |
 
-## 设置
+## 配置项
 
-设置存在 OpenCode 插件存储里，通过 TUI 菜单修改；插件 `options` 只在首次运行时作为初始值。
+所有配置项均保存在 OpenCode 的插件存储中，推荐通过 `/my-opencode-toolkit` 设置菜单修改，也可在 `opencode.json` 的 `options` 字段作为初始默认值传入：
 
-| 字段 | 默认 | 说明 |
+| 配置项 | 默认值 | 说明 |
 |---|---|---|
-| `lang` | `auto` | `auto` / `zh` / `en` |
+| `lang` | `auto` | 界面语言（`auto` / `zh` / `en`） |
 | `notification.enabled` | `true` | 通知总开关 |
-| `notification.onComplete` | `true` | 会话完成通知 |
-| `notification.onQuestion` | `true` | 代理提问通知 |
-| `notification.onPermission` | `true` | 权限请求通知 |
-| `notification.onlyMainSession` | `true` | 只通知主会话，忽略子代理 |
-| `goal.enabled` | `true` | 持久目标功能 |
-| `goal.showInSidebar` | `true` | 在侧栏显示目标；关闭不影响功能 |
-| `scheduling.enabled` | `true` | 定时任务与循环功能 |
-| `scheduling.showInSidebar` | `true` | 在侧栏显示定时任务；关闭不影响功能 |
-| `sidebar.enabled` | `true` | 侧栏面板 |
-| `sidebar.showTools` | `true` | 显示工具使用情况 |
-| `sidebar.showSubagents` | `true` | 显示子代理 |
-| `contextStats.enabled` | `true` | 底部上下文统计行 |
-| `contextStats.showInput` | `true` | 显示 `↑` 输入 |
-| `contextStats.showOutput` | `true` | 显示 `↓` 输出 |
-| `contextStats.showCache` | `true` | 显示 `♻` 缓存 |
-| `contextStats.showHitRate` | `true` | 显示 `🎯` 命中率 |
+| `notification.onComplete` | `true` | 会话空闲/任务完成时通知 |
+| `notification.onQuestion` | `true` | 模型提问时通知 |
+| `notification.onPermission` | `true` | 请求授权时通知 |
+| `notification.onlyMainSession` | `true` | 仅通知主会话，忽略子代理事件 |
+| `goal.enabled` | `true` | 是否启用持久目标功能 |
+| `goal.showInSidebar` | `true` | 是否在侧栏展示目标进度 |
+| `scheduling.enabled` | `true` | 是否启用定时任务与循环功能 |
+| `scheduling.showInSidebar` | `true` | 是否在侧栏展示定时任务 |
+| `sidebar.enabled` | `true` | 是否启用 TUI 侧栏扩展 |
+| `sidebar.showTools` | `true` | 是否在侧栏展示工具调用计数 |
+| `sidebar.showSubagents` | `true` | 是否在侧栏展示子代理详情 |
+| `contextStats.enabled` | `true` | 是否在底部状态栏展示 Token 统计 |
 
 ## 数据与隐私
 
-- 目标、任务、设置都写在 OpenCode 的插件存储里，不额外建数据库
-- 存储 key 不带插件名前缀；OpenCode 会自动放进 `plugin:<插件 ID>:` 命名空间
-- 运行时不写任何自定义文件；唯一读取的项目文件是 `loop.md`（用户提供的循环提示词）
-- 通知预览会读取当前会话最后一条用户/助手文本，只用于本地系统通知
-- 不发送任何遥测；不访问网络（通知命令与 OpenCode 自身除外）
-- 删除会话时会清掉该会话的 goal、定时任务、循环、统计与角色缓存
+- 数据均存放在 OpenCode 插件专有存储中，不创建独立的本地数据库文件。
+- 不采集任何遥测数据，不发起除 OpenCode 与系统通知必须命令以外的任何外部网络请求。
+- 会话删除时会自动清理该会话关联的所有目标、定时任务、循环、统计与角色缓存。
 
-## 排障
+## 常见排查
 
-**插件没加载**
+### 插件未加载
+- 确认 `opencode.json` 中配置的是 `plugins` 数组，而不是单数 `plugin`。
+- 运行 `opencode plugin list` 查看插件是否已正常识别。
+- 重启 OpenCode（已打开的既有会话不会动态重建工具列表，请在新会话中验证）。
 
-1. 确认 `opencode.json` 用的是 `plugins` 数组，且包名拼写正确
-2. 跑 `opencode plugin list` 看是否列出 `my-opencode-toolkit`
-3. 重启 OpenCode；已存在的会话不会重建工具表，建议新开会话验证
+### TUI 未显示侧栏或设置菜单
+- TUI 扩展仅在交互式 TUI 终端模式下加载，`opencode run` 等非交互模式不渲染侧栏。
+- 若热重载后未生效，请完整重启 TUI 进程。
 
-**TUI 没有侧栏/设置菜单**
+### 未收到桌面通知
+- 检查操作系统通知设置是否允许通知，以及系统是否处于“专注助手 / 勿扰模式”。
+- 确认系统中对应的通知执行环境正常（Windows 需 `powershell.exe`，macOS 需 `osascript`，Linux 需 `notify-send`）。
 
-- TUI 插件只在交互式 TUI 里加载；`opencode run` 不渲染侧栏
-- 确认包内 `tui.ts`（或 npm 包的 `./tui` 导出）存在
-- 重启 TUI；插件热重载不会重放已注册的 slot
+### 定时任务未按时触发
+- 检查会话是否长期处于 active 目标进行中（定时任务会自动让路以避免打扰）。
+- Plan 模式下会顺延跳过任务，切回 Build 模式后按计划恢复。
+- 确认定时任务是否已超过 7 天最大有效期，可通过 `/cron list` 查看当前任务状态。
 
-**没有系统通知**
-
-- 检查系统通知权限与专注助手
-- Windows 确认 `powershell.exe` 在 PATH；macOS 确认 `osascript`；Linux 确认 `notify-send`
-- 用 `toolkit_ping` 确认插件本身已加载
-
-**定时任务没触发**
-
-- 检查会话是否长期处于目标 active 状态（会主动让路）
-- Plan 模式下会直接跳过并弹 toast；切回 build 后按原计划继续（one-shot 会被消费）
-- 检查任务是否已超过 7 天过期
-- 检查时区：cron 按本地时区解析
-- 用 `/cron list` 确认任务还在
-
-## 开发
+## 本地开发
 
 ```bash
 pnpm install
-pnpm check            # typecheck + lint + 195 单测 + 11 bun 测试 + 发布包内容校验
-pnpm test:e2e           # 加载/持久化 + 子代理/关闭功能工具隐藏 + synthetic 触发 + 原生压缩后仍触发
-pnpm test:e2e:synthetic # 只跑 synthetic 自动续作触发
-pnpm test:e2e:compact   # 只跑“原生压缩后自动续作仍触发”
-pnpm test:e2e:tui       # 真实 TUI：PTY 启动 opencode --standalone，打开设置菜单
-pnpm test:e2e:tool-visibility # 真实 OpenCode：子代理和关闭功能后 goal/scheduling 工具不可见
+pnpm check      # 类型检查、代码检查、单元测试与打包校验
+pnpm test:e2e   # 端到端自动化集成测试
 ```
-
-e2e 用假 provider 驱动工具调用，不会请求真实模型；它会在临时目录里启动一个隔离的 OpenCode server，不读写日常数据。`test:e2e:tui` 通过 ConPTY（Windows）或 openpty（macOS/Linux）驱动真实 TUI，验证 TUI 插件加载、斜杠命令与设置菜单渲染。
 
 ## 许可证
 
-MIT
+[MIT](LICENSE)
