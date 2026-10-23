@@ -92,7 +92,4 @@ export const zh: Messages = {
     user: "用户",
     assistant: "助手",
   },
-  tool: {
-    pingResult: (enabled, lang) => `${PLUGIN_ID}：启用=${enabled ? "是" : "否"}，语言=${lang}`,
-  },
 }

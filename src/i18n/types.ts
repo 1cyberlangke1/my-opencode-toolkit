@@ -85,7 +85,4 @@ export type Messages = {
     readonly user: string
     readonly assistant: string
   }
-  readonly tool: {
-    readonly pingResult: (enabled: boolean, lang: string) => string
-  }
 }

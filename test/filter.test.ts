@@ -13,13 +13,13 @@ describe("hideGoalTools", () => {
       create_goal: { description: "create" },
       get_goal: { description: "get" },
       update_goal: { description: "update" },
-      toolkit_ping: { description: "ping" },
+      keep_me: { description: "ping" },
     }
 
     const removed = hideGoalTools(tools)
 
     expect(removed.sort()).toEqual([...GOAL_NAMES].sort())
-    expect(Object.keys(tools).sort()).toEqual(["read", "toolkit_ping"])
+    expect(Object.keys(tools).sort()).toEqual(["keep_me", "read"])
   })
 
   it("工具表里没有 goal 工具时不报错", () => {

@@ -74,7 +74,6 @@ OpenCode v2 插件，提供系统桌面通知、持久目标追踪（Goal）、�
 
 | 工具 | 说明 |
 |---|---|
-| `toolkit_ping` | 验证插件加载状态与当前语言配置 |
 | `create_goal` / `get_goal` / `update_goal` | 创建、查询当前目标以及更新目标状态（完成或阻塞） |
 | `cron_create` / `cron_list` / `cron_delete` | 创建、查询与删除定时任务 |
 | `schedule_wakeup` | 动态循环模式下设置下一次唤醒间隔时间 |

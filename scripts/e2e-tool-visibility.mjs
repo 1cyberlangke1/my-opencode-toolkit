@@ -3,7 +3,7 @@
  * 输入：无（需要本机 opencode 2.x 与 bun）。
  * 输出：在隔离的临时 HOME/DB/config 里启动 opencode，用假 provider 捕获三个会话的工具表：
  *       主会话、子代理会话、关闭 goal/scheduling 后的主会话。
- * 预期：主会话有 goal/scheduling 工具；子代理和关闭功能后都没有；toolkit_ping 始终存在。
+ * 预期：主会话有 goal/scheduling 工具；子代理和关闭功能后都没有。
  *       不会读写日常使用的 OpenCode 数据。
  *
  * 用法：bun scripts/e2e-tool-visibility.mjs
@@ -196,7 +196,6 @@ try {
   for (const name of [...goalTools, ...schedulingTools]) {
     assert.ok(!childTools.includes(name), `subagent must not see ${name}, got ${childTools.join(",")}`)
   }
-  assert.ok(childTools.includes("toolkit_ping"), "subagent must still see toolkit_ping")
 
   // 关闭 goal/scheduling 后，新的主会话也应隐藏对应工具。
   const pluginHex = Array.from("my-opencode-toolkit")
@@ -224,7 +223,6 @@ try {
   for (const name of [...goalTools, ...schedulingTools]) {
     assert.ok(!disabledTools.includes(name), `disabled feature must not see ${name}, got ${disabledTools.join(",")}`)
   }
-  assert.ok(disabledTools.includes("toolkit_ping"), "disabled feature must still see toolkit_ping")
 
   console.log("parent tools:", parentTools.length, "child tools:", childTools.length, "disabled tools:", disabledTools.length)
   console.log("case passed: goal/scheduling tools are hidden in subagents and when disabled")

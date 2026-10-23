@@ -2,7 +2,7 @@
 /**
  * 输入：无（需要本机 opencode 2.x 与 bun）。
  * 输出：在隔离的临时 HOME/DB/config 里启动 opencode，用假 provider 驱动五次工具调用。
- * 预期：工具表包含 toolkit_ping、三个 goal 工具与四个 scheduling 工具；
+ * 预期：工具表包含三个 goal 工具与四个 scheduling 工具；
  *       create_goal / get_goal / cron_create / update_goal 依次执行成功；
  *       默认设置、goal 与 durable cron 任务写入隔离数据库。不会读写日常使用的 OpenCode 数据。
  *
@@ -284,7 +284,6 @@ if (!toolNames.includes("create_goal")) {
 
 assert.equal(served, 5, "provider must serve five requests (create goal, read goal, cron, complete goal, finish)")
 for (const name of [
-  "toolkit_ping",
   "create_goal",
   "get_goal",
   "update_goal",

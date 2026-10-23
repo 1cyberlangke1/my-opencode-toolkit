@@ -92,7 +92,4 @@ export const en: Messages = {
     user: "User",
     assistant: "Assistant",
   },
-  tool: {
-    pingResult: (enabled, lang) => `${PLUGIN_ID}: enabled=${String(enabled)}, lang=${lang}`,
-  },
 }

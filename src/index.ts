@@ -14,7 +14,6 @@ import { ToolkitRpc } from "./shared/rpc.ts"
 import { loadSettings, saveSettings } from "./shared/settings-store.ts"
 import { normalizeSettings } from "./shared/settings.ts"
 import { buildStats, buildSubagentDetail, createStatsTracker, hitRatePercent, listSubagents, trackEvent } from "./stats.ts"
-import { registerPingTool } from "./tools/ping.ts"
 
 /** 输入：RPC 参数；输出：配置层路径。 */
 function readLayers(input: unknown): readonly string[] | undefined {
@@ -30,7 +29,7 @@ export default Plugin.define({
 
   /**
    * 输入：OpenCode 注入的插件上下文。
-   * 输出：设置/面板 RPC、`toolkit_ping`、Goal、定时任务、通知，以及卸载回调。
+   * 输出：设置/面板 RPC、Goal、定时任务、通知，以及卸载回调。
    * 预期：首次启动把 options 归一化后写入存储；之后以存储里的设置为准。
    */
   async setup(ctx) {
@@ -38,7 +37,6 @@ export default Plugin.define({
     const goalController = createGoalController(ctx.storage)
     const tracker = createStatsTracker()
 
-    const tool = await registerPingTool(ctx)
     const goal = await registerGoal(ctx, roles, goalController)
     // RPC 注册在后面；先用一个可替换的发射器，避免定时器回调早于 rpc 就绪。
     let emitToast: (kind: "cron" | "loop") => void = () => undefined
@@ -180,7 +178,6 @@ export default Plugin.define({
       await hook.dispose()
       await scheduling.dispose()
       await goal.dispose()
-      await tool.dispose()
       await rpc.dispose()
     }
   },
