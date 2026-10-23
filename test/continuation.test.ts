@@ -355,6 +355,25 @@ describe("goal continuation", () => {
     expect(log).toHaveLength(1)
   })
 
+  it("同一 assistant step 重放只记一次 token", async () => {
+    const store = storeWithGoalEnabled()
+    const controller = createGoalController(store)
+    await controller.setGoal(SESSION, "x")
+    const continuation = createGoalContinuation({ ctx: fakeCtx([]), settings: DEFAULT_SETTINGS, controller, roles })
+    const event = {
+      type: "session.step.ended" as const,
+      data: {
+        sessionID: SESSION,
+        assistantMessageID: "msg_same",
+        tokens: { input: 100, output: 10, cache: { read: 0, write: 0 } },
+      },
+    }
+
+    await continuation.handle(event)
+    await continuation.handle(event)
+    expect((await controller.getGoal(SESSION))?.tokensUsed).toBe(110)
+  })
+
   it("删除会话清掉运行状态与目标", async () => {
     const store = storeWithGoalEnabled()
     const controller = createGoalController(store)

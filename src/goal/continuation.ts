@@ -51,6 +51,7 @@ export function createGoalContinuation(args: {
   const pending = new Set<string>()
   const inFlight = new Set<string>()
   const lastAccountAt = new Map<string, number>()
+  const lastAccountMessage = new Map<string, string>()
 
   /** 输入：会话 ID；输出：可变的运行状态。预期：不存在时创建默认值。 */
   const stateOf = (sessionID: string): RunState => {
@@ -198,6 +199,10 @@ export function createGoalContinuation(args: {
           state.tokenLimitDetected = false
           pending.delete(sessionID)
           if (!(await enabled())) return
+          // 事件可能重放；同一个 assistant message 只记一次账。
+          const messageID = data["assistantMessageID"]
+          if (typeof messageID === "string" && lastAccountMessage.get(sessionID) === messageID) return
+          if (typeof messageID === "string") lastAccountMessage.set(sessionID, messageID)
           if (!(await account(sessionID, readTokens(data["tokens"])))) return
           // 预算刚用尽：发一次收尾提示，让模型总结进度并给出下一步。
           const goal = await controller.getGoal(sessionID)
@@ -220,6 +225,7 @@ export function createGoalContinuation(args: {
           pending.delete(sessionID)
           inFlight.delete(sessionID)
           lastAccountAt.delete(sessionID)
+          lastAccountMessage.delete(sessionID)
           roles.forget(sessionID)
           // 会话删了就把目标一起清掉，避免插件存储里留下永远读不到的 key。
           await controller.clearGoal(sessionID)
@@ -236,6 +242,7 @@ export function createGoalContinuation(args: {
       state.insufficientFundsDetected = false
       pending.delete(sessionID)
       lastAccountAt.delete(sessionID)
+      lastAccountMessage.delete(sessionID)
     },
   }
 }
