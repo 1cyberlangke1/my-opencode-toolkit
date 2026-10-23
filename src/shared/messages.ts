@@ -1,6 +1,6 @@
 import type { Plugin } from "@opencode/plugin"
 
-/** 本插件注入的合成用户消息标记。 */
+/** 兼容 user 类型注入的标记；当前自动注入走 synthetic，不再依赖这些标记。 */
 export const SYNTHETIC_MARKERS = ["goalContinuation", "cronContinuation", "loopContinuation"] as const
 
 /**

@@ -73,14 +73,26 @@ export function createSchedulingContinuation(args: {
   /** 输入：无；输出：插件是否已卸载。预期：await 之后用它再确认，避免继续注入或武装。 */
   const isDisposed = (): boolean => lifecycle.disposed
 
-  /** 输入：会话 + 文本；输出：是否注入成功。预期：并发、上一条未完成或末条是用户输入时跳过。 */
+  /**
+   * 输入：会话 + 文本。
+   * 输出：是否注入成功。
+   * 预期：以 synthetic 消息注入并唤醒会话；`description` 与正文一致，TUI 灰字 notice
+   *       显示的就是模型收到的内容。并发、上一条未完成或末条是用户输入时跳过。
+   */
   const inject = async (sessionID: string, text: string): Promise<boolean> => {
     if (inFlight.has(sessionID) || pending.has(sessionID)) return false
     if (await roles.isSubagent(sessionID)) return false
     if (await lastMessageIsUserInput(ctx, sessionID, CRON_MARKER)) return false
     inFlight.add(sessionID)
     try {
-      await ctx.session.prompt({ sessionID, text, delivery: "steer", metadata: { [CRON_MARKER]: true } })
+      await ctx.session.synthetic({
+        sessionID,
+        text,
+        description: text,
+        delivery: "steer",
+        resume: true,
+        metadata: { [CRON_MARKER]: true },
+      })
       pending.add(sessionID)
       return true
     } catch {

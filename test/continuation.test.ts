@@ -16,7 +16,12 @@ const roles = {
 }
 
 /** 记录注入的续作消息。 */
-type PromptLog = { sessionID: string; text: string }[]
+type PromptLog = {
+  sessionID: string
+  text: string
+  description?: string
+  resume?: boolean
+}[]
 
 /** 输入：注入日志 + 可选历史消息；输出：只实现 session 的假上下文。 */
 function fakeCtx(log: PromptLog, messages: unknown[] = []): Plugin.Context {
@@ -24,6 +29,20 @@ function fakeCtx(log: PromptLog, messages: unknown[] = []): Plugin.Context {
     session: {
       prompt: (input: { sessionID: string; text: string }) => {
         log.push({ sessionID: input.sessionID, text: input.text })
+        return Promise.resolve()
+      },
+      synthetic: (input: {
+        sessionID: string
+        text: string
+        description?: string
+        resume?: boolean
+      }) => {
+        log.push({
+          sessionID: input.sessionID,
+          text: input.text,
+          ...(input.description === undefined ? {} : { description: input.description }),
+          ...(input.resume === undefined ? {} : { resume: input.resume }),
+        })
         return Promise.resolve()
       },
       context: () => Promise.resolve(messages),
@@ -161,6 +180,9 @@ describe("goal continuation", () => {
     expect(log[0]?.text).toContain("reached its token budget")
     expect(log[0]?.text).toContain("budget_limited")
     expect(log[0]?.text).toContain("ship it")
+    // notice 内容必须与发给模型的内容完全一致，且必须唤醒会话。
+    expect(log[0]?.description).toBe(log[0]?.text)
+    expect(log[0]?.resume).toBe(true)
 
     // 后续 step 不再重复发收尾提示。
     await continuation.handle({

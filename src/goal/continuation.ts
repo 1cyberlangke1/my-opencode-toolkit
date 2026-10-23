@@ -81,12 +81,24 @@ export function createGoalContinuation(args: {
     return before?.status === "active" && after?.status === "budget_limited"
   }
 
-  /** 输入：会话 ID + 文本；输出：无。预期：注入一条带标记的续作提示；并发或失败时静默跳过。 */
+  /**
+   * 输入：会话 ID + 文本。
+   * 输出：无。
+   * 预期：以 synthetic 消息注入续作提示并唤醒会话；`description` 与正文完全一致，
+   *       TUI 灰字 notice 显示的就是模型收到的内容。并发或失败时静默跳过。
+   */
   const inject = async (sessionID: string, text: string): Promise<void> => {
     if (inFlight.has(sessionID)) return
     inFlight.add(sessionID)
     try {
-      await ctx.session.prompt({ sessionID, text, delivery: "steer", metadata: { [CONTINUATION_MARKER]: true } })
+      await ctx.session.synthetic({
+        sessionID,
+        text,
+        description: text,
+        delivery: "steer",
+        resume: true,
+        metadata: { [CONTINUATION_MARKER]: true },
+      })
       pending.add(sessionID)
     } catch {
       // 注入失败：下一轮 idle 再试，不阻塞其他会话

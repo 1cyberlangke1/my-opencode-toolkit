@@ -24,6 +24,11 @@ function fakeCtx(log: string[], rejectPrompt = false, agent = "build"): Plugin.C
         log.push(input.text)
         return Promise.resolve()
       },
+      synthetic: (input: { text: string }) => {
+        if (rejectPrompt) return Promise.reject(new Error("session busy"))
+        log.push(input.text)
+        return Promise.resolve()
+      },
       context: () => Promise.resolve([]),
     },
   } as unknown as Plugin.Context

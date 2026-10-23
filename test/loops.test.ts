@@ -19,6 +19,10 @@ function fakeCtx(log: string[], agent = "build"): Plugin.Context {
         log.push(input.text)
         return Promise.resolve()
       },
+      synthetic: (input: { text: string }) => {
+        log.push(input.text)
+        return Promise.resolve()
+      },
       context: () => Promise.resolve([]),
     },
   } as unknown as Plugin.Context
