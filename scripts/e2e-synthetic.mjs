@@ -17,6 +17,36 @@ import { Database } from "bun:sqlite"
 
 const GOAL_OBJECTIVE = "finish the synthetic e2e goal"
 const CONTINUATION_MARK = "Continue working toward the active thread goal."
+const compactMode = process.env.E2E_COMPACT === "1" || process.argv.includes("--compact")
+
+/** 原生 compaction 的模板摘要；假 provider 只需回一个结构合法的摘要。 */
+const SUMMARY_TEMPLATE = `## Objective
+- finish the synthetic e2e goal
+
+## Requirements
+- (none)
+
+## Decisions
+- (none)
+
+## Work State
+### Completed
+- (none)
+
+### Active
+- continue the goal
+
+### Blocked
+- (none)
+
+## Next Move
+1. continue
+
+## Relevant Files
+- (none)
+
+## Important Context
+- native compaction e2e`
 
 const repo = process.cwd()
 const root = await mkdtemp(join(tmpdir(), "opencode-e2e-synthetic-"))
@@ -29,12 +59,24 @@ for (const dir of [configDir, dataDir, join(root, "xdg-config"), join(root, "sta
 const password = randomBytes(24).toString("base64url")
 const basic = `Basic ${Buffer.from(`opencode:${password}`).toString("base64")}`
 
-/** 已服务的请求数：0 创建 goal，1 结束首轮，2 续作，3 收尾。 */
+/** 已服务的请求数：0 创建 goal，1 结束首轮，2+ 续作/压缩/收尾。 */
 let served = 0
 /** 续作请求里看到的用户文本。 */
 let continuationText = ""
 /** 续作之后是否又出现了请求（用来确认没有死循环）。 */
 let extraRequests = 0
+/** compact 模式：已经看到原生 compaction 的摘要请求。 */
+let compactionSeen = false
+/** compact 模式：已经让 goal 完成。 */
+let completed = false
+/** compact 模式：goal 完成后又出现的续作次数。 */
+let postCompleteContinuations = 0
+/** compact 模式：goal 续作请求次数。 */
+let goalContinuations = 0
+/** 是否已经回过最终的 done。 */
+let doneSent = false
+/** 刚发过 update_goal，下一请求是工具结果，不是新的续作。 */
+let waitingForUpdateResult = false
 
 /** 输入：无；输出：SSE 分片构造器。 */
 function chunker() {
@@ -143,15 +185,52 @@ function handle(body) {
     return textResponse(stream, "goal created", usage)
   }
 
-  if (served === 2) {
-    served = 3
-    continuationText = findUserText(messages, CONTINUATION_MARK)
-    assert.ok(continuationText.length > 0, "goal continuation was not sent to the model")
-    assert.ok(continuationText.includes(GOAL_OBJECTIVE), "continuation must include the goal objective")
+  // 原生 compaction 请求：它不是 tool 请求，最后一条 user 是摘要模板。
+  const allText = messages.map(messageText).join("\n")
+  if (allText.includes("You MUST summarize the conversation above")) {
+    compactionSeen = true
+    return textResponse(stream, SUMMARY_TEMPLATE, usage)
+  }
+
+  const continuation = findUserText(messages, CONTINUATION_MARK)
+
+  // update_goal 的工具结果请求仍会带着上一条 synthetic user 文本，不能当成新续作。
+  if (waitingForUpdateResult) {
+    waitingForUpdateResult = false
+    doneSent = true
+    served = 4
+    return textResponse(stream, "done", usage)
+  }
+
+  if (continuation.length > 0) {
+    goalContinuations += 1
+    continuationText = continuation
+    assert.ok(continuation.includes(GOAL_OBJECTIVE), "continuation must include the goal objective")
+
+    if (completed) {
+      postCompleteContinuations += 1
+      return textResponse(stream, "unexpected continuation", usage)
+    }
+
+    if (!compactMode) {
+      completed = true
+      waitingForUpdateResult = true
+      served = 4
+      return toolCallResponse(stream, "update_goal", { status: "complete" }, usage)
+    }
+
+    // compact 模式：压缩完成前只回 working，确保压缩后还能再收到续作。
+    if (!compactionSeen) return textResponse(stream, "working", usage)
+
+    completed = true
+    waitingForUpdateResult = true
+    served = 4
     return toolCallResponse(stream, "update_goal", { status: "complete" }, usage)
   }
 
-  if (served === 3) {
+  if (!doneSent) {
+    doneSent = true
+    waitingForUpdateResult = false
     served = 4
     return textResponse(stream, "done", usage)
   }
@@ -294,14 +373,26 @@ try {
   await api("POST", `/api/session/${sessionID}/prompt`, { text: "create a goal" })
   await api("POST", `/api/experimental/session/${sessionID}/wait`)
 
-  await waitFor(() => continuationText.length > 0, 15_000, "goal continuation request")
-  await waitFor(() => served >= 4, 15_000, "goal completion follow-up")
+  if (compactMode) {
+    // 先让 goal 续作跑起来，再在它活跃时触发原生压缩；压缩完成后必须还能收到续作。
+    await waitFor(() => goalContinuations > 0, 15_000, "first goal continuation")
+    await api("POST", `/api/session/${sessionID}/compact`, {})
+    await waitFor(() => compactionSeen, 20_000, "native compaction summary request")
+    await waitFor(() => completed, 15_000, "goal completion after compaction")
+    await waitFor(() => goalContinuations >= 2, 15_000, "goal continuation after compaction")
+  } else {
+    await waitFor(() => continuationText.length > 0, 15_000, "goal continuation request")
+    await waitFor(() => served >= 4, 15_000, "goal completion follow-up")
+  }
   await api("POST", `/api/experimental/session/${sessionID}/wait`)
   await Bun.sleep(500)
 
   const db = new Database(join(root, "opencode.db"), { readonly: true })
   const rows = db
     .query("select data from session_message where session_id = ? and type = 'synthetic' order by seq")
+    .all(sessionID)
+  const compactionRows = db
+    .query("select data from session_message where session_id = ? and type = 'compaction' order by seq")
     .all(sessionID)
   const pluginHex = Array.from("my-opencode-toolkit")
     .map((char) => (char.codePointAt(0) ?? 0).toString(16).padStart(4, "0"))
@@ -311,25 +402,44 @@ try {
   db.close()
 
   const synthetic = rows.map((row) => JSON.parse(String(row.data)))
+  const compactions = compactionRows.map((row) => JSON.parse(String(row.data)))
 
-  if (served < 4 || extraRequests > 0) {
+  if (served < 4 || extraRequests > 0 || (compactMode && !compactionSeen)) {
     await Bun.write(join(root, "stdout.log"), stdoutText)
     await Bun.write(join(root, "stderr.log"), stderrText)
     console.log("logs saved to:", root)
   }
 
-  assert.equal(served, 4, "goal continuation must trigger exactly the expected follow-up requests")
   assert.equal(extraRequests, 0, "completed goal must not keep injecting")
+  assert.equal(postCompleteContinuations, 0, "completed goal must not continue")
   assert.ok(continuationText.includes(CONTINUATION_MARK), "continuation text missing marker")
-  assert.equal(synthetic.length, 1, `expected one synthetic message, got ${String(synthetic.length)}`)
-  assert.equal(synthetic[0]?.description, synthetic[0]?.text, "notice description must equal model text")
-  assert.ok(String(synthetic[0]?.text).includes(CONTINUATION_MARK), "stored synthetic text missing continuation")
+  assert.ok(synthetic.length >= 1, "expected at least one synthetic message")
+  assert.ok(
+    synthetic.every((message) => message?.description === message?.text),
+    "every synthetic notice description must equal model text",
+  )
+  assert.ok(
+    synthetic.every((message) => String(message?.text).includes(CONTINUATION_MARK)),
+    "stored synthetic text missing continuation",
+  )
   assert.equal(goal?.status, "complete", "goal must be complete after update_goal")
+
+  if (compactMode) {
+    assert.ok(goalContinuations >= 2, "goal must continue after compaction")
+    const completedCompaction = compactions.find((message) => message?.status === "completed")
+    assert.ok(completedCompaction, `expected a completed compaction, got ${JSON.stringify(compactions)}`)
+    console.log("compactions:", compactions.map((message) => message?.status).join(","))
+    console.log("goal continuations:", goalContinuations)
+    console.log("case passed: goal auto prompt still triggers after native compaction")
+  } else {
+    assert.equal(served, 4, "goal continuation must trigger exactly the expected follow-up requests")
+    assert.equal(synthetic.length, 1, `expected one synthetic message, got ${String(synthetic.length)}`)
+    console.log("case passed: synthetic auto prompt triggers a real follow-up turn")
+  }
 
   console.log("continuation:", continuationText.split("\n")[0])
   console.log("synthetic description == text:", synthetic[0]?.description === synthetic[0]?.text)
   console.log("goal status:", goal?.status)
-  console.log("case passed: synthetic auto prompt triggers a real follow-up turn")
 } catch (error) {
   await Bun.write(join(root, "stdout.log"), stdoutText).catch(() => undefined)
   await Bun.write(join(root, "stderr.log"), stderrText).catch(() => undefined)
