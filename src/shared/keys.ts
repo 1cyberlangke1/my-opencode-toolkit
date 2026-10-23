@@ -15,8 +15,8 @@ export const GOAL_PREFIX = "goal:"
 /** 定时任务的 key 前缀，后面拼会话 ID。 */
 export const SCHEDULE_PREFIX = "schedule:"
 
-/** 会话累计统计的 key 前缀，后面拼会话 ID。 */
-export const STATS_PREFIX = "stats:"
+/** 会话累计统计的 key 前缀，后面拼会话 ID。旧前缀 `stats:` 的脏账（事件重放滚存）不读不迁。 */
+export const STATS_PREFIX = "status:"
 
 /**
  * 输入：会话 ID。

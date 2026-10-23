@@ -5,94 +5,26 @@ import type { Plugin } from "@opencode/plugin"
 import type { JsonStore } from "../src/shared/json.ts"
 import { statsKey } from "../src/shared/keys.ts"
 import type { SessionStats } from "../src/stats.ts"
-import { applyDelta, loadStats, removeStats, saveStats } from "../src/stats-store.ts"
-import { buildStats, buildSubagentDetail, createStatsTracker, hitRatePercent, listSubagents, trackEvent } from "../src/stats.ts"
+import { readStepTokens } from "../src/index.ts"
+import { loadStats, removeStats, saveStats } from "../src/stats-store.ts"
+import { buildStats, buildSubagentDetail, hitRatePercent, listSubagents } from "../src/stats.ts"
 
 const SESSION = "ses_test"
 
-describe("stats tracker", () => {
-  it("按 step 累加输入/输出/缓存", () => {
-    const tracker = createStatsTracker()
-    tracker.recordStep(SESSION, { input: 100, output: 20, reasoning: 5, cache: { read: 30, write: 2 } })
-
-    const stats = tracker.get(SESSION)
-    expect(stats.steps).toBe(1)
-    expect(stats.input).toBe(132)
-    expect(stats.output).toBe(25)
-    expect(stats.cached).toBe(30)
+describe("readStepTokens", () => {
+  it("提取本步 token：input 含读写，output 含 reasoning，cached 只算读", () => {
+    const step = readStepTokens({ input: 100, output: 20, reasoning: 5, cache: { read: 30, write: 2 } })
+    expect(step).toEqual({ input: 132, output: 25, cached: 30 })
   })
 
   it("忽略非法 token 值", () => {
-    const tracker = createStatsTracker()
-    tracker.recordStep(SESSION, { input: -5, output: "x", cache: { read: Number.NaN } })
-    const stats = tracker.get(SESSION)
-    expect(stats.input).toBe(0)
-    expect(stats.output).toBe(0)
-    expect(stats.cached).toBe(0)
-    expect(stats.steps).toBe(1)
+    const step = readStepTokens({ input: -5, output: "x", cache: { read: Number.NaN } })
+    expect(step).toEqual({ input: 0, output: 0, cached: 0 })
   })
 
-  it("按工具名计数", () => {
-    const tracker = createStatsTracker()
-    tracker.recordTool(SESSION, "read")
-    tracker.recordTool(SESSION, "read")
-    tracker.recordTool(SESSION, "shell")
-    expect(tracker.get(SESSION).tools).toEqual({ read: 2, shell: 1 })
-  })
-
-  it("子代理记到父会话", () => {
-    const tracker = createStatsTracker()
-    tracker.recordSubagent(SESSION)
-    expect(tracker.get(SESSION).subagents).toBe(1)
-  })
-
-  it("未知会话返回空统计", () => {
-    const tracker = createStatsTracker()
-    expect(tracker.get("ses_missing")).toEqual({
-      steps: 0,
-      input: 0,
-      output: 0,
-      cached: 0,
-      tools: {},
-      subagents: 0,
-    })
-  })
-
-  it("删除会话后清空", () => {
-    const tracker = createStatsTracker()
-    tracker.recordTool(SESSION, "read")
-    tracker.forget(SESSION)
-    expect(tracker.get(SESSION).tools).toEqual({})
-  })
-})
-
-describe("trackEvent", () => {
-  it("step.ended 记账", () => {
-    const tracker = createStatsTracker()
-    trackEvent(tracker, { type: "session.step.ended", data: { sessionID: SESSION, tokens: { input: 10 } } })
-    expect(tracker.get(SESSION).input).toBe(10)
-  })
-
-  it("session.created 带 parentID 时给父会话 +1", () => {
-    const tracker = createStatsTracker()
-    trackEvent(tracker, {
-      type: "session.created",
-      data: { sessionID: "ses_child", parentID: SESSION },
-    })
-    expect(tracker.get(SESSION).subagents).toBe(1)
-  })
-
-  it("session.deleted 清统计", () => {
-    const tracker = createStatsTracker()
-    tracker.recordTool(SESSION, "read")
-    trackEvent(tracker, { type: "session.deleted", data: { sessionID: SESSION } })
-    expect(tracker.get(SESSION).tools).toEqual({})
-  })
-
-  it("无关事件不报错", () => {
-    const tracker = createStatsTracker()
-    trackEvent(tracker, { type: "session.idle", data: { sessionID: SESSION } })
-    trackEvent(tracker, { type: "session.idle", data: null })
+  it("形状不对时全为 0", () => {
+    expect(readStepTokens(null)).toEqual({ input: 0, output: 0, cached: 0 })
+    expect(readStepTokens("x")).toEqual({ input: 0, output: 0, cached: 0 })
   })
 })
 
@@ -142,7 +74,7 @@ describe("buildStats", () => {
     } as unknown as Plugin.Context
   }
 
-  it("从消息重建 token、工具与子代理", async () => {
+  it("从消息重建 token 与工具", async () => {
     const stats = await buildStats(fakeCtx(), SESSION)
     expect(stats).toEqual({
       steps: 1,
@@ -150,29 +82,7 @@ describe("buildStats", () => {
       output: 25,
       cached: 30,
       tools: { read: 1 },
-      subagents: 1,
     })
-  })
-
-  it("子代理列表跨页累加", async () => {
-    const pages: Record<string, { data: { id: string; parentID?: string }[]; cursor: { next?: string } }> = {
-      "": { data: [{ id: "child1", parentID: SESSION }], cursor: { next: "p2" } },
-      p2: { data: [{ id: "child2", parentID: SESSION }], cursor: {} },
-    }
-    let calls = 0
-    const ctx = {
-      session: {
-        context: () => Promise.resolve([]),
-        list: (input?: { readonly cursor?: string }) => {
-          calls += 1
-          return Promise.resolve(pages[input?.cursor ?? ""] ?? { data: [], cursor: {} })
-        },
-      },
-    } as unknown as Plugin.Context
-
-    const stats = await buildStats(ctx, SESSION)
-    expect(stats.subagents).toBe(2)
-    expect(calls).toBe(2)
   })
 
   it("读取失败按空统计处理", async () => {
@@ -183,7 +93,7 @@ describe("buildStats", () => {
       },
     } as unknown as Plugin.Context
     const stats = await buildStats(ctx, SESSION)
-    expect(stats).toEqual({ steps: 0, input: 0, output: 0, cached: 0, tools: {}, subagents: 0 })
+    expect(stats).toEqual({ steps: 0, input: 0, output: 0, cached: 0, tools: {} })
   })
 })
 
@@ -246,27 +156,6 @@ describe("子代理摘要", () => {
   })
 })
 
-describe("stats seeding", () => {
-  it("seed 后标记已重建，后续事件继续累加", () => {
-    const tracker = createStatsTracker()
-    expect(tracker.isSeeded(SESSION)).toBe(false)
-
-    tracker.seed(SESSION, { steps: 2, input: 50, output: 5, cached: 10, tools: { read: 1 }, subagents: 0 })
-    expect(tracker.isSeeded(SESSION)).toBe(true)
-    expect(tracker.get(SESSION).steps).toBe(2)
-
-    tracker.recordTool(SESSION, "read")
-    expect(tracker.get(SESSION).tools).toEqual({ read: 2 })
-  })
-
-  it("forget 后回到未重建状态", () => {
-    const tracker = createStatsTracker()
-    tracker.seed(SESSION, { steps: 1, input: 1, output: 0, cached: 0, tools: {}, subagents: 0 })
-    tracker.forget(SESSION)
-    expect(tracker.isSeeded(SESSION)).toBe(false)
-  })
-})
-
 describe("stats store", () => {
   /** 输入：无；输出：内存实现的 JsonStore。 */
   function memoryStore(): JsonStore & { dump(): Map<string, unknown> } {
@@ -287,10 +176,9 @@ describe("stats store", () => {
 
   it("saveStats / loadStats 往返保留字段", async () => {
     const store = memoryStore()
-    const stats: SessionStats = { steps: 3, input: 120, output: 40, cached: 90, tools: { read: 2, shell: 1 }, subagents: 1 }
-    await saveStats(store, SESSION, stats, "msg_1")
-    const loaded = await loadStats(store, SESSION)
-    expect(loaded).toEqual({ ...stats, lastMessageID: "msg_1" })
+    const stats: SessionStats = { steps: 3, input: 120, output: 40, cached: 90, tools: { read: 2, shell: 1 } }
+    await saveStats(store, SESSION, stats)
+    expect(await loadStats(store, SESSION)).toEqual(stats)
   })
 
   it("损坏数据返回 null，回退到重建", async () => {
@@ -303,47 +191,34 @@ describe("stats store", () => {
 
   it("removeStats 幂等", async () => {
     const store = memoryStore()
-    await saveStats(store, SESSION, { steps: 1, input: 1, output: 0, cached: 0, tools: {}, subagents: 0 })
+    await saveStats(store, SESSION, { steps: 1, input: 1, output: 0, cached: 0, tools: {} })
     await removeStats(store, SESSION)
     expect(await loadStats(store, SESSION)).toBeNull()
     await expect(removeStats(store, SESSION)).resolves.toBeUndefined()
   })
 
-  it("applyDelta 数值相加、工具按键合并", () => {
-    const base: SessionStats = { steps: 2, input: 100, output: 20, cached: 60, tools: { read: 3 }, subagents: 1 }
-    const delta: SessionStats = { steps: 1, input: 10, output: 5, cached: 4, tools: { read: 1, shell: 2 }, subagents: 0 }
-    expect(applyDelta(base, delta)).toEqual({
-      steps: 3,
-      input: 110,
-      output: 25,
-      cached: 64,
-      tools: { read: 4, shell: 2 },
-      subagents: 1,
-    })
-  })
-
-  it("重复落盘同一增量不双计：落盘后增量并入存档，内存清零再落盘结果不变", async () => {
+  it("连续累加：每次覆盖写，读到最新总和", async () => {
     const store = memoryStore()
-    const tracker = createStatsTracker()
-    const base: SessionStats = { steps: 1, input: 50, output: 10, cached: 30, tools: {}, subagents: 0 }
-    await saveStats(store, SESSION, base)
-
-    tracker.recordStep(SESSION, { input: 20, output: 5, cache: { read: 8, write: 2 } })
-    const first = applyDelta(base, tracker.get(SESSION))
-    await saveStats(store, SESSION, first)
-    // 模拟落盘后清零增量
-    tracker.seed(SESSION, { steps: 0, input: 0, output: 0, cached: 0, tools: {}, subagents: 0 })
-
-    const stored = await loadStats(store, SESSION)
-    const second = applyDelta(stored ?? base, tracker.get(SESSION))
-    expect(second).toEqual(first)
-    expect(second.input).toBe(80)
+    // 第 1 步：加 10
+    await saveStats(store, SESSION, { steps: 1, input: 10, output: 2, cached: 8, tools: {} })
+    // 第 2 步：再加 10（模拟读出后 += 再写回）
+    const afterFirst = await loadStats(store, SESSION)
+    await saveStats(store, SESSION, {
+      steps: (afterFirst?.steps ?? 0) + 1,
+      input: (afterFirst?.input ?? 0) + 10,
+      output: (afterFirst?.output ?? 0) + 2,
+      cached: (afterFirst?.cached ?? 0) + 8,
+      tools: {},
+    })
+    const loaded = await loadStats(store, SESSION)
+    // 总和是 10+10=20，绝不会被平方级放大
+    expect(loaded).toEqual({ steps: 2, input: 20, output: 4, cached: 16, tools: {} })
   })
 
   it("不同会话的存档互不干扰", async () => {
     const store = memoryStore()
-    await saveStats(store, "ses_a", { steps: 1, input: 10, output: 1, cached: 5, tools: {}, subagents: 0 })
-    await saveStats(store, "ses_b", { steps: 2, input: 20, output: 2, cached: 6, tools: {}, subagents: 0 })
+    await saveStats(store, "ses_a", { steps: 1, input: 10, output: 1, cached: 5, tools: {} })
+    await saveStats(store, "ses_b", { steps: 2, input: 20, output: 2, cached: 6, tools: {} })
     expect((await loadStats(store, "ses_a"))?.input).toBe(10)
     expect((await loadStats(store, "ses_b"))?.input).toBe(20)
     await removeStats(store, "ses_a")

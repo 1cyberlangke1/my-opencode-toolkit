@@ -13,8 +13,9 @@ import { asRecord } from "./shared/json.ts"
 import { ToolkitRpc } from "./shared/rpc.ts"
 import { loadSettings, saveSettings } from "./shared/settings-store.ts"
 import { normalizeSettings } from "./shared/settings.ts"
-import { buildStats, buildSubagentDetail, createStatsTracker, hitRatePercent, listSubagents, trackEvent } from "./stats.ts"
-import { applyDelta, loadStats, removeStats, saveStats } from "./stats-store.ts"
+import { buildSubagentDetail, hitRatePercent, listSubagents } from "./stats.ts"
+import type { SessionStats } from "./stats.ts"
+import { loadStats, removeStats, saveStats } from "./stats-store.ts"
 
 /** 输入：RPC 参数；输出：配置层路径。 */
 function readLayers(input: unknown): readonly string[] | undefined {
@@ -25,34 +26,107 @@ function readLayers(input: unknown): readonly string[] | undefined {
   return layers.length === 0 ? undefined : layers
 }
 
+/** 输入：无；输出：空统计。 */
+function emptyStats(): SessionStats {
+  return { steps: 0, input: 0, output: 0, cached: 0, tools: {} }
+}
+
+/** 输入：任意值；输出：非负有限数，否则 0。 */
+function count(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0
+}
+
+/** 输入：step.ended 事件里的 tokens；输出：本步的 input/output/cached。 */
+export function readStepTokens(tokens: unknown): { input: number; output: number; cached: number } {
+  const record = asRecord(tokens)
+  if (record === undefined) return { input: 0, output: 0, cached: 0 }
+  const cache = asRecord(record["cache"]) ?? {}
+  // 分母是完整提示词；cache.write 是写入成本，不算命中。
+  return {
+    input: count(record["input"]) + count(cache["read"]) + count(cache["write"]),
+    output: count(record["output"]) + count(record["reasoning"]),
+    cached: count(cache["read"]),
+  }
+}
+
 export default Plugin.define({
   id: PLUGIN_ID,
 
   /**
    * 输入：OpenCode 注入的插件上下文。
    * 输出：设置/面板 RPC、Goal、定时任务、通知，以及卸载回调。
-   * 预期：首次启动把 options 归一化后写入存储；之后以存储里的设置为准。
+   * 预期：统计 = 纯加法一本账。内存 Map 是工作副本，每次累加完立刻整体落盘；
+   *       存档只是内存的备份，读档一次、之后永远只加不减。
    */
   async setup(ctx) {
     const roles = createSessionRoles(ctx)
     const goalController = createGoalController(ctx.storage)
-    const tracker = createStatsTracker()
-    // 事件重放去重：同一个 assistant 消息只记一次账，键挂 globalThis 跨实例共享。
-    const seenRegistry = globalThis as unknown as Record<symbol, Map<string, string> | undefined>
-    const seenKey = Symbol.for("my-opencode-toolkit.stats.seen")
-    const seenAll = seenRegistry[seenKey] ?? new Map<string, string>()
-    seenRegistry[seenKey] = seenAll
+
+    /**
+     * 每会话的统计工作副本。
+     * 预期：首次访问时从存档加载；存档没有（旧会话冷启动）就从消息历史重建一次。
+     *       之后只做 `+=` 累加，每次累加完立刻写盘。
+     */
+    const sessions = new Map<string, SessionStats>()
+    /** 同一会话的并发事件串行化，避免读-改-写交错丢账。 */
+    const chains = new Map<string, Promise<void>>()
+
+    /**
+     * 输入：会话 ID。
+     * 输出：该会话的工作副本（已从存档/消息历史初始化）。
+     */
+    const ensure = async (sessionID: string): Promise<SessionStats> => {
+      const existing = sessions.get(sessionID)
+      if (existing !== undefined) return existing
+      const stored = await loadStats(ctx.storage, sessionID).catch(() => null)
+      if (stored !== null) {
+        sessions.set(sessionID, stored)
+        return stored
+      }
+      // 旧会话冷启动：从消息历史重建一次初始值并落盘，之后纯加法。
+      const { buildStats } = await import("./stats.ts")
+      const rebuilt = await buildStats(ctx, sessionID)
+      const initial: SessionStats = {
+        steps: rebuilt.steps,
+        input: rebuilt.input,
+        output: rebuilt.output,
+        cached: rebuilt.cached,
+        tools: { ...rebuilt.tools },
+      }
+      sessions.set(sessionID, initial)
+      await saveStats(ctx.storage, sessionID, initial).catch(() => undefined)
+      return initial
+    }
+
+    /**
+     * 输入：会话 ID + 对该会话统计的修改函数。
+     * 输出：无。
+     * 预期：同一会话的操作按到达顺序串行执行；每次修改后立刻整体落盘。
+     */
+    const mutate = (sessionID: string, change: (stats: SessionStats) => void): Promise<void> => {
+      const last = chains.get(sessionID) ?? Promise.resolve()
+      const next = last
+        .then(async () => {
+          const stats = await ensure(sessionID)
+          change(stats)
+          await saveStats(ctx.storage, sessionID, stats).catch(() => undefined)
+        })
+        .catch(() => undefined)
+      chains.set(sessionID, next)
+      return next
+    }
 
     /**
      * 输入：会话 ID。
      * 输出：该会话是否属于当前插件实例的 location。
-     * 预期：插件按 location 各加载一份，step 事件会广播到所有实例；
-     *       只有会话所属实例落盘统计，其余实例跳过，避免同一 step 被重复累加。
+     * 预期：插件按 location 各加载一份，事件会广播到所有实例；
+     *       只有会话所属实例记账，其余实例跳过，避免同一事件重复累加。
      */
     const ownsSession = async (sessionID: string): Promise<boolean> => {
       const session = await ctx.session.get({ sessionID }).catch(() => undefined)
       return session === undefined || session.location.directory === ctx.location.directory
     }
+
     // RPC 在 goal 之后注册；先用可替换发射器，命令执行时已指向真实 RPC。
     let emitPanelUpdated: (sessionID: string) => void = () => undefined
     const goal = await registerGoal(ctx, roles, goalController, (sessionID) => {
@@ -87,23 +161,13 @@ export default Plugin.define({
         const requested = record?.["sessionID"]
         const sessionID = typeof requested === "string" ? requested : ""
 
-        // 统计持久化在 storage：显示值 = 存档（全量权威）+ 内存未落盘增量。
-        // 没有存档的旧会话先从 OpenCode 消息重建一次并落盘；重载/重启/压缩删消息都不丢历史。
-        let stats = tracker.get(sessionID)
-        if (sessionID.length > 0) {
-          const stored = await loadStats(ctx.storage, sessionID).catch(() => null)
-          if (stored === null) {
-            const rebuilt = await buildStats(ctx, sessionID)
-            await saveStats(ctx.storage, sessionID, rebuilt).catch(() => undefined)
-          }
-          const base = stored ?? { steps: 0, input: 0, output: 0, cached: 0, tools: {}, subagents: 0 }
-          stats = applyDelta(base, tracker.get(sessionID))
-        }
-
-        const current = await goalController.getGoal(sessionID)
+        // 直接读当前累计；没有记录的会话（从未跑过 step）显示空统计。
+        const stats = sessionID.length > 0 ? await ensure(sessionID).catch(() => emptyStats()) : emptyStats()
         const tools = Object.entries(stats.tools)
           .map(([name, count]) => ({ name, count }))
           .sort((left, right) => right.count - left.count)
+
+        const current = await goalController.getGoal(sessionID)
 
         return {
           goal:
@@ -132,7 +196,12 @@ export default Plugin.define({
             prompt: job.prompt,
             ...(job.nextRunAt === undefined ? {} : { nextRunAt: job.nextRunAt }),
           })),
-          stats: { ...stats, hitRate: hitRatePercent(stats.input, stats.cached), tools },
+          stats: {
+            ...stats,
+            hitRate: hitRatePercent(stats.input, stats.cached),
+            tools,
+            subagents: (await listSubagents(ctx, sessionID)).length,
+          },
           subagents: await listSubagents(ctx, sessionID),
         }
       },
@@ -174,67 +243,16 @@ export default Plugin.define({
     const toolBefore = await ctx.tool.hook("execute.before", async (input) => {
       await notifier.handleToolBefore({ tool: input.tool, sessionID: input.sessionID })
     })
-    const toolAfter = await ctx.tool.hook("execute.after", (input) => {
-      tracker.recordTool(input.sessionID, input.tool)
+    const toolAfter = await ctx.tool.hook("execute.after", async (input) => {
+      if (!(await ownsSession(input.sessionID))) return
+      await mutate(input.sessionID, (stats) => {
+        stats.tools[input.tool] = (stats.tools[input.tool] ?? 0) + 1
+      })
       // 工具刚执行完就通知侧栏刷新；失败不影响工具结果。
       void rpc.events.emit("panelUpdated", { sessionID: input.sessionID }).catch(() => undefined)
     })
 
-    /**
-     * 输入：事件数据（含 sessionID / tokens / assistantMessageID）。
-     * 输出：无。
-     * 预期：step 结束时把统计增量写入存储。口径：
-     *       存档（storage）= 全量权威；内存 tracker = 距上次落盘的增量（落盘后清零）。
-     *       落盘值 = 存档 + 内存增量；无存档的旧会话先从消息重建全量（含本步），
-     *       直接作为新存档。重载/重启后内存从 0 开始，存档不受影响，不会重复累加。
-     *       只有会话所属 location 的实例落盘；同一 assistant 消息只记一次（防事件重放）。
-     */
-    const persistStep = async (data: Record<string, unknown> | undefined): Promise<void> => {
-      if (data === undefined) return
-      const sessionID = data["sessionID"]
-      if (typeof sessionID !== "string" || sessionID.length === 0) return
-      // 只有会话所属实例落盘，其余实例跳过，避免同一 step 被重复累加。
-      if (!(await ownsSession(sessionID))) return
-      const messageID = data["assistantMessageID"]
-      if (typeof messageID === "string" && messageID.length > 0) {
-        if (seenAll.get(sessionID) === messageID) return
-        seenAll.set(sessionID, messageID)
-      }
-      const stored = await loadStats(ctx.storage, sessionID).catch(() => null)
-      if (stored === null) {
-        // 无存档：消息里已含本步全量，直接建档；内存增量清零，避免下次落盘重复。
-        const rebuilt = await buildStats(ctx, sessionID)
-        await saveStats(ctx.storage, sessionID, rebuilt, typeof messageID === "string" ? messageID : undefined).catch(
-          () => undefined,
-        )
-      } else {
-        const merged = applyDelta(stored, tracker.get(sessionID))
-        await saveStats(ctx.storage, sessionID, merged, typeof messageID === "string" ? messageID : undefined).catch(
-          () => undefined,
-        )
-      }
-      // 增量已并入存档：内存清零，回到"距上次落盘 = 0"的基线。
-      tracker.seed(sessionID, { steps: 0, input: 0, output: 0, cached: 0, tools: {}, subagents: 0 })
-    }
-
-    /**
-     * 输入：事件数据。
-     * 输出：无。
-     * 预期：会话删除时同步清掉内存统计、去重键与存储存档；重复删除幂等。
-     */
-    const forgetSession = async (data: Record<string, unknown> | undefined): Promise<void> => {
-      const sessionID = typeof data?.["sessionID"] === "string" ? data["sessionID"] : undefined
-      if (sessionID === undefined || sessionID.length === 0) return
-      tracker.forget(sessionID)
-      seenAll.delete(sessionID)
-      await removeStats(ctx.storage, sessionID).catch(() => undefined)
-    }
-
     const handlers: EventHandler[] = [
-      (event) => {
-        trackEvent(tracker, event)
-        return Promise.resolve()
-      },
       (event) => notifier.handle(event),
       (event) => goal.handle(event),
       (event) => {
@@ -246,11 +264,30 @@ export default Plugin.define({
         return Promise.resolve()
       },
       (event) => scheduling.handle(event),
-      // 统计持久化：内存累加交给 trackEvent，这里只负责落盘与删除清理。
+      // 统计累加：token 在 step.ended，删除清理在 session.deleted。每次累加完立刻落盘。
       (event) => {
         const data = readEventData(event)
-        if (event.type === "session.step.ended") return persistStep(data)
-        if (event.type === "session.deleted") return forgetSession(data)
+        if (event.type === "session.step.ended") {
+          const sessionID = readEventSessionID(event)
+          if (sessionID === undefined) return Promise.resolve()
+          return ownsSession(sessionID).then((owned) => {
+            if (!owned) return undefined
+            return mutate(sessionID, (stats) => {
+              const step = readStepTokens(data?.["tokens"])
+              stats.steps += 1
+              stats.input += step.input
+              stats.output += step.output
+              stats.cached += step.cached
+            })
+          })
+        }
+        if (event.type === "session.deleted") {
+          const sessionID = readEventSessionID(event)
+          if (sessionID === undefined) return Promise.resolve()
+          sessions.delete(sessionID)
+          chains.delete(sessionID)
+          return removeStats(ctx.storage, sessionID).catch(() => undefined)
+        }
         return Promise.resolve()
       },
     ]
@@ -272,7 +309,8 @@ export default Plugin.define({
     return async () => {
       events.abort()
       notifier.dispose()
-      tracker.clear()
+      sessions.clear()
+      chains.clear()
       await toolAfter.dispose()
       await toolBefore.dispose()
       await hook.dispose()
