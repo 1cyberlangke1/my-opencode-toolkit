@@ -6,7 +6,7 @@ import { createSignal } from "solid-js"
 import { resolveMessages } from "../src/i18n/index.ts"
 import { DEFAULT_SETTINGS, type Settings } from "../src/shared/settings.ts"
 import type { PanelData } from "../src/shared/rpc.ts"
-import { ContextStats } from "../src/tui/index.tsx"
+import { ContextStats } from "../src/tui/main.tsx"
 
 /** 输入：无；输出：ContextStats 需要的最小假上下文。 */
 function fakeContext(): Context {

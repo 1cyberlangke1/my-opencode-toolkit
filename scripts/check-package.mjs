@@ -14,7 +14,7 @@ const REQUIRED = [
   "index.ts",
   "tui.ts",
   "src/index.ts",
-  "src/tui/index.tsx",
+  "src/tui/main.tsx",
 ]
 
 const npmArgs = ["pack", "--dry-run", "--json"]

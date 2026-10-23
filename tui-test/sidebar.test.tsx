@@ -1,12 +1,14 @@
 import { testRender } from "@opentui/solid"
 import { describe, expect, test } from "bun:test"
 import type { Context } from "@opencode/plugin/tui/context"
-import { createSignal } from "solid-js"
+import { createSignal, For } from "solid-js"
 
 import { resolveMessages } from "../src/i18n/index.ts"
 import { DEFAULT_SETTINGS, type Settings } from "../src/shared/settings.ts"
 import type { PanelData } from "../src/shared/rpc.ts"
-import { Sidebar } from "../src/tui/index.tsx"
+import { Sidebar, type SidebarSection } from "../src/tui/main.tsx"
+
+const SECTIONS: readonly SidebarSection[] = ["goal", "scheduling", "tools", "subagents"]
 
 /** 侧栏测试用的固定面板数据。 */
 const PANEL: PanelData = {
@@ -63,12 +65,19 @@ async function mount(lang: "zh" | "en", panel: PanelData = PANEL) {
   const [settings] = createSignal<Settings>({ ...DEFAULT_SETTINGS, lang })
   return testRender(
     () => (
-      <Sidebar
-        context={fakeContext(panel)}
-        sessionID="ses_test"
-        settings={settings}
-        copy={() => resolveMessages(lang)}
-      />
+      <box gap={1}>
+        <For each={SECTIONS}>
+          {(section) => (
+            <Sidebar
+              context={fakeContext(panel)}
+              sessionID="ses_test"
+              settings={settings}
+              copy={() => resolveMessages(lang)}
+              section={section}
+            />
+          )}
+        </For>
+      </box>
     ),
     { width: 80, height: 20 },
   )
@@ -91,6 +100,10 @@ describe("sidebar panel", () => {
     expect(frame).toContain("Subagents")
     expect(frame).toContain("review")
     expect(frame).toContain("Tools (2)")
+    expect(frame).toContain("[read](2)")
+    expect(frame).toContain("[very_long_tool_name](1)")
+    expect(frame).toMatch(/\n\s*\n[^\n]*Scheduled/)
+    expect(frame).toMatch(/\n\s*\n[^\n]*Tools \(2\)/)
     expect(frame).not.toContain("41.67%")
 
     await app.dispose()

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { Context } from "@opencode/plugin/tui/context"
 
 import { DEFAULT_SETTINGS, type Settings } from "../src/shared/settings.ts"
-import plugin from "../src/tui/index.tsx"
+import plugin from "../src/tui/main.tsx"
 
 /** 已注册的 keymap 层。 */
 type RegisteredLayer = {
@@ -111,7 +111,13 @@ describe("tui plugin setup", () => {
     const { context, slots, layers } = fakeContext({})
     const cleanup = await plugin.setup(context)
 
-    expect(slots).toEqual(["sidebar.content", "prompt.footer"])
+    expect(slots).toEqual([
+      "sidebar.content",
+      "sidebar.content",
+      "sidebar.content",
+      "sidebar.content",
+      "prompt.footer",
+    ])
     expect(layers).toHaveLength(1)
     expect(layers[0]?.commands?.[0]?.slash?.name).toBe("my-opencode-toolkit")
 

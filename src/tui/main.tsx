@@ -33,8 +33,11 @@ function localeOf(lang: Lang): string | undefined {
   return lang === "auto" ? undefined : lang
 }
 
-/** 输入：TUI 上下文、会话 ID、设置访问器、文案访问器。
- * 输出：侧栏面板。
+/** 侧栏分区；每个分区注册成独立 slot，由宿主 gap 产生空行。 */
+export type SidebarSection = "goal" | "scheduling" | "tools" | "subagents"
+
+/** 输入：TUI 上下文、会话 ID、设置访问器、文案访问器、要渲染的分区。
+ * 输出：侧栏分区。
  * 预期：挂载时拉一次数据，之后按会话事件节流刷新；子代理详情只在展开时请求。
  */
 export function Sidebar(props: {
@@ -42,6 +45,7 @@ export function Sidebar(props: {
   readonly sessionID: string
   readonly settings: () => Settings
   readonly copy: () => Messages
+  readonly section: SidebarSection
 }) {
   const rpc = toolkitRpc(props.context.client)
   const [panel, setPanel] = createSignal<PanelData | null>(null)
@@ -125,14 +129,19 @@ export function Sidebar(props: {
     </text>
   )
 
-  /** 输入：标题 + 展开状态 + 切换函数；输出：可点击的分区标题。 */
-  const sectionHeader = (label: string, open: boolean, toggle: () => void) => (
-    <text onMouseUp={toggle}>
-      <span style={{ fg: base() }}>{open ? "▼ " : "▶ "}</span>
-      <b>
-        <span style={{ fg: base() }}>{label}</span>
-      </b>
-    </text>
+  /** 输入：标题 + 展开状态 + 切换函数 + 可选计数；输出：可点击的分区标题。 */
+  const sectionHeader = (label: string, open: boolean, toggle: () => void, count?: number) => (
+    <box flexDirection="row" height={1} onMouseDown={toggle}>
+      <box flexDirection="row" gap={1}>
+        <text fg={base()}>{open ? "▼" : "▶"}</text>
+        <text fg={base()}>
+          <b>{label}</b>
+        </text>
+        <Show when={count !== undefined}>
+          <text fg={muted()}>{`(${String(count)})`}</text>
+        </Show>
+      </box>
+    </box>
   )
 
   /** 输入：子代理；输出：无；预期：切换折叠，首次展开时拉详情。 */
@@ -163,9 +172,10 @@ export function Sidebar(props: {
 
   return (
     <Show when={props.settings().sidebar.enabled}>
-      <box flexDirection="column" gap={1}>
+      <>
         <Show
           when={
+            props.section === "goal" &&
             props.settings().goal.enabled &&
             props.settings().goal.showInSidebar &&
             goal() !== null
@@ -197,6 +207,7 @@ export function Sidebar(props: {
 
         <Show
           when={
+            props.section === "scheduling" &&
             props.settings().scheduling.enabled &&
             props.settings().scheduling.showInSidebar &&
             ((panel()?.jobs.length ?? 0) > 0 || (panel()?.loops.length ?? 0) > 0)
@@ -237,26 +248,44 @@ export function Sidebar(props: {
           </box>
         </Show>
 
-        <Show when={props.settings().sidebar.showTools && visibleTools().length > 0}>
+        <Show
+          when={
+            props.section === "tools" &&
+            props.settings().sidebar.showTools &&
+            visibleTools().length > 0
+          }
+        >
           <box flexDirection="column" gap={0}>
             {sectionHeader(
-              `${props.copy().panel.tools} (${visibleTools().length.toString()})`,
+              props.copy().panel.tools,
               toolsOpen(),
               () => {
                 setToolsOpen(!toolsOpen())
               },
+              visibleTools().length,
             )}
             <Show when={toolsOpen()}>
-              <box paddingLeft={2} flexDirection="column" gap={0}>
+              <box paddingLeft={2} flexDirection="row" flexWrap="wrap" columnGap={1} rowGap={0}>
                 <For each={visibleTools()}>
-                  {(tool) => labelRow(tool.name, String(tool.count))}
+                  {(tool) => (
+                    <text flexShrink={0}>
+                      <span style={{ fg: base() }}>[{tool.name}]</span>
+                      <span style={{ fg: muted() }}>({String(tool.count)})</span>
+                    </text>
+                  )}
                 </For>
               </box>
             </Show>
           </box>
         </Show>
 
-        <Show when={props.settings().sidebar.showSubagents && subagents().length > 0}>
+        <Show
+          when={
+            props.section === "subagents" &&
+            props.settings().sidebar.showSubagents &&
+            subagents().length > 0
+          }
+        >
           <box flexDirection="column" gap={0}>
             {sectionHeader(props.copy().panel.subagents, subagentsOpen(), () => {
               setSubagentsOpen(!subagentsOpen())
@@ -318,7 +347,7 @@ export function Sidebar(props: {
             </Show>
           </box>
         </Show>
-      </box>
+      </>
     </Show>
   )
 }
@@ -609,12 +638,21 @@ export default Plugin.define({
       ],
     }))
 
-    const disposePanel = context.ui.slot({
-      append: "sidebar.content",
-      render: (input) => (
-        <Sidebar context={context} sessionID={input.sessionID} settings={settings} copy={copy} />
-      ),
-    })
+    const sections: readonly SidebarSection[] = ["goal", "scheduling", "tools", "subagents"]
+    const disposeSections = sections.map((section) =>
+      context.ui.slot({
+        append: "sidebar.content",
+        render: (input) => (
+          <Sidebar
+            context={context}
+            sessionID={input.sessionID}
+            settings={settings}
+            copy={copy}
+            section={section}
+          />
+        ),
+      }),
+    )
 
     const disposeStats = context.ui.slot({
       append: "prompt.footer",
@@ -626,7 +664,7 @@ export default Plugin.define({
 
     return () => {
       offToast()
-      disposePanel()
+      for (const dispose of disposeSections) dispose()
       disposeStats()
     }
   },
