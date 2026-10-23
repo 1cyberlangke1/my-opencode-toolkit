@@ -18,6 +18,7 @@ async function applyGoalCommand(
   continuation: GoalContinuation,
   sessionID: string,
   rawArgs: string,
+  notify: (sessionID: string) => void,
 ): Promise<string> {
   const parsed = parseGoalCommand(rawArgs)
   switch (parsed.kind) {
@@ -25,19 +26,23 @@ async function applyGoalCommand(
       await controller.setGoal(sessionID, parsed.objective)
       // 新目标 = 全新开始：清掉旧会话残留的打断/超长/余额锁死标志。
       continuation.resetRunState(sessionID)
+      notify(sessionID)
       return `Goal set: ${parsed.objective}`
     }
     case "pause": {
       const goal = await controller.pauseGoal(sessionID)
+      notify(sessionID)
       return goal !== null ? `Goal paused. Current goal: ${goal.objective}` : "No active goal"
     }
     case "resume": {
       const goal = await controller.resumeGoal(sessionID)
       continuation.resetRunState(sessionID)
+      notify(sessionID)
       return goal !== null ? `Goal resumed. Current goal: ${goal.objective}` : "No active goal"
     }
     case "clear": {
       const existed = await controller.clearGoal(sessionID)
+      notify(sessionID)
       return existed ? "Goal cleared" : "No active goal"
     }
     case "edit": {
@@ -62,6 +67,7 @@ export async function registerGoalCommand(
   ctx: Plugin.Context,
   controller: GoalController,
   continuation: GoalContinuation,
+  notify: (sessionID: string) => void,
 ): Promise<{ dispose(): Promise<void> }> {
   const settings = await loadSettings(ctx)
   const messages = resolveMessages(settings.lang === "auto" ? undefined : settings.lang)
@@ -77,7 +83,7 @@ export async function registerGoalCommand(
         const readOnly = parsed.kind === "clear" || parsed.kind === "show"
         const text =
           (settings.enabled && settings.goal.enabled) || readOnly
-            ? await applyGoalCommand(controller, continuation, input.sessionID, input.prompt.text)
+            ? await applyGoalCommand(controller, continuation, input.sessionID, input.prompt.text, notify)
             : "Error: the goal feature is disabled in settings."
         // /goal 只关心文本参数；附件不回传，避免把命令附件重复塞进会话。
         await ctx.session.prompt({ sessionID: input.sessionID, text, delivery: input.delivery })

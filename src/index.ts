@@ -37,7 +37,11 @@ export default Plugin.define({
     const goalController = createGoalController(ctx.storage)
     const tracker = createStatsTracker()
 
-    const goal = await registerGoal(ctx, roles, goalController)
+    // RPC 在 goal 之后注册；先用可替换发射器，命令执行时已指向真实 RPC。
+    let emitPanelUpdated: (sessionID: string) => void = () => undefined
+    const goal = await registerGoal(ctx, roles, goalController, (sessionID) => {
+      emitPanelUpdated(sessionID)
+    })
     // RPC 注册在后面；先用一个可替换的发射器，避免定时器回调早于 rpc 就绪。
     let emitToast: (kind: "cron" | "loop") => void = () => undefined
     const scheduling = await registerScheduling(
@@ -115,6 +119,10 @@ export default Plugin.define({
         return buildSubagentDetail(ctx, sessionID)
       },
     })
+
+    emitPanelUpdated = (sessionID) => {
+      void rpc.events.emit("panelUpdated", { sessionID }).catch(() => undefined)
+    }
 
     // Plan 模式跳过 cron/loop 时通知 TUI 弹 toast；只提示，不改变调度结果。
     emitToast = (kind) => {

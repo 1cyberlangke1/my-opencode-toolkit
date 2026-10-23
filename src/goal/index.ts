@@ -23,11 +23,12 @@ export async function registerGoal(
   ctx: Plugin.Context,
   roles: SessionRoles,
   controller: GoalController,
+  notify: (sessionID: string) => void,
 ): Promise<GoalHandle> {
   const continuation = createGoalContinuation({ ctx, controller, roles })
 
   const tools = await registerGoalTools(ctx, controller, roles)
-  const command = await registerGoalCommand(ctx, controller, continuation)
+  const command = await registerGoalCommand(ctx, controller, continuation, notify)
 
   return {
     handle(event) {
