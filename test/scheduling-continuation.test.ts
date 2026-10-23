@@ -14,8 +14,16 @@ const roles = {
   forget: () => undefined,
 }
 
-/** 输入：日志数组 + 是否让 prompt 失败 + 当前 agent；输出：只实现 setup 依赖的假上下文。 */
-function fakeCtx(log: string[], rejectPrompt = false, agent = "build"): Plugin.Context {
+/**
+ * 输入：日志数组 + 是否让 prompt 失败 + 当前 agent + 可选 synthetic ID 日志。
+ * 输出：只实现 setup 依赖的假上下文。
+ */
+function fakeCtx(
+  log: string[],
+  rejectPrompt = false,
+  agent = "build",
+  ids?: string[],
+): Plugin.Context {
   return {
     session: {
       get: () => Promise.resolve({ agent }),
@@ -24,8 +32,9 @@ function fakeCtx(log: string[], rejectPrompt = false, agent = "build"): Plugin.C
         log.push(input.text)
         return Promise.resolve()
       },
-      synthetic: (input: { text: string }) => {
+      synthetic: (input: { text: string; id?: string }) => {
         if (rejectPrompt) return Promise.reject(new Error("session busy"))
+        if (ids !== undefined) ids.push(input.id ?? "")
         log.push(input.text)
         return Promise.resolve()
       },
@@ -114,6 +123,55 @@ describe("scheduling continuation", () => {
     expect(store.getJob(added.job.id)).toBeUndefined()
     expect(log).toHaveLength(1)
     continuation.dispose()
+  })
+
+  it("多个实例触发同一次 one-shot 时使用相同 synthetic id", async () => {
+    const shared = new MemoryStore()
+    const storeA = createSchedulingStore(shared)
+    const added = await storeA.addJob({
+      sessionID: SESSION,
+      cron: "* * * * *",
+      prompt: "once",
+      recurring: false,
+      durable: true,
+    })
+    expect(added.ok).toBe(true)
+    if (!added.ok) return
+
+    // 模拟热重载后两个插件实例各自持有一份 durable 任务快照。
+    const storeB = createSchedulingStore(shared)
+    await storeB.load()
+    makeDue(storeA, added.job.id)
+    makeDue(storeB, added.job.id)
+
+    const idsA: string[] = []
+    const idsB: string[] = []
+    const a = createSchedulingContinuation({
+      ctx: fakeCtx([], false, "build", idsA),
+      store: storeA,
+      roles,
+      shouldDefer: () => Promise.resolve(false),
+      enabled: () => Promise.resolve(true),
+      now: () => NOW,
+    })
+    const b = createSchedulingContinuation({
+      ctx: fakeCtx([], false, "build", idsB),
+      store: storeB,
+      roles,
+      shouldDefer: () => Promise.resolve(false),
+      enabled: () => Promise.resolve(true),
+      now: () => NOW,
+    })
+
+    await a.handle({ type: "session.idle", data: { sessionID: SESSION } })
+    await b.handle({ type: "session.idle", data: { sessionID: SESSION } })
+
+    expect(idsA).toHaveLength(1)
+    expect(idsB).toHaveLength(1)
+    expect(idsA[0]).toMatch(/^msg_cron_/)
+    expect(idsA[0]).toBe(idsB[0])
+    a.dispose()
+    b.dispose()
   })
 
   it("recurring 触发后重排，不会重复 fire", async () => {

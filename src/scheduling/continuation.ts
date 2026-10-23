@@ -74,12 +74,21 @@ export function createSchedulingContinuation(args: {
   const isDisposed = (): boolean => lifecycle.disposed
 
   /**
-   * 输入：会话 + 文本。
+   * 输入：任务 + 触发时刻。
+   * 输出：该次触发对应的 synthetic 消息 ID。
+   * 预期：同一任务同一次计划触发在多个插件实例里得到相同 ID；OpenCode 按 ID 幂等入队，
+   *       避免热重载/多实例重复注入。
+   */
+  const messageIDFor = (job: ScheduledJob, at: number): string =>
+    `msg_cron_${job.id}_${String(job.nextRunAt ?? at)}`
+
+  /**
+   * 输入：会话 + 文本 + 消息 ID。
    * 输出：是否注入成功。
    * 预期：以 synthetic 消息注入并唤醒会话；`description` 与正文一致，TUI 灰字 notice
    *       显示的就是模型收到的内容。并发、上一条未完成或末条是用户输入时跳过。
    */
-  const inject = async (sessionID: string, text: string): Promise<boolean> => {
+  const inject = async (sessionID: string, text: string, id: string): Promise<boolean> => {
     if (inFlight.has(sessionID) || pending.has(sessionID)) return false
     if (await roles.isSubagent(sessionID)) return false
     if (await lastMessageIsUserInput(ctx, sessionID, CRON_MARKER)) return false
@@ -87,6 +96,7 @@ export function createSchedulingContinuation(args: {
     try {
       await ctx.session.synthetic({
         sessionID,
+        id,
         text,
         description: text,
         delivery: "steer",
@@ -164,7 +174,7 @@ export function createSchedulingContinuation(args: {
       return
     }
 
-    const delivered = await inject(job.sessionID, buildFirePrompt(job, new Date(at)))
+    const delivered = await inject(job.sessionID, buildFirePrompt(job, new Date(at)), messageIDFor(job, at))
     if (isDisposed()) return
     if (!delivered) {
       // 会话忙或末条是用户输入：保留任务稍后重试，one-shot 不会因此丢失。
