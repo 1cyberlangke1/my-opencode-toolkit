@@ -73,9 +73,9 @@ describe("ContextStats", () => {
     const app = await mount()
     const frame = await app.waitForFrame((text) => text.includes("98.91%"))
 
-    expect(frame).toContain("↑ 63.1m")
-    expect(frame).toContain("↓ 64.1k")
-    expect(frame).toContain("♻  62.4m")
+    expect(frame).toContain("↑ 63.1M")
+    expect(frame).toContain("↓ 64.1K")
+    expect(frame).toContain("♻  62.4M")
     expect(frame).toContain("🎯 98.91%")
     expect(frame).not.toContain("Context")
 
@@ -87,8 +87,40 @@ describe("ContextStats", () => {
     const frame = await app.waitForFrame((text) => text.includes("♻"))
 
     expect(frame).not.toContain("↑")
-    expect(frame).toContain("↓ 64.1k")
+    expect(frame).toContain("↓ 64.1K")
     expect(frame).toContain("🎯 98.91%")
+
+    await app.dispose()
+  })
+
+  test("关闭输出和缓存后只保留输入与命中", async () => {
+    const app = await mount({ showOutput: false, showCache: false })
+    const frame = await app.waitForFrame((text) => text.includes("🎯"))
+
+    expect(frame).toContain("↑ 63.1M")
+    expect(frame).not.toContain("↓")
+    expect(frame).not.toContain("♻")
+    expect(frame).not.toContain("·")
+    expect(frame).toContain("🎯 98.91%")
+
+    await app.dispose()
+  })
+
+  test("所有字段关闭后不渲染", async () => {
+    const app = await mount({
+      showInput: false,
+      showOutput: false,
+      showCache: false,
+      showHitRate: false,
+    })
+    const frame = await app.waitForFrame(
+      (text) => !text.includes("↑") && !text.includes("↓") && !text.includes("♻") && !text.includes("🎯"),
+    )
+
+    expect(frame).not.toContain("↑")
+    expect(frame).not.toContain("↓")
+    expect(frame).not.toContain("♻")
+    expect(frame).not.toContain("🎯")
 
     await app.dispose()
   })

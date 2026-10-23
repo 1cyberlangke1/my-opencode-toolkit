@@ -118,6 +118,22 @@ describe("tui plugin setup", () => {
     await cleanup?.()
   })
 
+  test("主菜单没有通用总开关，语言直接在第一项", async () => {
+    const { context, layers, selects } = fakeContext({ picks: [undefined] })
+    const cleanup = await plugin.setup(context)
+
+    layers[0]?.commands?.[0]?.run()
+    await Bun.sleep(20)
+
+    const titles = selects[0]?.options.map((option) => option.title) ?? []
+    expect(titles[0]).toMatch(/Language|语言/)
+    expect(titles).not.toContain("General")
+    expect(titles).not.toContain("通用")
+    expect(titles).not.toContain("Enabled")
+
+    await cleanup?.()
+  })
+
   test("设置菜单切换 goal 并通过 RPC 写回", async () => {
     const saved: Settings[] = []
     const { context, layers } = fakeContext({

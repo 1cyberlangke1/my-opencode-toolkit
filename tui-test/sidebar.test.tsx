@@ -31,12 +31,12 @@ const PANEL: PanelData = {
   ],
 }
 
-/** 输入：无；输出：只实现侧栏依赖的假上下文。 */
-function fakeContext(): Context {
+/** 输入：面板数据；输出：只实现侧栏依赖的假上下文。 */
+function fakeContext(panel: PanelData = PANEL): Context {
   return {
     client: {
       rpc: () => ({
-        panelGet: () => Promise.resolve(PANEL),
+        panelGet: () => Promise.resolve(panel),
         subagentGet: () =>
           Promise.resolve({ steps: 1, input: 1200, output: 20, cached: 500, hitRate: 41.67, tools: [{ name: "read", count: 2 }] }),
       }),
@@ -58,13 +58,13 @@ function fakeContext(): Context {
   } as unknown as Context
 }
 
-/** 输入：语言；输出：挂载好的侧栏。 */
-async function mount(lang: "zh" | "en") {
+/** 输入：语言 + 面板；输出：挂载好的侧栏。 */
+async function mount(lang: "zh" | "en", panel: PanelData = PANEL) {
   const [settings] = createSignal<Settings>({ ...DEFAULT_SETTINGS, lang })
   return testRender(
     () => (
       <Sidebar
-        context={fakeContext()}
+        context={fakeContext(panel)}
         sessionID="ses_test"
         settings={settings}
         copy={() => resolveMessages(lang)}
@@ -90,6 +90,19 @@ describe("sidebar panel", () => {
     expect(frame).toContain("loop prompt")
     expect(frame).toContain("Subagents")
     expect(frame).toContain("review")
+    expect(frame).toContain("Tools (2)")
+    expect(frame).not.toContain("41.67%")
+
+    await app.dispose()
+  })
+
+  test("目标为空时整个目标分区不渲染", async () => {
+    const app = await mount("en", { ...PANEL, goal: null })
+    const frame = await app.waitForFrame((text) => text.includes("Tools (2)"))
+
+    expect(frame).not.toContain("Goal")
+    expect(frame).not.toContain("No goal")
+    expect(frame).not.toContain("none")
 
     await app.dispose()
   })

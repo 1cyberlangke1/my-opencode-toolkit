@@ -49,5 +49,16 @@ describe("normalizeSettings", () => {
     expect(normalizeSettings({ lang: "en" }).lang).toBe("en")
     expect(normalizeSettings({ lang: "auto" }).lang).toBe("auto")
   })
+
+  it("goal/scheduling 的侧栏显示独立于功能开关", () => {
+    const got = normalizeSettings({
+      goal: { enabled: true, showInSidebar: false },
+      scheduling: { enabled: false, showInSidebar: true },
+    })
+    expect(got.goal).toEqual({ enabled: true, showInSidebar: false })
+    expect(got.scheduling).toEqual({ enabled: false, showInSidebar: true })
+    expect(normalizeSettings({}).goal.showInSidebar).toBe(true)
+    expect(normalizeSettings({}).scheduling.showInSidebar).toBe(true)
+  })
 })
 
