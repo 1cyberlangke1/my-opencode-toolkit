@@ -4,6 +4,7 @@ import { isIdleEvent, readEventData } from "../shared/events.ts"
 import { lastMessageIsUserInput } from "../shared/messages.ts"
 import { capTimerDelay } from "../shared/timer.ts"
 import type { SessionRoles } from "../goal/session-role.ts"
+import { claimCronMessage, releaseCronMessage, releaseSessionClaims } from "./fire-lock.ts"
 import { isPlanSession } from "./plan.ts"
 import type { SchedulingStore } from "./store.ts"
 import { isRecurringTaskAged } from "./store.ts"
@@ -92,6 +93,8 @@ export function createSchedulingContinuation(args: {
     if (inFlight.has(sessionID) || pending.has(sessionID)) return false
     if (await roles.isSubagent(sessionID)) return false
     if (await lastMessageIsUserInput(ctx, sessionID, CRON_MARKER)) return false
+    // 同一 job 的同一次触发只让一个实例真正调用 synthetic；失败时释放给其他实例重试。
+    if (!claimCronMessage(id, sessionID)) return false
     inFlight.add(sessionID)
     try {
       await ctx.session.synthetic({
@@ -106,6 +109,7 @@ export function createSchedulingContinuation(args: {
       pending.add(sessionID)
       return true
     } catch {
+      releaseCronMessage(id)
       return false
     } finally {
       inFlight.delete(sessionID)
@@ -233,9 +237,10 @@ export function createSchedulingContinuation(args: {
       if (event.type === "session.step.ended" || event.type === "session.usage.updated") {
         pending.delete(sessionID)
       }
-      // 注入后模型失败/被打断时清掉 pending，避免后续任务永远被挡住。
+      // 注入后模型失败/被打断时清掉 pending，并释放本次触发声明，允许同一次任务重试。
       if (event.type === "session.execution.failed" || event.type === "session.execution.interrupted") {
         pending.delete(sessionID)
+        releaseSessionClaims(sessionID)
       }
     },
 

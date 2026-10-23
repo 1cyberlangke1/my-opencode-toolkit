@@ -159,7 +159,7 @@ describe("scheduling continuation", () => {
     continuation.dispose()
   })
 
-  it("多个实例触发同一次 one-shot 时使用相同 synthetic id", async () => {
+  it("多个实例触发同一次 one-shot 时只注入一次", async () => {
     const shared = new MemoryStore()
     const storeA = createSchedulingStore(shared)
     const added = await storeA.addJob({
@@ -200,10 +200,9 @@ describe("scheduling continuation", () => {
     await a.handle({ type: "session.idle", data: { sessionID: SESSION } })
     await b.handle({ type: "session.idle", data: { sessionID: SESSION } })
 
-    expect(idsA).toHaveLength(1)
-    expect(idsB).toHaveLength(1)
-    expect(idsA[0]).toMatch(/^msg_cron_/)
-    expect(idsA[0]).toBe(idsB[0])
+    expect(idsA.length + idsB.length).toBe(1)
+    const injected = idsA[0] ?? idsB[0]
+    expect(injected).toMatch(/^msg_cron_/)
     a.dispose()
     b.dispose()
   })
