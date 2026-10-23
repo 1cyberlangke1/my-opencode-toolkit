@@ -7,9 +7,9 @@ export const en: Messages = {
     title: "Toolkit settings",
     description: `Open ${PLUGIN_ID} settings`,
     group: "Plugins",
-    goal: "Set, inspect, pause, resume or clear the persistent goal for this session",
-    loop: "Start or stop a recurring prompt loop in this session",
-    cron: "Create, list or delete scheduled prompts for this session",
+    goal: "Set or inspect the goal: /goal [<objective>|pause|resume|clear|edit]",
+    loop: "Start or stop a loop: /loop [interval] [prompt] | /loop stop",
+    cron: "Manage scheduled prompts: /cron <expr> <prompt> | /cron once <expr> <prompt> | /cron list | /cron delete <id>",
   },
   menu: {
     title: PLUGIN_ID,

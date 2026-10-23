@@ -31,6 +31,17 @@ describe("detectLocale", () => {
 })
 
 describe("文案完整性", () => {
+  it("命令描述包含可用语法", () => {
+    for (const messages of [zh, en]) {
+      expect(messages.command.goal).toContain("/goal")
+      expect(messages.command.goal).toContain("resume")
+      expect(messages.command.goal).toContain("clear")
+      expect(messages.command.loop).toContain("/loop")
+      expect(messages.command.cron).toContain("/cron")
+      expect(messages.command.cron).toContain("delete")
+    }
+  })
+
   it("中英文案键一致", () => {
     expect(Object.keys(zh).sort()).toEqual(Object.keys(en).sort())
     expect(Object.keys(zh.command).sort()).toEqual(Object.keys(en.command).sort())

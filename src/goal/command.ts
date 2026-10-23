@@ -6,7 +6,7 @@ import type { GoalContinuation } from "./continuation.ts"
 import type { GoalController } from "./controller.ts"
 import { parseGoalCommand } from "./parse-command.ts"
 
-const USAGE = "Usage: /goal [<objective>|clear|edit|pause|resume]"
+const USAGE = "Usage: /goal [<objective>|pause|resume|clear|edit]"
 
 /**
  * 输入：控制器 + 续作控制器 + 会话 ID + 原始参数。
