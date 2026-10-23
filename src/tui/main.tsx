@@ -20,8 +20,8 @@ type GoalChoice = "enabled" | "showInSidebar"
 /** 定时任务子菜单条目。 */
 type SchedulingChoice = "enabled" | "showInSidebar"
 
-/** 侧栏子菜单条目。 */
-type SidebarChoice = "showTools" | "showSubagents"
+/** 侧栏子菜单条目：目标/定时任务的侧栏开关也归到这里。 */
+type SidebarChoice = "goal" | "scheduling" | "showTools" | "showSubagents"
 
 /** 上下文统计子菜单条目。 */
 type ContextStatsChoice = "enabled" | "showInput" | "showOutput" | "showCache" | "showHitRate"
@@ -499,7 +499,6 @@ export default Plugin.define({
           title: text.menu.goal,
           options: [
             { title: text.menu.function, value: "enabled", footer: onOff(current.goal.enabled) },
-            { title: text.menu.showInSidebar, value: "showInSidebar", footer: onOff(current.goal.showInSidebar) },
           ],
         })
         if (choice === undefined) return
@@ -519,11 +518,6 @@ export default Plugin.define({
           title: text.menu.scheduling,
           options: [
             { title: text.menu.function, value: "enabled", footer: onOff(current.scheduling.enabled) },
-            {
-              title: text.menu.showInSidebar,
-              value: "showInSidebar",
-              footer: onOff(current.scheduling.showInSidebar),
-            },
           ],
         })
         if (choice === undefined) return
@@ -542,11 +536,24 @@ export default Plugin.define({
         const choice = await context.ui.dialog.select<SidebarChoice>({
           title: text.menu.sidebar,
           options: [
+            { title: text.menu.goal, value: "goal", footer: onOff(current.goal.showInSidebar) },
+            { title: text.menu.scheduling, value: "scheduling", footer: onOff(current.scheduling.showInSidebar) },
             { title: text.menu.showTools, value: "showTools", footer: onOff(current.sidebar.showTools) },
             { title: text.menu.showSubagents, value: "showSubagents", footer: onOff(current.sidebar.showSubagents) },
           ],
         })
         if (choice === undefined) return
+        if (choice === "goal") {
+          await update({ ...current, goal: { ...current.goal, showInSidebar: !current.goal.showInSidebar } })
+          continue
+        }
+        if (choice === "scheduling") {
+          await update({
+            ...current,
+            scheduling: { ...current.scheduling, showInSidebar: !current.scheduling.showInSidebar },
+          })
+          continue
+        }
         await update({ ...current, sidebar: { ...current.sidebar, [choice]: !current.sidebar[choice] } })
       }
     }

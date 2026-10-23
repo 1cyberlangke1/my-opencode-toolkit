@@ -149,7 +149,12 @@ describe("tui plugin setup", () => {
 
     expect(footerOf(selects[0], "sidebar")).toBeUndefined()
     expect(selects[1]?.title).toMatch(/Sidebar|侧栏/)
-    expect(selects[1]?.options.map((option) => option.value)).toEqual(["showTools", "showSubagents"])
+    expect(selects[1]?.options.map((option) => option.value)).toEqual([
+      "goal",
+      "scheduling",
+      "showTools",
+      "showSubagents",
+    ])
 
     await cleanup?.()
   })
