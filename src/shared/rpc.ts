@@ -371,12 +371,17 @@ export type PanelUpdatedEvent = {
   readonly sessionID: string
 }
 
+/** RPC 调用选项：`location` 决定请求路由到哪个 location 实例。 */
+export type RpcCallOptions = {
+  readonly location?: { readonly directory: string }
+}
+
 /** TUI 侧对 ToolkitRpc 的类型化视图。 */
 export type ToolkitRpcClient = {
-  settingsGet(input: { readonly layers?: readonly string[] }): Promise<Settings>
-  settingsSet(input: Settings & { readonly layers?: readonly string[] }): Promise<Settings>
-  panelGet(input: { readonly sessionID: string }): Promise<PanelData>
-  subagentGet(input: { readonly sessionID: string }): Promise<PanelSubagentDetail>
+  settingsGet(input: { readonly layers?: readonly string[] }, options?: RpcCallOptions): Promise<Settings>
+  settingsSet(input: Settings & { readonly layers?: readonly string[] }, options?: RpcCallOptions): Promise<Settings>
+  panelGet(input: { readonly sessionID: string }, options?: RpcCallOptions): Promise<PanelData>
+  subagentGet(input: { readonly sessionID: string }, options?: RpcCallOptions): Promise<PanelSubagentDetail>
   events: {
     on(
       name: "toast",
@@ -392,7 +397,9 @@ export type ToolkitRpcClient = {
 /**
  * 输入：带 `rpc` 方法的 TUI client。
  * 输出：类型化 RPC 客户端。
- * 预期：只做类型断言，不改变运行时行为。
+ * 预期：只做类型断言，不改变运行时行为；
+ *       调用方必须通过 options.location 指定会话所在 location，
+ *       否则请求会路由到 home 实例，读不到本会话的 goal/jobs/统计。
  */
 export function toolkitRpc(client: {
   rpc(definition: Rpc.PortableDefinition): unknown

@@ -14,6 +14,10 @@ import { formatAgo, formatCountdown, padRight, truncate } from "./format.ts"
 /** 主菜单条目。 */
 type MenuChoice = "language" | "goal" | "scheduling" | "sidebar" | "contextStats" | "notifications"
 
+/** RPC 路由选项：必须带上本插件 location，请求才会打到正确实例。 */
+const rpcOptions = (context: Context): { readonly location?: { readonly directory: string } } =>
+  context.location?.directory === undefined ? {} : { location: { directory: context.location.directory } }
+
 /** 目标子菜单条目。 */
 type GoalChoice = "enabled" | "showInSidebar"
 
@@ -64,7 +68,7 @@ export function Sidebar(props: {
   /** 拉取面板数据；失败保留上一次结果。 */
   const refresh = (): void => {
     void rpc
-      .panelGet({ sessionID: props.sessionID })
+      .panelGet({ sessionID: props.sessionID }, rpcOptions(props.context))
       .then((data) => {
         setPanel(data)
         setNow(Date.now())
@@ -163,7 +167,7 @@ export function Sidebar(props: {
     if (!wasOpen && details()[subagent.id] === undefined) {
       setDetails((current) => ({ ...current, [subagent.id]: "loading" }))
       void rpc
-        .subagentGet({ sessionID: subagent.id })
+        .subagentGet({ sessionID: subagent.id }, rpcOptions(props.context))
         .then((detail) => {
           setDetails((current) => ({ ...current, [subagent.id]: detail }))
         })
@@ -391,7 +395,7 @@ export function ContextStats(props: {
   let timer: ReturnType<typeof setTimeout> | undefined
 
   const refresh = (): void => {
-    void rpc.panelGet({ sessionID: props.sessionID }).then(setPanel).catch(() => undefined)
+    void rpc.panelGet({ sessionID: props.sessionID }, rpcOptions(props.context)).then(setPanel).catch(() => undefined)
   }
 
   onMount(() => {
@@ -467,8 +471,9 @@ export default Plugin.define({
 
   async setup(context) {
     const rpc = toolkitRpc(context.client)
+    const callOptions = rpcOptions(context)
     const layers = await configFileLayers(context)
-    const initial = await rpc.settingsGet({ layers }).catch((): Settings => DEFAULT_SETTINGS)
+    const initial = await rpc.settingsGet({ layers }, callOptions).catch((): Settings => DEFAULT_SETTINGS)
     const [settings, setSettings] = createSignal<Settings>(initial)
 
     /** 输入：新设置；输出：无；预期：先乐观更新，失败回滚。 */
@@ -476,7 +481,7 @@ export default Plugin.define({
       const previous = settings()
       setSettings(next)
       try {
-        setSettings(await rpc.settingsSet({ ...next, layers }))
+        setSettings(await rpc.settingsSet({ ...next, layers }, callOptions))
       } catch {
         setSettings(previous)
       }
