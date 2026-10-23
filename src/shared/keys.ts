@@ -15,6 +15,9 @@ export const GOAL_PREFIX = "goal:"
 /** 定时任务的 key 前缀，后面拼会话 ID。 */
 export const SCHEDULE_PREFIX = "schedule:"
 
+/** 会话累计统计的 key 前缀，后面拼会话 ID。 */
+export const STATS_PREFIX = "stats:"
+
 /**
  * 输入：会话 ID。
  * 输出：该会话的 goal 存储 key。
@@ -31,4 +34,13 @@ export function goalKey(sessionID: string): string {
  */
 export function scheduleKey(sessionID: string): string {
   return `${SCHEDULE_PREFIX}${sessionID}`
+}
+
+/**
+ * 输入：会话 ID。
+ * 输出：该会话的累计统计存储 key。
+ * 预期：不同会话互不覆盖。
+ */
+export function statsKey(sessionID: string): string {
+  return `${STATS_PREFIX}${sessionID}`
 }

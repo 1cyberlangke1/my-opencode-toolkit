@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest"
 
 import type { Plugin } from "@opencode/plugin"
 
+import type { JsonStore } from "../src/shared/json.ts"
+import { statsKey } from "../src/shared/keys.ts"
+import type { SessionStats } from "../src/stats.ts"
+import { applyDelta, loadStats, removeStats, saveStats } from "../src/stats-store.ts"
 import { buildStats, buildSubagentDetail, createStatsTracker, hitRatePercent, listSubagents, trackEvent } from "../src/stats.ts"
 
 const SESSION = "ses_test"
@@ -260,5 +264,90 @@ describe("stats seeding", () => {
     tracker.seed(SESSION, { steps: 1, input: 1, output: 0, cached: 0, tools: {}, subagents: 0 })
     tracker.forget(SESSION)
     expect(tracker.isSeeded(SESSION)).toBe(false)
+  })
+})
+
+describe("stats store", () => {
+  /** 输入：无；输出：内存实现的 JsonStore。 */
+  function memoryStore(): JsonStore & { dump(): Map<string, unknown> } {
+    const map = new Map<string, unknown>()
+    return {
+      get: (key) => Promise.resolve(map.get(key)),
+      set: (key, value) => {
+        map.set(key, value)
+        return Promise.resolve()
+      },
+      remove: (key) => {
+        map.delete(key)
+        return Promise.resolve()
+      },
+      dump: () => map,
+    }
+  }
+
+  it("saveStats / loadStats 往返保留字段", async () => {
+    const store = memoryStore()
+    const stats: SessionStats = { steps: 3, input: 120, output: 40, cached: 90, tools: { read: 2, shell: 1 }, subagents: 1 }
+    await saveStats(store, SESSION, stats, "msg_1")
+    const loaded = await loadStats(store, SESSION)
+    expect(loaded).toEqual({ ...stats, lastMessageID: "msg_1" })
+  })
+
+  it("损坏数据返回 null，回退到重建", async () => {
+    const store = memoryStore()
+    await store.set(statsKey(SESSION), "garbage")
+    expect(await loadStats(store, SESSION)).toBeNull()
+    await store.set(statsKey(SESSION), { steps: "x" })
+    expect(await loadStats(store, SESSION)).toBeNull()
+  })
+
+  it("removeStats 幂等", async () => {
+    const store = memoryStore()
+    await saveStats(store, SESSION, { steps: 1, input: 1, output: 0, cached: 0, tools: {}, subagents: 0 })
+    await removeStats(store, SESSION)
+    expect(await loadStats(store, SESSION)).toBeNull()
+    await expect(removeStats(store, SESSION)).resolves.toBeUndefined()
+  })
+
+  it("applyDelta 数值相加、工具按键合并", () => {
+    const base: SessionStats = { steps: 2, input: 100, output: 20, cached: 60, tools: { read: 3 }, subagents: 1 }
+    const delta: SessionStats = { steps: 1, input: 10, output: 5, cached: 4, tools: { read: 1, shell: 2 }, subagents: 0 }
+    expect(applyDelta(base, delta)).toEqual({
+      steps: 3,
+      input: 110,
+      output: 25,
+      cached: 64,
+      tools: { read: 4, shell: 2 },
+      subagents: 1,
+    })
+  })
+
+  it("重复落盘同一增量不双计：落盘后增量并入存档，内存清零再落盘结果不变", async () => {
+    const store = memoryStore()
+    const tracker = createStatsTracker()
+    const base: SessionStats = { steps: 1, input: 50, output: 10, cached: 30, tools: {}, subagents: 0 }
+    await saveStats(store, SESSION, base)
+
+    tracker.recordStep(SESSION, { input: 20, output: 5, cache: { read: 8, write: 2 } })
+    const first = applyDelta(base, tracker.get(SESSION))
+    await saveStats(store, SESSION, first)
+    // 模拟落盘后清零增量
+    tracker.seed(SESSION, { steps: 0, input: 0, output: 0, cached: 0, tools: {}, subagents: 0 })
+
+    const stored = await loadStats(store, SESSION)
+    const second = applyDelta(stored ?? base, tracker.get(SESSION))
+    expect(second).toEqual(first)
+    expect(second.input).toBe(80)
+  })
+
+  it("不同会话的存档互不干扰", async () => {
+    const store = memoryStore()
+    await saveStats(store, "ses_a", { steps: 1, input: 10, output: 1, cached: 5, tools: {}, subagents: 0 })
+    await saveStats(store, "ses_b", { steps: 2, input: 20, output: 2, cached: 6, tools: {}, subagents: 0 })
+    expect((await loadStats(store, "ses_a"))?.input).toBe(10)
+    expect((await loadStats(store, "ses_b"))?.input).toBe(20)
+    await removeStats(store, "ses_a")
+    expect(await loadStats(store, "ses_a")).toBeNull()
+    expect((await loadStats(store, "ses_b"))?.input).toBe(20)
   })
 })
