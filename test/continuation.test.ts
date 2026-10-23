@@ -374,6 +374,26 @@ describe("goal continuation", () => {
     expect((await controller.getGoal(SESSION))?.tokensUsed).toBe(110)
   })
 
+  it("两个插件实例收到同一 step 只记一次 token", async () => {
+    const store = storeWithGoalEnabled()
+    const controller = createGoalController(store)
+    await controller.setGoal(SESSION, "x")
+    const first = createGoalContinuation({ ctx: fakeCtx([]), settings: DEFAULT_SETTINGS, controller, roles })
+    const second = createGoalContinuation({ ctx: fakeCtx([]), settings: DEFAULT_SETTINGS, controller, roles })
+    const event = {
+      type: "session.step.ended" as const,
+      data: {
+        sessionID: SESSION,
+        assistantMessageID: "msg_cross_instance",
+        tokens: { input: 100, output: 10, cache: { read: 0, write: 0 } },
+      },
+    }
+
+    await first.handle(event)
+    await second.handle(event)
+    expect((await controller.getGoal(SESSION))?.tokensUsed).toBe(110)
+  })
+
   it("删除会话清掉运行状态与目标", async () => {
     const store = storeWithGoalEnabled()
     const controller = createGoalController(store)

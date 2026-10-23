@@ -14,6 +14,30 @@ import type { SessionRoles } from "./session-role.ts"
 /** 注入消息的 metadata 标记，用于识别“这条 user 消息是我们发的”。 */
 const CONTINUATION_MARKER = "goalContinuation"
 
+/**
+ * goal 用量记账的进程级去重表。
+ *
+ * OpenCode 可能为同一个插件按 location 加载多份实例；每份实例的模块状态彼此独立。
+ * 同一 `session.step.ended` 会送到每份实例，如果只在实例内去重，token 会被重复累加。
+ * 这里挂到 `globalThis` 的 Symbol，让同进程内所有实例共享最后记账的 message 和时间。
+ */
+type UsageRegistry = {
+  readonly lastMessage: Map<string, string>
+  readonly lastAt: Map<string, number>
+}
+
+const USAGE_REGISTRY_KEY = Symbol.for("my-opencode-toolkit.goal.usage")
+
+/** 输入：无；输出：进程级共享的 goal 记账表。预期：同一个进程只创建一次。 */
+function usageRegistry(): UsageRegistry {
+  const holder = globalThis as unknown as Record<symbol, UsageRegistry | undefined>
+  const existing = holder[USAGE_REGISTRY_KEY]
+  if (existing !== undefined) return existing
+  const created: UsageRegistry = { lastMessage: new Map(), lastAt: new Map() }
+  holder[USAGE_REGISTRY_KEY] = created
+  return created
+}
+
 /** 会话运行期锁死标志。 */
 type RunState = {
   /** 用户打断过，暂停后需显式 resume。 */
@@ -50,8 +74,9 @@ export function createGoalContinuation(args: {
   const runStates = new Map<string, RunState>()
   const pending = new Set<string>()
   const inFlight = new Set<string>()
-  const lastAccountAt = new Map<string, number>()
-  const lastAccountMessage = new Map<string, string>()
+  const usage = usageRegistry()
+  const lastAccountAt = usage.lastAt
+  const lastAccountMessage = usage.lastMessage
 
   /** 输入：会话 ID；输出：可变的运行状态。预期：不存在时创建默认值。 */
   const stateOf = (sessionID: string): RunState => {
