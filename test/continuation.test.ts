@@ -26,7 +26,9 @@ type PromptLog = {
 /** 输入：注入日志 + 可选历史消息；输出：只实现 session 的假上下文。 */
 function fakeCtx(log: PromptLog, messages: unknown[] = []): Plugin.Context {
   return {
+    location: { directory: "/" },
     session: {
+      get: () => Promise.resolve({ location: { directory: "/" } }),
       prompt: (input: { sessionID: string; text: string }) => {
         log.push({ sessionID: input.sessionID, text: input.text })
         return Promise.resolve()
