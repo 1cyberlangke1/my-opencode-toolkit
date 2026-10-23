@@ -50,15 +50,16 @@ function truncate(text: string, max: number): string {
 }
 
 /**
- * 输入：插件上下文、任务存储、循环调度器、会话角色。
+ * 输入：插件上下文、任务存储、循环调度器、会话角色、任务新增回调。
  * 输出：注册 cron_create / cron_list / cron_delete / schedule_wakeup。
- * 预期：关闭或子代理会话返回错误文本；不抛异常。
+ * 预期：关闭或子代理会话返回错误文本；不抛异常；新增任务时立即武装 timer。
  */
 export async function registerSchedulingTools(
   ctx: Plugin.Context,
   store: SchedulingStore,
   scheduler: LoopScheduler,
   roles: SessionRoles,
+  onJobAdded?: () => void,
 ): Promise<{ dispose(): Promise<void> }> {
   /** 输入：会话 ID；输出：不可用原因，可用时为 null。 */
   const unavailable = async (sessionID: string): Promise<string | null> => {
@@ -93,6 +94,7 @@ export async function registerSchedulingTools(
           durable: input.durable ?? false,
         })
         if (!result.ok) return { output: {}, content: `Error: ${result.error}` }
+        onJobAdded?.()
 
         const job = result.job
         const where =

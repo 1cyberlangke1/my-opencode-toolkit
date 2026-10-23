@@ -49,9 +49,6 @@ export async function registerScheduling(
     ...(notifySkipped === undefined ? {} : { notifySkipped }),
     enabled: isEnabled,
   })
-  const tools = await registerSchedulingTools(ctx, jobs, scheduler, roles)
-  const commands = await registerSchedulingCommands(ctx, jobs, scheduler, roles)
-
   const continuation = createSchedulingContinuation({
     ctx,
     store: jobs,
@@ -61,6 +58,12 @@ export async function registerScheduling(
     enabled: isEnabled,
   })
   continuation.armTimers()
+
+  const armTimersCallback = (): void => {
+    continuation.armTimers()
+  }
+  const tools = await registerSchedulingTools(ctx, jobs, scheduler, roles, armTimersCallback)
+  const commands = await registerSchedulingCommands(ctx, jobs, scheduler, roles, armTimersCallback)
 
   return {
     jobs,

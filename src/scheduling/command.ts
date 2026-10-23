@@ -84,15 +84,16 @@ function splitCron(rest: string): { expr: string; prompt: string } | null {
 }
 
 /**
- * 输入：插件上下文、任务存储、循环调度器、会话角色。
+ * 输入：插件上下文、任务存储、循环调度器、会话角色、任务新增回调。
  * 输出：注册 `/loop` 与 `/cron` 命令。
- * 预期：命令自身不进对话流；执行结果作为普通 prompt 发回当前会话。
+ * 预期：命令自身不进对话流；执行结果作为普通 prompt 发回当前会话；新增任务时立即武装 timer。
  */
 export async function registerSchedulingCommands(
   ctx: Plugin.Context,
   store: SchedulingStore,
   scheduler: LoopScheduler,
   roles: SessionRoles,
+  onJobAdded?: () => void,
 ): Promise<{ dispose(): Promise<void> }> {
   /** 输入：会话 ID；输出：不可用原因，可用时为 null。 */
   const unavailable = async (sessionID: string): Promise<string | null> => {
@@ -174,6 +175,7 @@ export async function registerSchedulingCommands(
             durable: true,
           })
           if (!result.ok) return `Error: ${result.error}`
+          onJobAdded?.()
           const job = result.job
           return job.recurring === true
             ? `Scheduled recurring job ${job.id} (${cronToHuman(job.cron)}): ${job.prompt}`

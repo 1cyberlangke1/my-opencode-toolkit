@@ -162,6 +162,42 @@ describe("scheduling store", () => {
     await store.load()
     expect(store.listJobs(SESSION)).toHaveLength(0)
   })
+
+  it("一次性任务跨年回绕时返回语义化错误", async () => {
+    const { store } = makeStore()
+    const now = new Date()
+    // 构造一个在当前年份已经过去的月日时间点（例如 2 分钟前），写死具体的日和月
+    const past = new Date(now.getTime() - 120_000)
+    // 跨年首日边界兜底：确保 past 在同一年内
+    if (past.getFullYear() === now.getFullYear()) {
+      const cron = `${String(past.getMinutes())} ${String(past.getHours())} ${String(past.getDate())} ${String(past.getMonth() + 1)} *`
+      const result = await store.addJob({ sessionID: SESSION, cron, prompt: "past", recurring: false })
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.error).toContain("has already passed for this year and wrapped around to next year")
+      }
+    }
+  })
+
+  it("一次性任务超过 7 天上限返回语义化错误", async () => {
+    const { store } = makeStore()
+    const now = new Date()
+    const future = new Date(now.getTime() + 10 * 24 * 60 * 60 * 1000)
+    if (future.getFullYear() === now.getFullYear()) {
+      const cron = `${String(future.getMinutes())} ${String(future.getHours())} ${String(future.getDate())} ${String(future.getMonth() + 1)} *`
+      const result = await store.addJob({ sessionID: SESSION, cron, prompt: "far", recurring: false })
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.error).toContain("cannot be scheduled more than 7 days in advance")
+      }
+    }
+  })
+
+  it("recurring 任务不受一次性任务跨度限制", async () => {
+    const { store } = makeStore()
+    const result = await store.addJob({ sessionID: SESSION, cron: "0 0 1 1 *", prompt: "yearly", recurring: true })
+    expect(result.ok).toBe(true)
+  })
 })
 
 describe("isRecurringTaskAged", () => {

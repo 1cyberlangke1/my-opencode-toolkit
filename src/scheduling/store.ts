@@ -10,7 +10,22 @@ import {
   oneShotJitteredNextCronRunMs,
   parseCronExpression,
 } from "./cron.ts"
-import { JOB_ID_LENGTH, MAX_JOBS, type ScheduledJob } from "./types.ts"
+import { DEFAULT_MAX_AGE_DAYS, JOB_ID_LENGTH, MAX_JOBS, type ScheduledJob } from "./types.ts"
+
+/**
+ * 输入：时间戳（毫秒）。
+ * 输出：本地时间的 `YYYY-MM-DD HH:mm` 字符串。
+ * 预期：两位补零，用于错误信息展示。
+ */
+function formatLocalTime(ms: number): string {
+  const d = new Date(ms)
+  const year = String(d.getFullYear())
+  const month = String(d.getMonth() + 1).padStart(2, "0")
+  const day = String(d.getDate()).padStart(2, "0")
+  const hour = String(d.getHours()).padStart(2, "0")
+  const minute = String(d.getMinutes()).padStart(2, "0")
+  return `${year}-${month}-${day} ${hour}:${minute}`
+}
 
 /** 存储格式版本。 */
 const STORE_VERSION = 1
@@ -181,10 +196,30 @@ export function createSchedulingStore(store: ScannableStore): SchedulingStore {
         durable,
       }
       const next = computeNext(job, now)
-      if (next !== null) {
-        if (!recurring) job.fireAt = next
-        job.nextRunAt = next
+      if (next === null) {
+        return { ok: false, error: `Cron expression '${cron}' did not produce a future execution time.` }
       }
+      if (!recurring) {
+        const nowDate = new Date(now)
+        const nextDate = new Date(next)
+        // 跨年回绕判定：跨了年份且距离当前超过 24 小时（排除跨年夜正常跨几分钟的情况）
+        if (nextDate.getFullYear() > nowDate.getFullYear() && next - now > 24 * 60 * 60 * 1000) {
+          return {
+            ok: false,
+            error: `The scheduled time '${cron}' has already passed for this year and wrapped around to next year (${formatLocalTime(next)}). Please specify a future time.`,
+          }
+        }
+        const maxAgeMs = DEFAULT_MAX_AGE_DAYS * 24 * 60 * 60 * 1000
+        if (next - now > maxAgeMs) {
+          const days = Math.round((next - now) / (24 * 60 * 60 * 1000))
+          return {
+            ok: false,
+            error: `One-shot task cannot be scheduled more than ${String(DEFAULT_MAX_AGE_DAYS)} days in advance (calculated ${String(days)} days away).`,
+          }
+        }
+        job.fireAt = next
+      }
+      job.nextRunAt = next
       jobs.set(job.id, job)
       if (durable) await persist(sessionID)
       return { ok: true, job }
