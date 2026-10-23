@@ -18,12 +18,12 @@ const DESCRIPTION_GET =
   "and usage accounting. Returns null if no goal is set."
 
 const DESCRIPTION_UPDATE =
-  "Update the status of the current session's goal. Can only mark the goal as complete or blocked. " +
-  "Pause, resume, budget-limited and usage-limited status changes are controlled by the user or system. " +
+  "Update the status of the current session's goal. " +
+  'Use "paused" to pause an active goal, "active" to resume a paused/completed goal, ' +
+  '"cleared" to delete it, "complete" when it is achieved, or "blocked" when the same blocking ' +
+  "condition has repeated for at least three consecutive goal turns. " +
   'When you believe the goal has been achieved, first perform a completion audit against the actual ' +
-  'current state (files, tests, command output), then call update_goal with status "complete". ' +
-  'Use status "blocked" only when the same blocking condition has repeated for at least three ' +
-  "consecutive goal turns."
+  'current state (files, tests, command output), then call update_goal with status "complete".'
 
 const CreateInput = Schema.Struct({
   objective: Schema.String,
@@ -34,7 +34,7 @@ const CreateInput = Schema.Struct({
 const EmptyInput = Schema.Struct({})
 
 const UpdateInput = Schema.Struct({
-  status: Schema.Literals(["complete", "blocked"]),
+  status: Schema.Literals(["complete", "blocked", "paused", "active", "cleared"]),
   block_reason: Schema.optional(Schema.String),
 })
 
@@ -122,6 +122,20 @@ export async function registerGoalTools(
         const blocked = await unavailable(sessionID)
         if (blocked !== null) return { output: {}, content: blocked }
 
+        if (input.status === "cleared") {
+          await controller.clearGoal(sessionID)
+          return { output: {}, content: "Goal cleared." }
+        }
+        if (input.status === "paused") {
+          const goal = await controller.pauseGoal(sessionID)
+          if (goal === null) return { output: {}, content: "Error: no active goal to pause." }
+          return { output: {}, content: formatGoal(goal) }
+        }
+        if (input.status === "active") {
+          const goal = await controller.resumeGoal(sessionID)
+          if (goal === null) return { output: {}, content: "Error: no goal set for this session." }
+          return { output: {}, content: formatGoal(goal) }
+        }
         if (input.status === "complete") {
           const goal = await controller.markComplete(sessionID)
           if (goal === null) return { output: {}, content: "Error: no goal set for this session." }
