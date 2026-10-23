@@ -63,68 +63,23 @@ export default Plugin.define({
     const goalController = createGoalController(ctx.storage)
 
     /**
-     * 每会话的统计工作副本。
-     * 预期：首次访问时从存档加载；存档没有（旧会话冷启动）就从消息历史重建一次。
-     *       之后只做 `+=` 累加，每次累加完立刻写盘。
-     */
-    const sessions = new Map<string, SessionStats>()
-    /** 同一会话的并发事件串行化，避免读-改-写交错丢账。 */
-    const chains = new Map<string, Promise<void>>()
-
-    /**
      * 输入：会话 ID。
-     * 输出：该会话的工作副本（已从存档/消息历史初始化）。
+     * 输出：该会话存档；没有就是 `null`。
+     * 预期：每次记账前直接读存档——无内存缓存、无重建，存档是唯一账本。
      */
-    const ensure = async (sessionID: string): Promise<SessionStats> => {
-      const existing = sessions.get(sessionID)
-      if (existing !== undefined) return existing
-      const stored = await loadStats(ctx.storage, sessionID).catch(() => null)
-      if (stored !== null) {
-        sessions.set(sessionID, stored)
-        return stored
-      }
-      // 旧会话冷启动：从消息历史重建一次初始值并落盘，之后纯加法。
-      const { buildStats } = await import("./stats.ts")
-      const rebuilt = await buildStats(ctx, sessionID)
-      const initial: SessionStats = {
-        steps: rebuilt.steps,
-        input: rebuilt.input,
-        output: rebuilt.output,
-        cached: rebuilt.cached,
-        tools: { ...rebuilt.tools },
-      }
-      sessions.set(sessionID, initial)
-      await saveStats(ctx.storage, sessionID, initial).catch(() => undefined)
-      return initial
-    }
-
-    /**
-     * 输入：会话 ID + 对该会话统计的修改函数。
-     * 输出：无。
-     * 预期：同一会话的操作按到达顺序串行执行；每次修改后立刻整体落盘。
-     */
-    const mutate = (sessionID: string, change: (stats: SessionStats) => void): Promise<void> => {
-      const last = chains.get(sessionID) ?? Promise.resolve()
-      const next = last
-        .then(async () => {
-          const stats = await ensure(sessionID)
-          change(stats)
-          await saveStats(ctx.storage, sessionID, stats).catch(() => undefined)
-        })
-        .catch(() => undefined)
-      chains.set(sessionID, next)
-      return next
-    }
+    const load = (sessionID: string): Promise<SessionStats | null> =>
+      loadStats(ctx.storage, sessionID).catch(() => null)
 
     /**
      * 输入：会话 ID。
      * 输出：该会话是否属于当前插件实例的 location。
      * 预期：插件按 location 各加载一份，事件会广播到所有实例；
-     *       只有会话所属实例记账，其余实例跳过，避免同一事件重复累加。
+     *       只有会话所属实例记账。会话查不到（别的实例的会话）也拒绝，
+     *       宁可少记不可重复累加。
      */
     const ownsSession = async (sessionID: string): Promise<boolean> => {
       const session = await ctx.session.get({ sessionID }).catch(() => undefined)
-      return session === undefined || session.location.directory === ctx.location.directory
+      return session?.location.directory === ctx.location.directory
     }
 
     // RPC 在 goal 之后注册；先用可替换发射器，命令执行时已指向真实 RPC。
@@ -161,8 +116,9 @@ export default Plugin.define({
         const requested = record?.["sessionID"]
         const sessionID = typeof requested === "string" ? requested : ""
 
-        // 直接读当前累计；没有记录的会话（从未跑过 step）显示空统计。
-        const stats = sessionID.length > 0 ? await ensure(sessionID).catch(() => emptyStats()) : emptyStats()
+        // 直接读存档；没有记录的会话（从未跑过 step）显示空统计。
+        const stats =
+          sessionID.length > 0 ? (await load(sessionID)) ?? emptyStats() : emptyStats()
         const tools = Object.entries(stats.tools)
           .map(([name, count]) => ({ name, count }))
           .sort((left, right) => right.count - left.count)
@@ -245,9 +201,9 @@ export default Plugin.define({
     })
     const toolAfter = await ctx.tool.hook("execute.after", async (input) => {
       if (!(await ownsSession(input.sessionID))) return
-      await mutate(input.sessionID, (stats) => {
-        stats.tools[input.tool] = (stats.tools[input.tool] ?? 0) + 1
-      })
+      const stats = (await load(input.sessionID)) ?? emptyStats()
+      stats.tools[input.tool] = (stats.tools[input.tool] ?? 0) + 1
+      await saveStats(ctx.storage, input.sessionID, stats).catch(() => undefined)
       // 工具刚执行完就通知侧栏刷新；失败不影响工具结果。
       void rpc.events.emit("panelUpdated", { sessionID: input.sessionID }).catch(() => undefined)
     })
@@ -264,28 +220,26 @@ export default Plugin.define({
         return Promise.resolve()
       },
       (event) => scheduling.handle(event),
-      // 统计累加：token 在 step.ended，删除清理在 session.deleted。每次累加完立刻落盘。
+      // 统计累加：token 在 step.ended，删除清理在 session.deleted。读存档 → 加 → 写回。
       (event) => {
         const data = readEventData(event)
         if (event.type === "session.step.ended") {
           const sessionID = readEventSessionID(event)
           if (sessionID === undefined) return Promise.resolve()
-          return ownsSession(sessionID).then((owned) => {
-            if (!owned) return undefined
-            return mutate(sessionID, (stats) => {
-              const step = readStepTokens(data?.["tokens"])
-              stats.steps += 1
-              stats.input += step.input
-              stats.output += step.output
-              stats.cached += step.cached
-            })
+          return ownsSession(sessionID).then(async (owned) => {
+            if (!owned) return
+            const stats = (await load(sessionID)) ?? emptyStats()
+            const step = readStepTokens(data?.["tokens"])
+            stats.steps += 1
+            stats.input += step.input
+            stats.output += step.output
+            stats.cached += step.cached
+            await saveStats(ctx.storage, sessionID, stats).catch(() => undefined)
           })
         }
         if (event.type === "session.deleted") {
           const sessionID = readEventSessionID(event)
           if (sessionID === undefined) return Promise.resolve()
-          sessions.delete(sessionID)
-          chains.delete(sessionID)
           return removeStats(ctx.storage, sessionID).catch(() => undefined)
         }
         return Promise.resolve()
@@ -309,8 +263,6 @@ export default Plugin.define({
     return async () => {
       events.abort()
       notifier.dispose()
-      sessions.clear()
-      chains.clear()
       await toolAfter.dispose()
       await toolBefore.dispose()
       await hook.dispose()

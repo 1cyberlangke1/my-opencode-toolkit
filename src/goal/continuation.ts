@@ -146,9 +146,10 @@ export function createGoalContinuation(args: {
   /** 输入：会话 ID；输出：无。预期：active 且未锁死、且不是子代理时注入续作。 */
   const handleIdle = async (sessionID: string): Promise<void> => {
     if (!(await enabled())) return
-    // 插件按 location 各加载一份；只让 session 所属 location 注入，避免同一事件被多个实例重复续作。
+    // 插件按 location 各加载一份；只让 session 所属 location 注入。
+    // 会话查不到（别的实例的会话）也拒绝，宁可少注入不可重复续作。
     const session = await ctx.session.get({ sessionID }).catch(() => undefined)
-    if (session !== undefined && session.location.directory !== ctx.location.directory) return
+    if (session?.location.directory !== ctx.location.directory) return
     // 子代理不续作：子代理的生命周期由主会话的工具调用驱动。
     if (await roles.isSubagent(sessionID)) return
 
@@ -223,7 +224,11 @@ export function createGoalContinuation(args: {
           state.tokenLimitDetected = false
           pending.delete(sessionID)
           if (!(await enabled())) return
-          // 事件可能重放；同一个 assistant message 只记一次账。
+          // 插件按 location 各加载一份；只让 session 所属 location 记账，
+          // 会话查不到（别的实例的会话）也拒绝，避免同一事件被多实例重复累加。
+          const session = await ctx.session.get({ sessionID }).catch(() => undefined)
+          if (session?.location.directory !== ctx.location.directory) return
+          // 同一个 assistant message 只记一次账。
           const messageID = data["assistantMessageID"]
           if (typeof messageID === "string" && lastAccountMessage.get(sessionID) === messageID) return
           if (typeof messageID === "string") lastAccountMessage.set(sessionID, messageID)

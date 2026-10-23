@@ -378,6 +378,38 @@ describe("goal continuation", () => {
     expect((await controller.getGoal(SESSION))?.tokensUsed).toBe(110)
   })
 
+  it("会话属于别的 location 时不记账", async () => {
+    const store = storeWithGoalEnabled()
+    const controller = createGoalController(store)
+    await controller.setGoal(SESSION, "x")
+    // 会话在其他目录：本实例必须拒绝记账，否则跨实例事件被重复累加。
+    const ctx = fakeCtx([])
+    ctx.session.get = () => Promise.resolve({ location: { directory: "/other" } }) as unknown as ReturnType<
+      typeof ctx.session.get
+    >
+    const continuation = createGoalContinuation({ ctx, settings: DEFAULT_SETTINGS, controller, roles })
+    await continuation.handle({
+      type: "session.step.ended",
+      data: { sessionID: SESSION, tokens: { input: 100, output: 10, cache: { read: 0, write: 0 } } },
+    })
+    expect((await controller.getGoal(SESSION))?.tokensUsed).toBe(0)
+  })
+
+  it("会话查不到（undefined）时不记账", async () => {
+    const store = storeWithGoalEnabled()
+    const controller = createGoalController(store)
+    await controller.setGoal(SESSION, "x")
+    // 会话查不到说明不是本实例目录的会话；放行 undefined 会导致 home 实例重复记账。
+    const ctx = fakeCtx([])
+    ctx.session.get = () => Promise.resolve(undefined) as unknown as ReturnType<typeof ctx.session.get>
+    const continuation = createGoalContinuation({ ctx, settings: DEFAULT_SETTINGS, controller, roles })
+    await continuation.handle({
+      type: "session.step.ended",
+      data: { sessionID: SESSION, tokens: { input: 100, output: 10, cache: { read: 0, write: 0 } } },
+    })
+    expect((await controller.getGoal(SESSION))?.tokensUsed).toBe(0)
+  })
+
   it("两个插件实例收到同一 step 只记一次 token", async () => {
     const store = storeWithGoalEnabled()
     const controller = createGoalController(store)
