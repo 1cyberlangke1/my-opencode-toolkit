@@ -6,7 +6,7 @@ import { asRecord } from "../shared/json.ts"
 import { lastMessageIsUserInput } from "../shared/messages.ts"
 import { loadSettings } from "../shared/settings-store.ts"
 import type { Settings } from "../shared/settings.ts"
-import type { GoalController } from "./controller.ts"
+import type { GoalController, GoalUsage } from "./controller.ts"
 import { classifyGoalFailure } from "./error.ts"
 import { buildBudgetLimitPrompt, buildContinuationPrompt } from "./prompts.ts"
 import type { SessionRoles } from "./session-role.ts"
@@ -98,14 +98,14 @@ export function createGoalContinuation(args: {
    * 输出：本次记账是否刚刚把 goal 从 active 推到 budget_limited。
    * 预期：只对 active 目标记账；只有状态发生跃迁时才返回 true，后续 step 不会重复触发收尾提示。
    */
-  const account = async (sessionID: string, tokens: number): Promise<boolean> => {
+  const account = async (sessionID: string, usage: Omit<GoalUsage, "elapsedSeconds">): Promise<boolean> => {
     const at = now()
     const last = lastAccountAt.get(sessionID)
     const elapsedSeconds = last === undefined ? 0 : Math.max(0, Math.floor((at - last) / 1000))
     lastAccountAt.set(sessionID, at)
-    if (tokens === 0 && elapsedSeconds === 0) return false
+    if (usage.tokens === 0 && elapsedSeconds === 0) return false
     const before = await controller.getGoal(sessionID)
-    const after = await controller.accountUsage(sessionID, { tokens, elapsedSeconds })
+    const after = await controller.accountUsage(sessionID, { ...usage, elapsedSeconds })
     return before?.status === "active" && after?.status === "budget_limited"
   }
 
@@ -196,17 +196,16 @@ export function createGoalContinuation(args: {
     await controller.pauseGoal(sessionID)
   }
 
-  /** 输入：任意值；输出：本步消耗的 token 总数。预期：输入、输出、缓存读写都计入。 */
-  const readTokens = (raw: unknown): number => {
+  /** 输入：任意值；输出：本步的完整提示词/输出/缓存增量。预期：形状不对的字段按 0。 */
+  const readUsage = (raw: unknown): Omit<GoalUsage, "elapsedSeconds"> => {
     const record = asRecord(raw)
-    if (record === undefined) return 0
+    if (record === undefined) return { tokens: 0, input: 0, output: 0, cached: 0 }
     const cache = asRecord(record["cache"]) ?? {}
-    const parts = [record["input"], record["output"], cache["read"], cache["write"]]
-    let total = 0
-    for (const part of parts) {
-      if (typeof part === "number" && Number.isFinite(part) && part > 0) total += part
-    }
-    return total
+    const count = (value: unknown): number =>
+      typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0
+    const input = count(record["input"]) + count(cache["read"]) + count(cache["write"])
+    const output = count(record["output"]) + count(record["reasoning"])
+    return { tokens: input + output, input, output, cached: count(cache["read"]) }
   }
 
   return {
@@ -228,7 +227,7 @@ export function createGoalContinuation(args: {
           const messageID = data["assistantMessageID"]
           if (typeof messageID === "string" && lastAccountMessage.get(sessionID) === messageID) return
           if (typeof messageID === "string") lastAccountMessage.set(sessionID, messageID)
-          if (!(await account(sessionID, readTokens(data["tokens"])))) return
+          if (!(await account(sessionID, readUsage(data["tokens"])))) return
           // 预算刚用尽：发一次收尾提示，让模型总结进度并给出下一步。
           const goal = await controller.getGoal(sessionID)
           if (goal !== null) await inject(sessionID, buildBudgetLimitPrompt(goal))

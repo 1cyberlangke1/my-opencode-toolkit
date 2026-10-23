@@ -104,6 +104,7 @@ export function Sidebar(props: {
   const success = () => theme.text.feedback.success.base
   const warning = () => theme.text.feedback.warning.base
   const error = () => theme.text.feedback.error.base
+  const info = () => theme.text.feedback.info.base
 
   /** 输入：状态字符串；输出：本地化状态名。 */
   const statusLabel = (text: Messages, status: string): string => text.panel.status[status] ?? status
@@ -111,6 +112,7 @@ export function Sidebar(props: {
   /** 输入：状态字符串；输出：目标状态颜色。 */
   const goalStatusColor = (status: string) => {
     if (status === "active") return success()
+    if (status === "complete") return info()
     if (status === "paused" || status === "budget_limited") return warning()
     if (status === "blocked") return error()
     return base()
@@ -130,7 +132,7 @@ export function Sidebar(props: {
     color: string | ReturnType<typeof base> = base(),
   ) => (
     <text>
-      <span style={{ fg: muted() }}>{padRight(`${label}:`, 10)}</span>
+      <span style={{ fg: muted() }}>{padRight(`${label}:`, 8)}</span>
       <span style={{ fg: color }}>{value}</span>
     </text>
   )
@@ -180,6 +182,20 @@ export function Sidebar(props: {
     const extra = current.status === "active" ? Math.max(0, now() - current.updatedAt * 1000) : 0
     return base + extra
   }
+  /** 输入：无；输出：目标用量文本。预期：有拆分时用 ↑/↓/♻ 紧凑格式；♻ 后两个空格。 */
+  const goalUsageText = (): string => {
+    const current = goal()
+    if (current === null) return ""
+    const budget = current.tokenBudget === undefined ? "" : ` / ${formatTokens(current.tokenBudget)}`
+    if (
+      current.inputTokens === undefined ||
+      current.outputTokens === undefined ||
+      current.cachedTokens === undefined
+    ) {
+      return `${formatTokens(current.tokensUsed)}${budget}`
+    }
+    return `↑ ${formatTokens(current.inputTokens)} ↓ ${formatTokens(current.outputTokens)} ♻  ${formatTokens(current.cachedTokens)}${budget}`
+  }
   const subagents = (): readonly PanelSubagent[] => panel()?.subagents ?? []
   const visibleTools = (): readonly { readonly name: string; readonly count: number }[] =>
     (panel()?.stats.tools ?? []).filter((tool) => tool.count > 0)
@@ -206,12 +222,7 @@ export function Sidebar(props: {
                   statusLabel(props.copy(), goal()?.status ?? ""),
                   goalStatusColor(goal()?.status ?? ""),
                 )}
-                {labelRow(
-                  props.copy().panel.usage,
-                  `${formatTokens(goal()?.tokensUsed ?? 0)}${
-                    goal()?.tokenBudget === undefined ? "" : ` / ${formatTokens(goal()?.tokenBudget ?? 0)}`
-                  }`,
-                )}
+                {labelRow(props.copy().panel.usage, goalUsageText())}
                 {labelRow(props.copy().panel.time, formatCountdown(goalTimeMs()))}
               </box>
             </Show>

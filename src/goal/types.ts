@@ -13,6 +13,12 @@ export type Goal = {
   readonly status: GoalStatus
   readonly tokenBudget?: number
   readonly tokensUsed: number
+  /** 完整提示词累计：input + cache.read + cache.write。 */
+  readonly inputTokens?: number
+  /** 输出累计：output + reasoning。 */
+  readonly outputTokens?: number
+  /** 缓存读取累计。 */
+  readonly cachedTokens?: number
   readonly timeUsedSeconds: number
   readonly createdAt: number
   readonly updatedAt: number
@@ -56,6 +62,9 @@ export function parseGoal(value: unknown): Goal | null {
   if (typeof createdAt !== "number" || typeof updatedAt !== "number") return null
 
   const tokenBudget = record["tokenBudget"]
+  const inputTokens = record["inputTokens"]
+  const outputTokens = record["outputTokens"]
+  const cachedTokens = record["cachedTokens"]
   const lastBlockedReason = record["lastBlockedReason"]
   const blockedStreak = record["blockedStreak"]
 
@@ -69,6 +78,9 @@ export function parseGoal(value: unknown): Goal | null {
     createdAt,
     updatedAt,
     ...(typeof tokenBudget === "number" && Number.isFinite(tokenBudget) ? { tokenBudget } : {}),
+    ...(typeof inputTokens === "number" && Number.isFinite(inputTokens) ? { inputTokens } : {}),
+    ...(typeof outputTokens === "number" && Number.isFinite(outputTokens) ? { outputTokens } : {}),
+    ...(typeof cachedTokens === "number" && Number.isFinite(cachedTokens) ? { cachedTokens } : {}),
     ...(typeof lastBlockedReason === "string" ? { lastBlockedReason } : {}),
     ...(typeof blockedStreak === "number" && Number.isFinite(blockedStreak) ? { blockedStreak } : {}),
   }

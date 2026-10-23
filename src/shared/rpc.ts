@@ -141,6 +141,9 @@ const PanelGoalJson = {
     objective: { type: "string" },
     status: { type: "string", enum: ["active", "paused", "blocked", "budget_limited", "complete"] },
     tokensUsed: { type: "number" },
+    inputTokens: { type: "number" },
+    outputTokens: { type: "number" },
+    cachedTokens: { type: "number" },
     tokenBudget: { type: "number" },
     timeUsedSeconds: { type: "number" },
     updatedAt: { type: "number" },
@@ -291,6 +294,9 @@ export type PanelGoal = {
   readonly objective: string
   readonly status: string
   readonly tokensUsed: number
+  readonly inputTokens?: number
+  readonly outputTokens?: number
+  readonly cachedTokens?: number
   readonly tokenBudget?: number
   readonly timeUsedSeconds: number
   readonly updatedAt: number

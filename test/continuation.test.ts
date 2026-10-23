@@ -196,7 +196,11 @@ describe("goal continuation", () => {
       },
     })
 
-    expect((await controller.getGoal(SESSION))?.tokensUsed).toBe(152)
+    const goal = await controller.getGoal(SESSION)
+    expect(goal?.tokensUsed).toBe(157)
+    expect(goal?.inputTokens).toBe(132)
+    expect(goal?.outputTokens).toBe(25)
+    expect(goal?.cachedTokens).toBe(30)
   })
 
   it("记账达到 token 预算时发一次收尾提示", async () => {

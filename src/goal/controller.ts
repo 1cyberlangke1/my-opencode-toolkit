@@ -8,6 +8,12 @@ export const BLOCKED_STREAK_REQUIRED = 3
 /** 一次记账的增量。 */
 export type GoalUsage = {
   readonly tokens: number
+  /** 完整提示词增量；旧调用方不传时只更新总量。 */
+  readonly input?: number
+  /** 输出增量（含 reasoning）。 */
+  readonly output?: number
+  /** 缓存读取增量。 */
+  readonly cached?: number
   readonly elapsedSeconds: number
 }
 
@@ -90,17 +96,27 @@ export function createGoalController(store: JsonStore): GoalController {
       const goal = await readGoal(store, sessionID)
       if (goal?.status !== "active") return goal
 
-      const tokenDelta = Number.isFinite(usage.tokens) ? Math.max(0, usage.tokens) : 0
-      const timeDelta = Number.isFinite(usage.elapsedSeconds) ? Math.max(0, usage.elapsedSeconds) : 0
+      const delta = (value: number | undefined): number =>
+        value !== undefined && Number.isFinite(value) ? Math.max(0, value) : 0
+      const tokenDelta = delta(usage.tokens)
+      const timeDelta = delta(usage.elapsedSeconds)
       if (tokenDelta === 0 && timeDelta === 0) return goal
 
       const nextTokens = goal.tokensUsed + tokenDelta
+      const hasBreakdown = usage.input !== undefined || usage.output !== undefined || usage.cached !== undefined
       const budgetReached = goal.tokenBudget !== undefined && nextTokens >= goal.tokenBudget
       const updated: Goal = {
         ...goal,
         tokensUsed: nextTokens,
         timeUsedSeconds: goal.timeUsedSeconds + timeDelta,
         updatedAt: nowSeconds(),
+        ...(hasBreakdown
+          ? {
+              inputTokens: (goal.inputTokens ?? 0) + delta(usage.input),
+              outputTokens: (goal.outputTokens ?? 0) + delta(usage.output),
+              cachedTokens: (goal.cachedTokens ?? 0) + delta(usage.cached),
+            }
+          : {}),
         ...(budgetReached ? { status: "budget_limited" as const } : {}),
       }
       await writeGoal(store, updated)

@@ -92,6 +92,9 @@ export default Plugin.define({
                   tokensUsed: current.tokensUsed,
                   timeUsedSeconds: current.timeUsedSeconds,
                   updatedAt: current.updatedAt,
+                  ...(current.inputTokens === undefined ? {} : { inputTokens: current.inputTokens }),
+                  ...(current.outputTokens === undefined ? {} : { outputTokens: current.outputTokens }),
+                  ...(current.cachedTokens === undefined ? {} : { cachedTokens: current.cachedTokens }),
                   ...(current.tokenBudget === undefined ? {} : { tokenBudget: current.tokenBudget }),
                 },
           loops: scheduling.scheduler.listLoops(sessionID).map((loop) => ({

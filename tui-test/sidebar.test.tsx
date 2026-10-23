@@ -12,7 +12,15 @@ const SECTIONS: readonly SidebarSection[] = ["goal", "scheduling", "tools", "sub
 
 /** 侧栏测试用的固定面板数据。 */
 const PANEL: PanelData = {
-  goal: { objective: "ship it", status: "active", tokensUsed: 1234, timeUsedSeconds: 10 },
+  goal: {
+    objective: "ship it",
+    status: "active",
+    tokensUsed: 47_013_600,
+    inputTokens: 46_900_000,
+    outputTokens: 113_600,
+    cachedTokens: 46_700_000,
+    timeUsedSeconds: 10,
+  },
   loops: [{ id: "loop1", mode: "fixed", prompt: "loop prompt" }],
   jobs: [{ id: "job1", cron: "0 * * * *", prompt: "job prompt" }],
   stats: {
@@ -55,6 +63,7 @@ function fakeContext(panel: PanelData = PANEL): Context {
           success: { base: "#00ff00" },
           warning: { base: "#ffff00" },
           error: { base: "#ff0000" },
+          info: { base: "#00aaff" },
         },
       },
     },
@@ -91,6 +100,7 @@ describe("sidebar panel", () => {
 
     expect(frame).toContain("Goal")
     expect(frame).toContain("ship it")
+    expect(frame).toContain("↑ 46.9M ↓ 113.6K ♻  46.7M")
     expect(frame).toContain("read")
     expect(frame).toContain("very_long_tool_name")
     expect(frame).not.toContain("zero")
