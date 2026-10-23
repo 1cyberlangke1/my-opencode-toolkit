@@ -11,11 +11,17 @@ const mainRoles = {
   forget: () => undefined,
 }
 
-/** 输入：标题 + 可选历史消息；输出：只实现 session 的假上下文。 */
-function fakeCtx(title = "My Session", messages: unknown[] = []): Plugin.Context {
+/** 输入：标题 + 可选历史消息 + location；输出：只实现 session 的假上下文。 */
+function fakeCtx(
+  title = "My Session",
+  messages: unknown[] = [],
+  location = "/test",
+  sessionLocation = location,
+): Plugin.Context {
   return {
+    location: { directory: location },
     session: {
-      get: () => Promise.resolve({ title }),
+      get: () => Promise.resolve({ title, location: { directory: sessionLocation } }),
       context: () => Promise.resolve(messages),
     },
   } as unknown as Plugin.Context
@@ -70,6 +76,29 @@ describe("notifier", () => {
     await notifier.handle({ type: "session.execution.succeeded", data: { sessionID: SESSION } })
     await notifier.handle({ type: "session.idle", data: { sessionID: SESSION } })
     expect(sent).toHaveLength(1)
+  })
+
+  it("只让会话所属 location 的实例发通知", async () => {
+    const first = makeSender()
+    const second = makeSender()
+    const owner = createNotifier({
+      ctx: fakeCtx("My Session", [], "/project-a", "/project-a"),
+      settings: makeStore(),
+      roles: mainRoles,
+      send: first.send,
+    })
+    const other = createNotifier({
+      ctx: fakeCtx("My Session", [], "/project-b", "/project-a"),
+      settings: makeStore(),
+      roles: mainRoles,
+      send: second.send,
+    })
+
+    await owner.handle({ type: "session.idle", data: { sessionID: SESSION } })
+    await other.handle({ type: "session.idle", data: { sessionID: SESSION } })
+
+    expect(first.sent).toHaveLength(1)
+    expect(second.sent).toHaveLength(0)
   })
 
   it("完成通知带最后一条用户与助手文本", async () => {

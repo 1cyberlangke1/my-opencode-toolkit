@@ -121,6 +121,17 @@ export function createNotifier(args: {
     return !(await roles.isSubagent(sessionID))
   }
 
+  /**
+   * 输入：会话 ID。
+   * 输出：该会话是否属于当前插件实例的 location。
+   * 预期：插件按 location 各加载一份，系统通知是副作用；只让会话所属 location 的实例发送，
+   *       避免同一完成/权限事件弹出多次。读不到会话时放行。
+   */
+  const inLocation = async (sessionID: string): Promise<boolean> => {
+    const session = await ctx.session.get({ sessionID }).catch(() => undefined)
+    return session === undefined || session.location.directory === ctx.location.directory
+  }
+
   return {
     async handle(event) {
       const sessionID = readEventSessionID(event)
@@ -134,6 +145,7 @@ export function createNotifier(args: {
         return
       }
 
+      if (!(await inLocation(sessionID))) return
       if (!(await allowed(sessionID, settings))) return
 
       // idle 与 execution.succeeded 是同一轮结束的两个信号，合并成一次通知。
@@ -158,6 +170,7 @@ export function createNotifier(args: {
 
       const settings = await currentSettings()
       if (!settings.enabled || !settings.notification.enabled || !settings.notification.onQuestion) return
+      if (!(await inLocation(input.sessionID))) return
       if (!(await allowed(input.sessionID, settings))) return
       await notify(input.sessionID, settings, "question")
     },
