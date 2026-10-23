@@ -235,6 +235,7 @@ export function createGoalContinuation(args: {
       state.tokenLimitDetected = false
       state.insufficientFundsDetected = false
       pending.delete(sessionID)
+      lastAccountAt.delete(sessionID)
     },
   }
 }

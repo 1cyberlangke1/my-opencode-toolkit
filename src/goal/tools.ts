@@ -94,6 +94,7 @@ export async function registerGoalTools(
         }
 
         await controller.setGoal(sessionID, objective, tokenBudget)
+        reset(sessionID)
         return { output: {}, content: formatGoal(await controller.getGoal(sessionID)) }
       },
     })
