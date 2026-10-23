@@ -23,7 +23,9 @@ export type ScheduledJob = {
   readonly permanent?: boolean
   /** false = 仅内存；缺省 = 写存储。 */
   readonly durable?: boolean
-  /** 运行时字段：下一次 fire 时刻，不写存储。 */
+  /** one-shot 的稳定计划触发时刻；持久化，避免重启后按“下一次 cron”重新补跑。 */
+  fireAt?: number
+  /** 运行时字段：下一次 fire 时刻。 */
   nextRunAt?: number
 }
 

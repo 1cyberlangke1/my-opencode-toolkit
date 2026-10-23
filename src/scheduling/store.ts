@@ -23,6 +23,7 @@ type StoredJob = {
   readonly prompt: string
   readonly createdAt: number
   readonly lastFiredAt?: number
+  readonly fireAt?: number
   readonly recurring?: boolean
   readonly permanent?: boolean
 }
@@ -85,6 +86,7 @@ export function createSchedulingStore(store: ScannableStore): SchedulingStore {
     prompt: job.prompt,
     createdAt: job.createdAt,
     ...(job.lastFiredAt === undefined ? {} : { lastFiredAt: job.lastFiredAt }),
+    ...(job.fireAt === undefined ? {} : { fireAt: job.fireAt }),
     ...(job.recurring === true ? { recurring: true } : {}),
     ...(job.permanent === true ? { permanent: true } : {}),
   })
@@ -111,6 +113,7 @@ export function createSchedulingStore(store: ScannableStore): SchedulingStore {
     if (typeof prompt !== "string") return null
     if (typeof createdAt !== "number" || !Number.isFinite(createdAt)) return null
     const lastFiredAt = record["lastFiredAt"]
+    const fireAt = record["fireAt"]
     return {
       id,
       sessionID,
@@ -118,6 +121,7 @@ export function createSchedulingStore(store: ScannableStore): SchedulingStore {
       prompt,
       createdAt,
       ...(typeof lastFiredAt === "number" && Number.isFinite(lastFiredAt) ? { lastFiredAt } : {}),
+      ...(typeof fireAt === "number" && Number.isFinite(fireAt) ? { fireAt } : {}),
       ...(record["recurring"] === true ? { recurring: true } : {}),
       ...(record["permanent"] === true ? { permanent: true } : {}),
     }
@@ -135,9 +139,13 @@ export function createSchedulingStore(store: ScannableStore): SchedulingStore {
           const stored = parseStored(raw)
           if (stored === null) continue
           const job: ScheduledJob = { ...stored, durable: true }
-          const next = computeNext(job, job.lastFiredAt ?? job.createdAt)
-          // 算不出下一次的任务不会再触发，跳过而不是留下一个永远过期的 nextRunAt。
-          if (next === null) continue
+          const next =
+            job.recurring === true
+              ? computeNext(job, job.lastFiredAt ?? job.createdAt)
+              : (stored.fireAt ?? computeNext(job, job.createdAt))
+          // 算不出下一次的任务不会再触发；one-shot 过点也不补跑，避免重启后把同一次触发算成下一次。
+          if (next === null || (job.recurring !== true && next <= Date.now())) continue
+          if (job.recurring !== true) job.fireAt = next
           job.nextRunAt = next
           jobs.set(job.id, job)
         }
@@ -173,7 +181,10 @@ export function createSchedulingStore(store: ScannableStore): SchedulingStore {
         durable,
       }
       const next = computeNext(job, now)
-      if (next !== null) job.nextRunAt = next
+      if (next !== null) {
+        if (!recurring) job.fireAt = next
+        job.nextRunAt = next
+      }
       jobs.set(job.id, job)
       if (durable) await persist(sessionID)
       return { ok: true, job }

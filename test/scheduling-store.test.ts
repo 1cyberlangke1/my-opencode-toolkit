@@ -64,6 +64,26 @@ describe("scheduling store", () => {
     expect(jobs[0]?.nextRunAt).toBeGreaterThan(Date.now())
   })
 
+  it("one-shot durable 保存稳定 fireAt，重启不重算 occurrence", async () => {
+    const { memory, store } = makeStore()
+    const added = await store.addJob({
+      sessionID: SESSION,
+      cron: "* * * * *",
+      prompt: "喵",
+      recurring: false,
+      durable: true,
+    })
+    expect(added.ok).toBe(true)
+    if (!added.ok) return
+
+    const stored = memory.values.get(scheduleKey(SESSION)) as { jobs?: { fireAt?: number }[] } | undefined
+    expect(stored?.jobs?.[0]?.fireAt).toBe(added.job.nextRunAt)
+
+    const restored = createSchedulingStore(memory)
+    await restored.load()
+    expect(restored.getJob(added.job.id)?.nextRunAt).toBe(added.job.nextRunAt)
+  })
+
   it("删除最后一个 durable 任务会清掉 key", async () => {
     const { memory, store } = makeStore()
     const added = await store.addJob({
@@ -109,6 +129,27 @@ describe("scheduling store", () => {
     }
     const overflow = await store.addJob({ sessionID: SESSION, cron: "0 * * * *", prompt: "one more" })
     expect(overflow.ok).toBe(false)
+  })
+
+  it("one-shot 过点后重启不补跑", async () => {
+    const { memory, store } = makeStore()
+    const now = Date.now()
+    memory.values.set(scheduleKey(SESSION), {
+      version: 1,
+      jobs: [
+        {
+          id: "meow0001",
+          sessionID: SESSION,
+          cron: "* * * * *",
+          prompt: "喵",
+          createdAt: now - 120_000,
+          fireAt: now - 60_000,
+        },
+      ],
+    })
+
+    await store.load()
+    expect(store.listJobs(SESSION)).toHaveLength(0)
   })
 
   it("load 跳过永远算不出下一次的任务", async () => {
