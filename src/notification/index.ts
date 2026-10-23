@@ -3,7 +3,6 @@ import type { Plugin } from "@opencode/plugin"
 import type { SessionRoles } from "../goal/session-role.ts"
 import { resolveMessages, type Messages } from "../i18n/index.ts"
 import { readEventSessionID } from "../shared/events.ts"
-import type { JsonStore } from "../shared/json.ts"
 import { isSyntheticUserMessage } from "../shared/messages.ts"
 import { loadSettings } from "../shared/settings-store.ts"
 import type { Settings } from "../shared/settings.ts"
@@ -49,13 +48,15 @@ function truncate(text: string, max: number): string {
  */
 export function createNotifier(args: {
   readonly ctx: Plugin.Context
-  readonly store: JsonStore
   readonly roles: SessionRoles
+  /** 测试注入；生产路径从 JSONC 读取。 */
+  readonly settings?: Settings
   readonly send?: NotificationSender
   readonly platform?: NodeJS.Platform
   readonly now?: () => number
 }): Notifier {
-  const { ctx, store, roles } = args
+  const { ctx, roles } = args
+  const currentSettings = async (): Promise<Settings> => args.settings ?? loadSettings(ctx)
   const send = args.send ?? createSender(args.platform ?? process.platform)
   const clock = args.now ?? Date.now
   const lastCompleteAt = new Map<string, number>()
@@ -125,7 +126,7 @@ export function createNotifier(args: {
       const sessionID = readEventSessionID(event)
       if (sessionID === undefined) return
 
-      const settings = await loadSettings(store)
+      const settings = await currentSettings()
       if (!settings.enabled || !settings.notification.enabled) return
 
       if (event.type === "session.deleted") {
@@ -155,7 +156,7 @@ export function createNotifier(args: {
     async handleToolBefore(input) {
       if (input.tool.toLowerCase() !== "question") return
 
-      const settings = await loadSettings(store)
+      const settings = await currentSettings()
       if (!settings.enabled || !settings.notification.enabled || !settings.notification.onQuestion) return
       if (!(await allowed(input.sessionID, settings))) return
       await notify(input.sessionID, settings, "question")

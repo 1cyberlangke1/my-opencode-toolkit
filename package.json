@@ -34,7 +34,8 @@
     "tui.ts"
   ],
   "dependencies": {
-    "effect": "4.0.1"
+    "effect": "4.0.1",
+    "jsonc-parser": "^3.3.1"
   },
   "peerDependencies": {
     "@opencode/plugin": "^2.0.32",

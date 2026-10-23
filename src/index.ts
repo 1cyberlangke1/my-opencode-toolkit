@@ -16,6 +16,15 @@ import { normalizeSettings } from "./shared/settings.ts"
 import { buildStats, buildSubagentDetail, createStatsTracker, hitRatePercent, listSubagents, trackEvent } from "./stats.ts"
 import { registerPingTool } from "./tools/ping.ts"
 
+/** 输入：RPC 参数；输出：配置层路径。 */
+function readLayers(input: unknown): readonly string[] | undefined {
+  const record = asRecord(input)
+  const value = record?.["layers"]
+  if (!Array.isArray(value)) return undefined
+  const layers = value.filter((item): item is string => typeof item === "string" && item.length > 0)
+  return layers.length === 0 ? undefined : layers
+}
+
 export default Plugin.define({
   id: PLUGIN_ID,
 
@@ -25,14 +34,12 @@ export default Plugin.define({
    * 预期：首次启动把 options 归一化后写入存储；之后以存储里的设置为准。
    */
   async setup(ctx) {
-    await loadSettings(ctx.storage, ctx.options)
-
     const roles = createSessionRoles(ctx)
     const goalController = createGoalController(ctx.storage)
     const tracker = createStatsTracker()
 
     const tool = await registerPingTool(ctx)
-    const goal = await registerGoal(ctx, ctx.storage, roles, goalController)
+    const goal = await registerGoal(ctx, roles, goalController)
     // RPC 注册在后面；先用一个可替换的发射器，避免定时器回调早于 rpc 就绪。
     let emitToast: (kind: "cron" | "loop") => void = () => undefined
     const scheduling = await registerScheduling(
@@ -49,11 +56,13 @@ export default Plugin.define({
     )
 
     const rpc = await ctx.rpc.register(ToolkitRpc, {
-      settingsGet: async () => loadSettings(ctx.storage, ctx.options),
+      settingsGet: async (input) => loadSettings(ctx, readLayers(input)),
       settingsSet: async (input) => {
         // RPC 定义是 PortableDefinition，运行时才知道 input 形状；这里再归一化一次兜底。
-        await saveSettings(ctx.storage, normalizeSettings(input))
-        return loadSettings(ctx.storage, ctx.options)
+        const layers = readLayers(input)
+        const next = normalizeSettings(input)
+        await saveSettings(ctx, next, layers)
+        return loadSettings(ctx, layers)
       },
       panelGet: async (input) => {
         const record = asRecord(input)
@@ -116,7 +125,7 @@ export default Plugin.define({
 
     // 功能关闭或子代理会话时，请求发给模型前就把对应工具从工具表移除。
     const hook = await ctx.session.hook("context", async (event) => {
-      const settings = await loadSettings(ctx.storage)
+      const settings = await loadSettings(ctx)
       if (!settings.enabled) {
         hideGoalTools(event.tools)
         hideSchedulingTools(event.tools)
@@ -127,13 +136,15 @@ export default Plugin.define({
       if (subagent || !settings.scheduling.enabled) hideSchedulingTools(event.tools)
     })
 
-    const notifier = createNotifier({ ctx, store: ctx.storage, roles })
+    const notifier = createNotifier({ ctx, roles })
 
     const toolBefore = await ctx.tool.hook("execute.before", async (input) => {
       await notifier.handleToolBefore({ tool: input.tool, sessionID: input.sessionID })
     })
     const toolAfter = await ctx.tool.hook("execute.after", (input) => {
       tracker.recordTool(input.sessionID, input.tool)
+      // 工具刚执行完就通知侧栏刷新；失败不影响工具结果。
+      void rpc.events.emit("panelUpdated", { sessionID: input.sessionID }).catch(() => undefined)
     })
 
     const handlers: EventHandler[] = [

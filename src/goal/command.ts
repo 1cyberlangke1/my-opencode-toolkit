@@ -63,7 +63,7 @@ export async function registerGoalCommand(
   controller: GoalController,
   continuation: GoalContinuation,
 ): Promise<{ dispose(): Promise<void> }> {
-  const settings = await loadSettings(ctx.storage)
+  const settings = await loadSettings(ctx)
   const messages = resolveMessages(settings.lang === "auto" ? undefined : settings.lang)
 
   const registration = await ctx.command.transform((editor) => {
@@ -71,7 +71,7 @@ export async function registerGoalCommand(
       name: "goal",
       description: messages.command.goal,
       execute: async (input) => {
-        const settings = await loadSettings(ctx.storage)
+        const settings = await loadSettings(ctx)
         const parsed = parseGoalCommand(input.prompt.text)
         // clear / show 是清理与查看，功能关闭时也允许，避免目标被永久锁在存储里。
         const readOnly = parsed.kind === "clear" || parsed.kind === "show"

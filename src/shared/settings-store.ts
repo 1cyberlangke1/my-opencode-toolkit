@@ -1,28 +1,40 @@
-import type { JsonStore } from "./json.ts"
-import { SETTINGS_KEY } from "./keys.ts"
+import { resolveConfigFiles } from "./config-paths.ts"
+import { diffConfig, nearestExistingConfig, readMergedConfig, writeConfigValues } from "./settings-file.ts"
 import { normalizeSettings, type Settings } from "./settings.ts"
 
-/**
- * 输入：存储 + 插件 options（可缺省）。
- * 输出：当前设置。
- * 预期：首次运行时把 options 归一化成默认值写盘；之后以存储里的值为准，
- *       存储损坏或字段缺失时按默认值补齐。
- */
-export async function loadSettings(store: JsonStore, options?: unknown): Promise<Settings> {
-  const stored = await store.get(SETTINGS_KEY)
-  if (stored === undefined) {
-    const initial = normalizeSettings(options)
-    await store.set(SETTINGS_KEY, initial)
-    return initial
-  }
-  return normalizeSettings(stored)
+/** 读取/写入设置需要的上下文。 */
+export type SettingsContext = {
+  readonly location?: { readonly directory?: string }
 }
 
 /**
- * 输入：存储 + 完整设置。
- * 输出：无。
- * 预期：先归一化再写盘，保证存储里不会出现未知字段或错误类型。
+ * 输入：插件上下文 + 可选层路径。
+ * 输出：JSONC 合并后的设置。
+ * 预期：默认值 < 全局 < 远项目 < 近项目；坏层跳过；不读 storage。
  */
-export async function saveSettings(store: JsonStore, settings: Settings): Promise<void> {
-  await store.set(SETTINGS_KEY, normalizeSettings(settings))
+export async function loadSettings(ctx: SettingsContext, layers?: readonly string[]): Promise<Settings> {
+  const paths = resolveConfigFiles(ctx.location?.directory ?? process.cwd(), layers)
+  const merged = await readMergedConfig(paths)
+  return normalizeSettings(merged.values)
+}
+
+/**
+ * 输入：插件上下文 + 完整设置 + 可选层路径。
+ * 输出：无；失败抛错。
+ * 预期：只写变化键；优先最近已存在的项目文件，否则全局。
+ */
+export async function saveSettings(
+  ctx: SettingsContext,
+  settings: Settings,
+  layers?: readonly string[],
+): Promise<void> {
+  const paths = resolveConfigFiles(ctx.location?.directory ?? process.cwd(), layers)
+  const merged = await readMergedConfig(paths)
+  const normalized = normalizeSettings(settings)
+  const patch = diffConfig(merged.values, { ...normalized })
+  if (patch === undefined) return
+  const target = await nearestExistingConfig(paths)
+  if (target === undefined) throw new Error("no plugin config path")
+  const result = await writeConfigValues(target, patch)
+  if (!result.ok) throw new Error(result.error)
 }

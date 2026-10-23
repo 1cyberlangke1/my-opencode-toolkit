@@ -1,7 +1,6 @@
 import type { Plugin } from "@opencode/plugin"
 
 import type { PluginEvent } from "../shared/events.ts"
-import type { JsonStore } from "../shared/json.ts"
 import type { Disposable } from "../shared/types.ts"
 import { registerGoalCommand } from "./command.ts"
 import { createGoalContinuation } from "./continuation.ts"
@@ -22,11 +21,10 @@ export type GoalHandle = Disposable & {
  */
 export async function registerGoal(
   ctx: Plugin.Context,
-  store: JsonStore,
   roles: SessionRoles,
   controller: GoalController,
 ): Promise<GoalHandle> {
-  const continuation = createGoalContinuation({ ctx, store, controller, roles })
+  const continuation = createGoalContinuation({ ctx, controller, roles })
 
   const tools = await registerGoalTools(ctx, controller, roles)
   const command = await registerGoalCommand(ctx, controller, continuation)

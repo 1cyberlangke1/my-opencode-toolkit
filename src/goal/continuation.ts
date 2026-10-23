@@ -2,9 +2,10 @@ import type { Plugin } from "@opencode/plugin"
 
 import { isIdleEvent, readEventData } from "../shared/events.ts"
 import type { PluginEvent } from "../shared/events.ts"
-import { asRecord, type JsonStore } from "../shared/json.ts"
+import { asRecord } from "../shared/json.ts"
 import { lastMessageIsUserInput } from "../shared/messages.ts"
 import { loadSettings } from "../shared/settings-store.ts"
+import type { Settings } from "../shared/settings.ts"
 import type { GoalController } from "./controller.ts"
 import { classifyGoalFailure } from "./error.ts"
 import { buildBudgetLimitPrompt, buildContinuationPrompt } from "./prompts.ts"
@@ -38,12 +39,13 @@ export type GoalContinuation = {
  */
 export function createGoalContinuation(args: {
   readonly ctx: Plugin.Context
-  readonly store: JsonStore
   readonly controller: GoalController
   readonly roles: SessionRoles
+  /** 测试注入；生产路径从 JSONC 读取。 */
+  readonly settings?: Settings
   readonly now?: () => number
 }): GoalContinuation {
-  const { ctx, store, controller, roles } = args
+  const { ctx, controller, roles } = args
   const now = args.now ?? Date.now
   const runStates = new Map<string, RunState>()
   const pending = new Set<string>()
@@ -61,7 +63,7 @@ export function createGoalContinuation(args: {
 
   /** 输入：会话 ID；输出：设置是否允许续作。预期：总开关或 goal 开关关闭时不续作。 */
   const enabled = async (): Promise<boolean> => {
-    const settings = await loadSettings(store)
+    const settings = args.settings ?? (await loadSettings(ctx))
     return settings.enabled && settings.goal.enabled
   }
 

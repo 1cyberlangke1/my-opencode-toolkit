@@ -36,7 +36,7 @@ describe("原文宽度与倒计时", () => {
 
   it("倒计时压缩成 s/m/h", () => {
     expect(formatCountdown(37_000)).toBe("37s")
-    expect(formatCountdown(4 * 60_000)).toBe("4m")
-    expect(formatCountdown(62 * 60_000)).toBe("1h2m")
+    expect(formatCountdown(4 * 60_000)).toBe("4m0s")
+    expect(formatCountdown(62 * 60_000)).toBe("1h2m0s")
   })
 })

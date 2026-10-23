@@ -29,6 +29,7 @@ function fakeContext(): Context {
     client: {
       rpc: () => ({
         panelGet: () => Promise.resolve(panel),
+        events: { on: () => () => {} },
       }),
     },
     data: {

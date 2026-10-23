@@ -96,13 +96,13 @@ export async function registerSchedulingCommands(
 ): Promise<{ dispose(): Promise<void> }> {
   /** 输入：会话 ID；输出：不可用原因，可用时为 null。 */
   const unavailable = async (sessionID: string): Promise<string | null> => {
-    const settings = await loadSettings(ctx.storage)
+    const settings = await loadSettings(ctx)
     if (!settings.enabled || !settings.scheduling.enabled) return "Error: the scheduling feature is disabled in settings."
     if (await roles.isSubagent(sessionID)) return "Error: scheduling commands are not available to subagents."
     return null
   }
 
-  const settings = await loadSettings(ctx.storage)
+  const settings = await loadSettings(ctx)
   const messages = resolveMessages(settings.lang === "auto" ? undefined : settings.lang)
 
   const registration = await ctx.command.transform((editor) => {

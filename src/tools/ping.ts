@@ -29,7 +29,7 @@ export async function registerPingTool(ctx: Plugin.Context): Promise<{ dispose()
       input: PingInput,
       output: PingOutput,
       execute: async () => {
-        const settings = await loadSettings(ctx.storage)
+        const settings = await loadSettings(ctx)
         const messages = resolveMessages(settings.lang === "auto" ? undefined : settings.lang)
         return {
           output: { enabled: settings.enabled, lang: settings.lang },

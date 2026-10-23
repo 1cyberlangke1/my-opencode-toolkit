@@ -1,10 +1,8 @@
 import type { Plugin } from "@opencode/plugin"
 import { describe, expect, it } from "vitest"
 
-import { MemoryStore } from "./helpers.ts"
 import { createNotifier } from "../src/notification/index.ts"
 import { DEFAULT_SETTINGS, normalizeSettings, type Settings } from "../src/shared/settings.ts"
-import { SETTINGS_KEY } from "../src/shared/keys.ts"
 
 const SESSION = "ses_test"
 
@@ -23,11 +21,9 @@ function fakeCtx(title = "My Session", messages: unknown[] = []): Plugin.Context
   } as unknown as Plugin.Context
 }
 
-/** 输入：设置；输出：已写入设置的存储。默认固定英文，避免跟随系统语言。 */
-function makeStore(settings: Settings = { ...DEFAULT_SETTINGS, lang: "en" }): MemoryStore {
-  const store = new MemoryStore()
-  store.values.set(SETTINGS_KEY, normalizeSettings(settings))
-  return store
+/** 输入：设置；输出：规范化设置。默认固定英文，避免跟随系统语言。 */
+function makeStore(settings: Settings = { ...DEFAULT_SETTINGS, lang: "en" }): Settings {
+  return normalizeSettings(settings)
 }
 
 /** 输入：无；输出：记录发送内容的数组与发送函数。 */
@@ -45,7 +41,7 @@ function makeSender(): { sent: [string, string][]; send: (title: string, message
 describe("notifier", () => {
   it("idle 发完成通知，标题带会话名", async () => {
     const { sent, send } = makeSender()
-    const notifier = createNotifier({ ctx: fakeCtx(), store: makeStore(), roles: mainRoles, send })
+    const notifier = createNotifier({ ctx: fakeCtx(), settings: makeStore(), roles: mainRoles, send })
 
     await notifier.handle({ type: "session.idle", data: { sessionID: SESSION } })
 
@@ -55,7 +51,7 @@ describe("notifier", () => {
   it("同一会话 1 秒内只通知一次", async () => {
     const { sent, send } = makeSender()
     let now = 1000
-    const notifier = createNotifier({ ctx: fakeCtx(), store: makeStore(), roles: mainRoles, send, now: () => now })
+    const notifier = createNotifier({ ctx: fakeCtx(), settings: makeStore(), roles: mainRoles, send, now: () => now })
 
     await notifier.handle({ type: "session.idle", data: { sessionID: SESSION } })
     now += 500
@@ -69,7 +65,7 @@ describe("notifier", () => {
 
   it("idle 与 execution.succeeded 合并成一次通知", async () => {
     const { sent, send } = makeSender()
-    const notifier = createNotifier({ ctx: fakeCtx(), store: makeStore(), roles: mainRoles, send })
+    const notifier = createNotifier({ ctx: fakeCtx(), settings: makeStore(), roles: mainRoles, send })
 
     await notifier.handle({ type: "session.execution.succeeded", data: { sessionID: SESSION } })
     await notifier.handle({ type: "session.idle", data: { sessionID: SESSION } })
@@ -82,7 +78,7 @@ describe("notifier", () => {
       { type: "user", text: "把 bug 修一下" },
       { type: "assistant", content: [{ type: "text", text: "修好了" }] },
     ]
-    const notifier = createNotifier({ ctx: fakeCtx("会话", messages), store: makeStore(), roles: mainRoles, send })
+    const notifier = createNotifier({ ctx: fakeCtx("会话", messages), settings: makeStore(), roles: mainRoles, send })
 
     await notifier.handle({ type: "session.idle", data: { sessionID: SESSION } })
 
@@ -103,7 +99,7 @@ describe("notifier", () => {
         metadata: { goalContinuation: true },
       },
     ]
-    const notifier = createNotifier({ ctx: fakeCtx("会话", messages), store: makeStore(), roles: mainRoles, send })
+    const notifier = createNotifier({ ctx: fakeCtx("会话", messages), settings: makeStore(), roles: mainRoles, send })
 
     await notifier.handle({ type: "session.idle", data: { sessionID: SESSION } })
 
@@ -115,7 +111,7 @@ describe("notifier", () => {
   it("通知总开关关闭时不发", async () => {
     const { sent, send } = makeSender()
     const settings: Settings = { ...DEFAULT_SETTINGS, notification: { ...DEFAULT_SETTINGS.notification, enabled: false } }
-    const notifier = createNotifier({ ctx: fakeCtx(), store: makeStore(settings), roles: mainRoles, send })
+    const notifier = createNotifier({ ctx: fakeCtx(), settings: makeStore(settings), roles: mainRoles, send })
 
     await notifier.handle({ type: "session.idle", data: { sessionID: SESSION } })
     expect(sent).toHaveLength(0)
@@ -124,7 +120,7 @@ describe("notifier", () => {
   it("onComplete 关闭时不发完成通知", async () => {
     const { sent, send } = makeSender()
     const settings: Settings = { ...DEFAULT_SETTINGS, notification: { ...DEFAULT_SETTINGS.notification, onComplete: false } }
-    const notifier = createNotifier({ ctx: fakeCtx(), store: makeStore(settings), roles: mainRoles, send })
+    const notifier = createNotifier({ ctx: fakeCtx(), settings: makeStore(settings), roles: mainRoles, send })
 
     await notifier.handle({ type: "session.idle", data: { sessionID: SESSION } })
     expect(sent).toHaveLength(0)
@@ -134,7 +130,7 @@ describe("notifier", () => {
     const { sent, send } = makeSender()
     const notifier = createNotifier({
       ctx: fakeCtx(),
-      store: makeStore(),
+      settings: makeStore(),
       roles: { isSubagent: () => Promise.resolve(true), forget: () => undefined },
       send,
     })
@@ -145,7 +141,7 @@ describe("notifier", () => {
 
   it("permission.asked 发权限通知", async () => {
     const { sent, send } = makeSender()
-    const notifier = createNotifier({ ctx: fakeCtx(), store: makeStore(), roles: mainRoles, send })
+    const notifier = createNotifier({ ctx: fakeCtx(), settings: makeStore(), roles: mainRoles, send })
 
     await notifier.handle({ type: "permission.asked", data: { sessionID: SESSION } })
     expect(sent[0]?.[1]).toBe("Permission required")
@@ -154,7 +150,7 @@ describe("notifier", () => {
   it("onPermission 关闭时不发权限通知", async () => {
     const { sent, send } = makeSender()
     const settings: Settings = { ...DEFAULT_SETTINGS, notification: { ...DEFAULT_SETTINGS.notification, onPermission: false } }
-    const notifier = createNotifier({ ctx: fakeCtx(), store: makeStore(settings), roles: mainRoles, send })
+    const notifier = createNotifier({ ctx: fakeCtx(), settings: makeStore(settings), roles: mainRoles, send })
 
     await notifier.handle({ type: "permission.asked", data: { sessionID: SESSION } })
     expect(sent).toHaveLength(0)
@@ -162,7 +158,7 @@ describe("notifier", () => {
 
   it("question 工具触发提问通知", async () => {
     const { sent, send } = makeSender()
-    const notifier = createNotifier({ ctx: fakeCtx(), store: makeStore(), roles: mainRoles, send })
+    const notifier = createNotifier({ ctx: fakeCtx(), settings: makeStore(), roles: mainRoles, send })
 
     await notifier.handleToolBefore({ tool: "question", sessionID: SESSION })
     expect(sent[0]?.[1]).toBe("The agent is asking a question")
@@ -170,7 +166,7 @@ describe("notifier", () => {
 
   it("其他工具不触发", async () => {
     const { sent, send } = makeSender()
-    const notifier = createNotifier({ ctx: fakeCtx(), store: makeStore(), roles: mainRoles, send })
+    const notifier = createNotifier({ ctx: fakeCtx(), settings: makeStore(), roles: mainRoles, send })
 
     await notifier.handleToolBefore({ tool: "read", sessionID: SESSION })
     expect(sent).toHaveLength(0)
@@ -179,7 +175,7 @@ describe("notifier", () => {
   it("中文设置用中文文案", async () => {
     const { sent, send } = makeSender()
     const settings: Settings = { ...DEFAULT_SETTINGS, lang: "zh" }
-    const notifier = createNotifier({ ctx: fakeCtx("会话"), store: makeStore(settings), roles: mainRoles, send })
+    const notifier = createNotifier({ ctx: fakeCtx("会话"), settings: makeStore(settings), roles: mainRoles, send })
 
     await notifier.handle({ type: "session.idle", data: { sessionID: SESSION } })
     expect(sent).toEqual([["OpenCode · 会话", "任务完成"]])
@@ -188,7 +184,7 @@ describe("notifier", () => {
   it("发送失败不影响后续事件", async () => {
     const notifier = createNotifier({
       ctx: fakeCtx(),
-      store: makeStore(),
+      settings: makeStore(),
       roles: mainRoles,
       send: () => Promise.reject(new Error("boom")),
     })

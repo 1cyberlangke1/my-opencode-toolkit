@@ -54,8 +54,19 @@ export function padRight(text: string, width: number): string {
   return `${text}${" ".repeat(Math.max(0, width - visualWidth(text)))}`
 }
 
-/** 输入：未来剩余毫秒；输出：`37s` / `4m` / `1h2m`。 */
+/** 输入：未来剩余毫秒；输出：`37s` / `4m32s` / `1h2m3s`。预期：显示到秒。 */
 export function formatCountdown(ms: number): string {
+  const total = Math.max(0, Math.ceil(ms / 1000))
+  const seconds = total % 60
+  const minutes = Math.floor(total / 60) % 60
+  const hours = Math.floor(total / 3600)
+  if (hours > 0) return `${hours.toString()}h${minutes.toString()}m${seconds.toString()}s`
+  if (minutes > 0) return `${minutes.toString()}m${seconds.toString()}s`
+  return `${seconds.toString()}s`
+}
+
+/** 输入：毫秒；输出：粗粒度相对时间，避免历史时间每秒抖动。 */
+function coarseDuration(ms: number): string {
   const seconds = Math.max(0, Math.ceil(ms / 1000))
   if (seconds < 60) return `${seconds.toString()}s`
   const minutes = Math.floor(seconds / 60)
@@ -67,5 +78,5 @@ export function formatCountdown(ms: number): string {
 
 /** 输入：过去的时间戳 + 当前时间；输出：`2m` / `3h` 这类相对时间。 */
 export function formatAgo(timestamp: number, now: number): string {
-  return formatCountdown(Math.max(0, now - timestamp))
+  return coarseDuration(Math.max(0, now - timestamp))
 }

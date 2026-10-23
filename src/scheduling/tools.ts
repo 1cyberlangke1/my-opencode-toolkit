@@ -62,7 +62,7 @@ export async function registerSchedulingTools(
 ): Promise<{ dispose(): Promise<void> }> {
   /** 输入：会话 ID；输出：不可用原因，可用时为 null。 */
   const unavailable = async (sessionID: string): Promise<string | null> => {
-    const settings = await loadSettings(ctx.storage)
+    const settings = await loadSettings(ctx)
     if (!settings.enabled || !settings.scheduling.enabled) {
       return "Error: the scheduling feature is disabled in settings."
     }

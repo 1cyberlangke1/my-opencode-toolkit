@@ -38,7 +38,7 @@ export async function registerScheduling(
 
   /** 输入：无；输出：总开关与 scheduling 开关是否都打开。 */
   const isEnabled = async (): Promise<boolean> => {
-    const settings = await loadSettings(store)
+    const settings = await loadSettings(ctx)
     return settings.enabled && settings.scheduling.enabled
   }
 

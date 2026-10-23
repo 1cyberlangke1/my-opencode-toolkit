@@ -41,6 +41,7 @@ function fakeContext(panel: PanelData = PANEL): Context {
         panelGet: () => Promise.resolve(panel),
         subagentGet: () =>
           Promise.resolve({ steps: 1, input: 1200, output: 20, cached: 500, hitRate: 41.67, tools: [{ name: "read", count: 2 }] }),
+        events: { on: () => () => {} },
       }),
     },
     data: {

@@ -57,7 +57,7 @@ export async function registerGoalTools(
 ): Promise<{ dispose(): Promise<void> }> {
   /** 输入：会话 ID；输出：不可用原因，可用时为 `null`。 */
   const unavailable = async (sessionID: string): Promise<string | null> => {
-    const settings = await loadSettings(ctx.storage)
+    const settings = await loadSettings(ctx)
     if (!settings.enabled || !settings.goal.enabled) return "Error: the goal feature is disabled in settings."
     if (await roles.isSubagent(sessionID)) return "Error: goal tools are not available to subagents."
     return null

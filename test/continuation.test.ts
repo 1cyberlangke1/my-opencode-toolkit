@@ -63,7 +63,7 @@ describe("goal continuation", () => {
     const controller = createGoalController(store)
     await controller.setGoal(SESSION, "ship it")
     const log: PromptLog = []
-    const continuation = createGoalContinuation({ ctx: fakeCtx(log), store, controller, roles })
+    const continuation = createGoalContinuation({ ctx: fakeCtx(log), settings: DEFAULT_SETTINGS, controller, roles })
 
     await continuation.handle({ type: "session.idle", data: { sessionID: SESSION } })
 
@@ -78,7 +78,7 @@ describe("goal continuation", () => {
     await controller.setGoal("ses_a", "goal-a")
     await controller.setGoal("ses_b", "goal-b")
     const log: PromptLog = []
-    const continuation = createGoalContinuation({ ctx: fakeCtx(log), store, controller, roles })
+    const continuation = createGoalContinuation({ ctx: fakeCtx(log), settings: DEFAULT_SETTINGS, controller, roles })
 
     await continuation.handle({ type: "session.idle", data: { sessionID: "ses_a" } })
     expect(log).toHaveLength(1)
@@ -99,7 +99,7 @@ describe("goal continuation", () => {
     const controller = createGoalController(store)
     await controller.setGoal(SESSION, "ship it")
     const log: PromptLog = []
-    const continuation = createGoalContinuation({ ctx: fakeCtx(log), store, controller, roles })
+    const continuation = createGoalContinuation({ ctx: fakeCtx(log), settings: DEFAULT_SETTINGS, controller, roles })
 
     await continuation.handle({ type: "session.execution.succeeded", data: { sessionID: SESSION } })
 
@@ -111,7 +111,7 @@ describe("goal continuation", () => {
     const store = storeWithGoalEnabled()
     const controller = createGoalController(store)
     const log: PromptLog = []
-    const continuation = createGoalContinuation({ ctx: fakeCtx(log), store, controller, roles })
+    const continuation = createGoalContinuation({ ctx: fakeCtx(log), settings: DEFAULT_SETTINGS, controller, roles })
 
     await continuation.handle({ type: "session.idle", data: { sessionID: SESSION } })
     await controller.setGoal(SESSION, "x")
@@ -127,7 +127,12 @@ describe("goal continuation", () => {
     const controller = createGoalController(store)
     await controller.setGoal(SESSION, "x")
     const log: PromptLog = []
-    const continuation = createGoalContinuation({ ctx: fakeCtx(log), store, controller, roles })
+    const continuation = createGoalContinuation({
+      ctx: fakeCtx(log),
+      settings: { ...DEFAULT_SETTINGS, goal: { ...DEFAULT_SETTINGS.goal, enabled: false } },
+      controller,
+      roles,
+    })
 
     await continuation.handle({ type: "session.idle", data: { sessionID: SESSION } })
     expect(log).toHaveLength(0)
@@ -138,7 +143,7 @@ describe("goal continuation", () => {
     const controller = createGoalController(store)
     await controller.setGoal(SESSION, "x")
     const log: PromptLog = []
-    const continuation = createGoalContinuation({ ctx: fakeCtx(log), store, controller, roles })
+    const continuation = createGoalContinuation({ ctx: fakeCtx(log), settings: DEFAULT_SETTINGS, controller, roles })
 
     await continuation.handle({ type: "session.idle", data: { sessionID: SESSION } })
     await continuation.handle({ type: "session.idle", data: { sessionID: SESSION } })
@@ -158,7 +163,7 @@ describe("goal continuation", () => {
     const controller = createGoalController(store)
     await controller.setGoal(SESSION, "x")
     const log: PromptLog = []
-    const continuation = createGoalContinuation({ ctx: fakeCtx(log), store, controller, roles })
+    const continuation = createGoalContinuation({ ctx: fakeCtx(log), settings: DEFAULT_SETTINGS, controller, roles })
 
     await continuation.handle({ type: "session.idle", data: { sessionID: SESSION } })
     expect(log).toHaveLength(1)
@@ -175,7 +180,7 @@ describe("goal continuation", () => {
     await controller.setGoal(SESSION, "x")
     const continuation = createGoalContinuation({
       ctx: fakeCtx([]),
-      store,
+      settings: DEFAULT_SETTINGS,
       controller,
       roles,
       now: () => 10_000,
@@ -199,7 +204,7 @@ describe("goal continuation", () => {
     const log: PromptLog = []
     const continuation = createGoalContinuation({
       ctx: fakeCtx(log),
-      store,
+      settings: DEFAULT_SETTINGS,
       controller,
       roles,
       now: () => 10_000,
@@ -232,7 +237,7 @@ describe("goal continuation", () => {
     const controller = createGoalController(store)
     await controller.setGoal(SESSION, "x")
     const log: PromptLog = []
-    const continuation = createGoalContinuation({ ctx: fakeCtx(log), store, controller, roles })
+    const continuation = createGoalContinuation({ ctx: fakeCtx(log), settings: DEFAULT_SETTINGS, controller, roles })
 
     await continuation.handle({
       type: "session.execution.interrupted",
@@ -248,7 +253,7 @@ describe("goal continuation", () => {
     const store = storeWithGoalEnabled()
     const controller = createGoalController(store)
     await controller.setGoal(SESSION, "x")
-    const continuation = createGoalContinuation({ ctx: fakeCtx([]), store, controller, roles })
+    const continuation = createGoalContinuation({ ctx: fakeCtx([]), settings: DEFAULT_SETTINGS, controller, roles })
 
     await continuation.handle({
       type: "session.execution.interrupted",
@@ -263,7 +268,7 @@ describe("goal continuation", () => {
     const controller = createGoalController(store)
     await controller.setGoal(SESSION, "x")
     const log: PromptLog = []
-    const continuation = createGoalContinuation({ ctx: fakeCtx(log), store, controller, roles })
+    const continuation = createGoalContinuation({ ctx: fakeCtx(log), settings: DEFAULT_SETTINGS, controller, roles })
 
     await continuation.handle({
       type: "session.execution.failed",
@@ -287,7 +292,7 @@ describe("goal continuation", () => {
     const log: PromptLog = []
     const continuation = createGoalContinuation({
       ctx: fakeCtx(log, [{ type: "user", text: "等一下", metadata: {} }]),
-      store,
+      settings: DEFAULT_SETTINGS,
       controller,
       roles,
     })
@@ -303,7 +308,7 @@ describe("goal continuation", () => {
     const log: PromptLog = []
     const continuation = createGoalContinuation({
       ctx: fakeCtx(log, [{ type: "user", text: "continue", metadata: { goalContinuation: true } }]),
-      store,
+      settings: DEFAULT_SETTINGS,
       controller,
       roles,
     })
@@ -321,7 +326,7 @@ describe("goal continuation", () => {
       isSubagent: () => Promise.resolve(true),
       forget: () => undefined,
     }
-    const continuation = createGoalContinuation({ ctx: fakeCtx(log), store, controller, roles: subagentRoles })
+    const continuation = createGoalContinuation({ ctx: fakeCtx(log), settings: DEFAULT_SETTINGS, controller, roles: subagentRoles })
 
     await continuation.handle({ type: "session.idle", data: { sessionID: SESSION } })
     expect(log).toHaveLength(0)
@@ -332,7 +337,7 @@ describe("goal continuation", () => {
     const controller = createGoalController(store)
     await controller.setGoal(SESSION, "x")
     const log: PromptLog = []
-    const continuation = createGoalContinuation({ ctx: fakeCtx(log), store, controller, roles })
+    const continuation = createGoalContinuation({ ctx: fakeCtx(log), settings: DEFAULT_SETTINGS, controller, roles })
 
     await continuation.handle({ type: "session.idle", data: { sessionID: SESSION } })
     await continuation.handle({ type: "session.deleted", data: { sessionID: SESSION } })

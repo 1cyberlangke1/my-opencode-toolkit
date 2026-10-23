@@ -3,10 +3,70 @@ import { Rpc } from "@opencode/plugin/rpc"
 import { RPC_ID } from "./identity.ts"
 import type { Settings } from "./settings.ts"
 
-/** 设置读取的输入：当前不需要参数，保留空对象以便后续扩展。 */
-const EmptyInputJson = {
+/** 配置层路径：全局在前，项目由远到近。 */
+const LayersJson = {
+  type: "array",
+  items: { type: "string" },
+} as const
+
+/** 设置读取的输入。 */
+const SettingsGetInputJson = {
   type: "object",
-  properties: {},
+  properties: { layers: LayersJson },
+  additionalProperties: false,
+} as const
+
+/** 设置写入的输入：完整设置 + 层路径。 */
+const SettingsSetInputJson = {
+  type: "object",
+  properties: {
+    lang: { type: "string", enum: ["auto", "zh", "en"] },
+    enabled: { type: "boolean" },
+    notification: {
+      type: "object",
+      properties: {
+        enabled: { type: "boolean" },
+        onComplete: { type: "boolean" },
+        onQuestion: { type: "boolean" },
+        onPermission: { type: "boolean" },
+        onlyMainSession: { type: "boolean" },
+      },
+      required: ["enabled", "onComplete", "onQuestion", "onPermission", "onlyMainSession"],
+      additionalProperties: false,
+    },
+    goal: {
+      type: "object",
+      properties: { enabled: { type: "boolean" }, showInSidebar: { type: "boolean" } },
+      required: ["enabled", "showInSidebar"],
+      additionalProperties: false,
+    },
+    scheduling: {
+      type: "object",
+      properties: { enabled: { type: "boolean" }, showInSidebar: { type: "boolean" } },
+      required: ["enabled", "showInSidebar"],
+      additionalProperties: false,
+    },
+    sidebar: {
+      type: "object",
+      properties: { showTools: { type: "boolean" }, showSubagents: { type: "boolean" } },
+      required: ["showTools", "showSubagents"],
+      additionalProperties: false,
+    },
+    contextStats: {
+      type: "object",
+      properties: {
+        enabled: { type: "boolean" },
+        showInput: { type: "boolean" },
+        showOutput: { type: "boolean" },
+        showCache: { type: "boolean" },
+        showHitRate: { type: "boolean" },
+      },
+      required: ["enabled", "showInput", "showOutput", "showCache", "showHitRate"],
+      additionalProperties: false,
+    },
+    layers: LayersJson,
+  },
+  required: ["lang", "enabled", "notification", "goal", "scheduling", "sidebar", "contextStats"],
   additionalProperties: false,
 } as const
 
@@ -191,6 +251,14 @@ const PanelOutputJson = {
   additionalProperties: false,
 } as const
 
+/** 统计变化后通知 TUI 立刻刷新面板。 */
+const PanelUpdatedEventJson = {
+  type: "object",
+  properties: { sessionID: { type: "string" } },
+  required: ["sessionID"],
+  additionalProperties: false,
+} as const
+
 /** Plan 模式跳过 cron/loop 时发给 TUI 的 toast 事件。 */
 const ToastEventJson = {
   type: "object",
@@ -206,13 +274,14 @@ const ToastEventJson = {
 export const ToolkitRpc: Rpc.PortableDefinition = Rpc.define({
   id: RPC_ID,
   methods: {
-    settingsGet: { input: EmptyInputJson, output: SettingsJson },
-    settingsSet: { input: SettingsJson, output: SettingsJson },
+    settingsGet: { input: SettingsGetInputJson, output: SettingsJson },
+    settingsSet: { input: SettingsSetInputJson, output: SettingsJson },
     panelGet: { input: PanelInputJson, output: PanelOutputJson },
     subagentGet: { input: PanelInputJson, output: PanelSubagentDetailJson },
   },
   events: {
     toast: { schema: ToastEventJson },
+    panelUpdated: { schema: PanelUpdatedEventJson },
   },
 })
 
@@ -289,16 +358,25 @@ export type ToolkitToastEvent = {
   readonly kind: "cron" | "loop"
 }
 
+/** 面板刷新事件的载荷。 */
+export type PanelUpdatedEvent = {
+  readonly sessionID: string
+}
+
 /** TUI 侧对 ToolkitRpc 的类型化视图。 */
 export type ToolkitRpcClient = {
-  settingsGet(input: Record<string, never>): Promise<Settings>
-  settingsSet(input: Settings): Promise<Settings>
+  settingsGet(input: { readonly layers?: readonly string[] }): Promise<Settings>
+  settingsSet(input: Settings & { readonly layers?: readonly string[] }): Promise<Settings>
   panelGet(input: { readonly sessionID: string }): Promise<PanelData>
   subagentGet(input: { readonly sessionID: string }): Promise<PanelSubagentDetail>
   events: {
     on(
       name: "toast",
       handler: (event: { readonly data: ToolkitToastEvent }) => void,
+    ): () => void
+    on(
+      name: "panelUpdated",
+      handler: (event: { readonly data: PanelUpdatedEvent }) => void,
     ): () => void
   }
 }

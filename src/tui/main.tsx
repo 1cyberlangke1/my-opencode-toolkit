@@ -8,6 +8,7 @@ import { SETTINGS_COMMAND_ID, SETTINGS_SLASH_NAME, TUI_PLUGIN_ID } from "../shar
 import { DEFAULT_SETTINGS, type Lang, type Settings } from "../shared/settings.ts"
 import { toolkitRpc, type PanelData, type PanelSubagent, type PanelSubagentDetail } from "../shared/rpc.ts"
 import { countdownColor, hitRateColor } from "./color.ts"
+import { configFileLayers } from "./config-layers.ts"
 import { formatAgo, formatCountdown, padRight, truncate } from "./format.ts"
 
 /** 主菜单条目。 */
@@ -82,11 +83,16 @@ export function Sidebar(props: {
         return
       }
       if (timer !== undefined) clearTimeout(timer)
-      timer = setTimeout(refresh, 300)
+      timer = setTimeout(refresh, 50)
     })
-    const clock = setInterval(() => setNow(Date.now()), 30_000)
+    const offPanel = rpc.events.on("panelUpdated", () => {
+      if (timer !== undefined) clearTimeout(timer)
+      timer = setTimeout(refresh, 50)
+    })
+    const clock = setInterval(() => setNow(Date.now()), 1_000)
     onCleanup(() => {
       off()
+      offPanel()
       if (timer !== undefined) clearTimeout(timer)
       clearInterval(clock)
     })
@@ -380,10 +386,15 @@ export function ContextStats(props: {
         return
       }
       if (timer !== undefined) clearTimeout(timer)
-      timer = setTimeout(refresh, 300)
+      timer = setTimeout(refresh, 50)
+    })
+    const offPanel = rpc.events.on("panelUpdated", () => {
+      if (timer !== undefined) clearTimeout(timer)
+      timer = setTimeout(refresh, 50)
     })
     onCleanup(() => {
       off()
+      offPanel()
       if (timer !== undefined) clearTimeout(timer)
     })
   })
@@ -437,7 +448,8 @@ export default Plugin.define({
 
   async setup(context) {
     const rpc = toolkitRpc(context.client)
-    const initial = await rpc.settingsGet({}).catch((): Settings => DEFAULT_SETTINGS)
+    const layers = await configFileLayers(context)
+    const initial = await rpc.settingsGet({ layers }).catch((): Settings => DEFAULT_SETTINGS)
     const [settings, setSettings] = createSignal<Settings>(initial)
 
     /** 输入：新设置；输出：无；预期：先乐观更新，失败回滚。 */
@@ -445,7 +457,7 @@ export default Plugin.define({
       const previous = settings()
       setSettings(next)
       try {
-        setSettings(await rpc.settingsSet(next))
+        setSettings(await rpc.settingsSet({ ...next, layers }))
       } catch {
         setSettings(previous)
       }

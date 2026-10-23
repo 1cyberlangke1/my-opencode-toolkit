@@ -1,52 +1,48 @@
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 
-import { MemoryStore } from "./helpers.ts"
-import { SETTINGS_KEY } from "../src/shared/keys.ts"
+import { CONFIG_FILE } from "../src/shared/config-paths.ts"
 import { loadSettings, saveSettings } from "../src/shared/settings-store.ts"
-import { DEFAULT_SETTINGS, normalizeSettings } from "../src/shared/settings.ts"
+import { DEFAULT_SETTINGS, normalizeSettings, type Settings } from "../src/shared/settings.ts"
+
+/** 输入：初始值；输出：临时项目目录 + `.opencode` 配置文件。 */
+function fixture(settings?: Settings): {
+  readonly ctx: { location: { directory: string } }
+  readonly path: string
+} {
+  const directory = mkdtempSync(join(tmpdir(), "toolkit-settings-"))
+  const opencode = join(directory, ".opencode")
+  mkdirSync(opencode, { recursive: true })
+  const path = join(opencode, CONFIG_FILE)
+  if (settings !== undefined) writeFileSync(path, JSON.stringify(settings), "utf8")
+  return { ctx: { location: { directory } }, path }
+}
 
 describe("loadSettings", () => {
-  it("首次运行写入默认值并返回", async () => {
-    const store = new MemoryStore()
-    const got = await loadSettings(store)
-    expect(got).toEqual(DEFAULT_SETTINGS)
-    expect(store.values.get(SETTINGS_KEY)).toEqual(DEFAULT_SETTINGS)
+  it("没有配置文件时返回默认值", async () => {
+    const { ctx } = fixture()
+    expect(await loadSettings(ctx)).toEqual(DEFAULT_SETTINGS)
   })
 
-  it("用插件 options 作为首次默认值", async () => {
-    const store = new MemoryStore()
-    const got = await loadSettings(store, { lang: "zh", notification: { enabled: false } })
+  it("读取 JSONC 并补齐缺字段", async () => {
+    const { ctx, path } = fixture()
+    writeFileSync(path, '{ "lang": "zh", "goal": { "enabled": false } }', "utf8")
+    const got = await loadSettings(ctx)
     expect(got.lang).toBe("zh")
-    expect(got.notification.enabled).toBe(false)
-    expect(got.goal).toEqual(DEFAULT_SETTINGS.goal)
-  })
-
-  it("已有值优先于 options", async () => {
-    const store = new MemoryStore()
-    store.values.set(SETTINGS_KEY, normalizeSettings({ lang: "en" }))
-    const got = await loadSettings(store, { lang: "zh" })
-    expect(got.lang).toBe("en")
-  })
-
-  it("存储损坏时按默认值补齐，不抛异常", async () => {
-    const store = new MemoryStore()
-    store.values.set(SETTINGS_KEY, "broken")
-    const got = await loadSettings(store)
-    expect(got).toEqual(DEFAULT_SETTINGS)
+    expect(got.goal.enabled).toBe(false)
+    expect(got.goal.showInSidebar).toBe(DEFAULT_SETTINGS.goal.showInSidebar)
   })
 })
 
 describe("saveSettings", () => {
-  it("写盘前归一化，未知字段不会落盘", async () => {
-    const store = new MemoryStore()
-    await saveSettings(store, {
-      ...DEFAULT_SETTINGS,
-      lang: "zh",
-      extra: true,
-    } as unknown as typeof DEFAULT_SETTINGS)
-
-    const stored = store.values.get(SETTINGS_KEY)
-    expect(stored).toEqual(normalizeSettings({ lang: "zh" }))
-    expect(JSON.stringify(stored)).not.toContain("extra")
+  it("只写变化键，保留原有注释", async () => {
+    const { ctx, path } = fixture()
+    writeFileSync(path, '{\n  // keep\n  "lang": "zh"\n}\n', "utf8")
+    await saveSettings(ctx, normalizeSettings({ ...DEFAULT_SETTINGS, lang: "en" }))
+    const text = readFileSync(path, "utf8")
+    expect(text).toContain("// keep")
+    expect(text).toContain('"lang": "en"')
   })
 })
