@@ -143,8 +143,9 @@ const PanelGoalJson = {
     tokensUsed: { type: "number" },
     tokenBudget: { type: "number" },
     timeUsedSeconds: { type: "number" },
+    updatedAt: { type: "number" },
   },
-  required: ["objective", "status", "tokensUsed", "timeUsedSeconds"],
+  required: ["objective", "status", "tokensUsed", "timeUsedSeconds", "updatedAt"],
   additionalProperties: false,
 } as const
 
@@ -292,6 +293,7 @@ export type PanelGoal = {
   readonly tokensUsed: number
   readonly tokenBudget?: number
   readonly timeUsedSeconds: number
+  readonly updatedAt: number
 }
 
 /** 面板循环摘要。 */

@@ -27,7 +27,9 @@ export async function registerGoal(
 ): Promise<GoalHandle> {
   const continuation = createGoalContinuation({ ctx, controller, roles })
 
-  const tools = await registerGoalTools(ctx, controller, roles)
+  const tools = await registerGoalTools(ctx, controller, roles, (sessionID) => {
+    continuation.resetRunState(sessionID)
+  })
   const command = await registerGoalCommand(ctx, controller, continuation, notify)
 
   return {

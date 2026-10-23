@@ -172,6 +172,14 @@ export function Sidebar(props: {
   }
 
   const goal = (): PanelData["goal"] => panel()?.goal ?? null
+  /** 输入：无；输出：目标已用毫秒。预期：active 时按 updatedAt 每秒递增。 */
+  const goalTimeMs = (): number => {
+    const current = goal()
+    if (current === null) return 0
+    const base = current.timeUsedSeconds * 1000
+    const extra = current.status === "active" ? Math.max(0, now() - current.updatedAt * 1000) : 0
+    return base + extra
+  }
   const subagents = (): readonly PanelSubagent[] => panel()?.subagents ?? []
   const visibleTools = (): readonly { readonly name: string; readonly count: number }[] =>
     (panel()?.stats.tools ?? []).filter((tool) => tool.count > 0)
@@ -204,7 +212,7 @@ export function Sidebar(props: {
                     goal()?.tokenBudget === undefined ? "" : ` / ${formatTokens(goal()?.tokenBudget ?? 0)}`
                   }`,
                 )}
-                {labelRow(props.copy().panel.time, formatCountdown((goal()?.timeUsedSeconds ?? 0) * 1000))}
+                {labelRow(props.copy().panel.time, formatCountdown(goalTimeMs()))}
               </box>
             </Show>
           </box>

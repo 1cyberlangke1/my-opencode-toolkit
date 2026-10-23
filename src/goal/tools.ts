@@ -54,6 +54,7 @@ export async function registerGoalTools(
   ctx: Plugin.Context,
   controller: GoalController,
   roles: SessionRoles,
+  reset: (sessionID: string) => void,
 ): Promise<{ dispose(): Promise<void> }> {
   /** 输入：会话 ID；输出：不可用原因，可用时为 `null`。 */
   const unavailable = async (sessionID: string): Promise<string | null> => {
@@ -124,6 +125,7 @@ export async function registerGoalTools(
 
         if (input.status === "cleared") {
           await controller.clearGoal(sessionID)
+          reset(sessionID)
           return { output: {}, content: "Goal cleared." }
         }
         if (input.status === "paused") {
@@ -139,6 +141,7 @@ export async function registerGoalTools(
         if (input.status === "complete") {
           const goal = await controller.markComplete(sessionID)
           if (goal === null) return { output: {}, content: "Error: no goal set for this session." }
+          reset(sessionID)
           return { output: {}, content: formatGoal(goal) }
         }
 

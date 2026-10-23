@@ -7,7 +7,7 @@ import { createSessionRoles } from "./goal/session-role.ts"
 import { createNotifier } from "./notification/index.ts"
 import { hideSchedulingTools } from "./scheduling/filter.ts"
 import { registerScheduling } from "./scheduling/index.ts"
-import { dispatchEvent, type EventHandler } from "./shared/events.ts"
+import { dispatchEvent, readEventSessionID, type EventHandler } from "./shared/events.ts"
 import { PLUGIN_ID } from "./shared/identity.ts"
 import { asRecord } from "./shared/json.ts"
 import { ToolkitRpc } from "./shared/rpc.ts"
@@ -91,6 +91,7 @@ export default Plugin.define({
                   status: current.status,
                   tokensUsed: current.tokensUsed,
                   timeUsedSeconds: current.timeUsedSeconds,
+                  updatedAt: current.updatedAt,
                   ...(current.tokenBudget === undefined ? {} : { tokenBudget: current.tokenBudget }),
                 },
           loops: scheduling.scheduler.listLoops(sessionID).map((loop) => ({
@@ -160,6 +161,14 @@ export default Plugin.define({
       },
       (event) => notifier.handle(event),
       (event) => goal.handle(event),
+      (event) => {
+        // goal 记账发生在 step.ended；记账后再刷新，避免 TUI 读到旧 tokensUsed。
+        if (event.type === "session.step.ended") {
+          const sessionID = readEventSessionID(event)
+          if (sessionID !== undefined) emitPanelUpdated(sessionID)
+        }
+        return Promise.resolve()
+      },
       (event) => scheduling.handle(event),
     ]
 

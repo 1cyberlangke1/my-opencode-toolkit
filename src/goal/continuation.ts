@@ -126,11 +126,8 @@ export function createGoalContinuation(args: {
     const state = stateOf(sessionID)
     if (state.wasCancelled || state.tokenLimitDetected || state.insufficientFundsDetected) return
 
-    // 上一条续作注入后没有产生任何 step：说明模型没有接手，先跳过一次避免死循环。
-    if (pending.has(sessionID)) {
-      pending.delete(sessionID)
-      return
-    }
+    // 已注入续作但还没有真实 step：同一轮多个 idle 事件都跳过，避免重复催。
+    if (pending.has(sessionID)) return
 
     const goal = await controller.getGoal(sessionID)
     if (goal?.status !== "active") return
