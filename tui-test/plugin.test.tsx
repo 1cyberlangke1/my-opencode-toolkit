@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { Context } from "@opencode/plugin/tui/context"
 
 import { DEFAULT_SETTINGS, type Settings } from "../src/shared/settings.ts"
+import { resolveMessages } from "../src/i18n/index.ts"
 import plugin from "../src/tui/main.tsx"
 
 /** 已注册的 keymap 层。 */
@@ -212,11 +213,14 @@ describe("tui plugin setup", () => {
     toastHandlers[0]?.({ data: { reason: "planSkipped", kind: "cron", sessionID: "ses_1" } })
     expect(toasts).toHaveLength(1)
     expect(toasts[0]?.variant).toBe("warning")
-    expect(toasts[0]?.message).toMatch(/Plan mode is read-only|Plan 模式只读/)
+    // 断言文案来自语言文件，不写死某种语言：本机与 CI 的 locale 可能不同。
+    const zh = resolveMessages("zh")
+    const en = resolveMessages("en")
+    expect([zh.toast.planSkippedCron, en.toast.planSkippedCron]).toContain(toasts[0]?.message)
 
     toastHandlers[0]?.({ data: { reason: "planSkipped", kind: "loop", sessionID: "ses_1" } })
     expect(toasts).toHaveLength(2)
-    expect(toasts[1]?.message).toMatch(/skipped the loop|已跳过循环/)
+    expect([zh.toast.planSkippedLoop, en.toast.planSkippedLoop]).toContain(toasts[1]?.message)
 
     // 不是本 TUI 认识的会话：事件来自别的 location，不能弹。
     toastHandlers[0]?.({ data: { reason: "planSkipped", kind: "cron", sessionID: "ses_other" } })
