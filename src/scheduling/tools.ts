@@ -44,10 +44,7 @@ const WakeupInput = Schema.Struct({
 
 const EmptyOutput = Schema.Struct({})
 
-/** 输入：文本 + 上限；输出：超长时截断并加省略号。 */
-function truncate(text: string, max: number): string {
-  return text.length > max ? `${text.slice(0, max - 3)}...` : text
-}
+import { truncate } from "../shared/format.ts"
 
 /**
  * 输入：插件上下文、任务存储、循环调度器、会话角色、任务新增回调。
@@ -125,7 +122,7 @@ export async function registerSchedulingTools(
         const lines = jobs.map((job) => {
           const kind = job.recurring === true ? "recurring" : "one-shot"
           const scope = job.durable === false ? " [session-only]" : ""
-          return `${job.id} — ${cronToHuman(job.cron)} (${kind})${scope}: ${truncate(job.prompt, 80)}`
+          return `${job.id} — ${cronToHuman(job.cron)} (${kind})${scope}: ${truncate(job.prompt, 80, 3)}`
         })
         return { output: {}, content: lines.join("\n") }
       },

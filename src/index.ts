@@ -14,7 +14,7 @@ import { ToolkitRpc, type PanelData, type PanelSubagentDetail } from "./shared/r
 import { globalSerialRegistry, runSerial } from "./shared/serial.ts"
 import { loadSettings, saveSettings } from "./shared/settings-store.ts"
 import { normalizeSettings } from "./shared/settings.ts"
-import { buildSubagentDetail, hitRatePercent, listSubagents } from "./stats.ts"
+import { buildSubagentDetail, hitRatePercent, listSubagents, tokenParts } from "./stats.ts"
 import type { SessionStats } from "./stats.ts"
 import { loadStats, removeStats, saveStats } from "./stats-store.ts"
 
@@ -49,24 +49,6 @@ function emptyPanel(): PanelData {
 /** 输入：无；输出：空子代理详情。 */
 function emptyDetail(): PanelSubagentDetail {
   return { steps: 0, input: 0, output: 0, cached: 0, hitRate: 0, tools: [] }
-}
-
-/** 输入：任意值；输出：非负有限数，否则 0。 */
-function count(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0
-}
-
-/** 输入：step.ended 事件里的 tokens；输出：本步的 input/output/cached。 */
-export function readStepTokens(tokens: unknown): { input: number; output: number; cached: number } {
-  const record = asRecord(tokens)
-  if (record === undefined) return { input: 0, output: 0, cached: 0 }
-  const cache = asRecord(record["cache"]) ?? {}
-  // 分母是完整提示词；cache.write 是写入成本，不算命中。
-  return {
-    input: count(record["input"]) + count(cache["read"]) + count(cache["write"]),
-    output: count(record["output"]) + count(record["reasoning"]),
-    cached: count(cache["read"]),
-  }
 }
 
 export default Plugin.define({
@@ -269,7 +251,7 @@ export default Plugin.define({
         if (event.type === "session.step.ended" || event.type === "session.step.failed") {
           const sessionID = readEventSessionID(event)
           if (sessionID === undefined) return Promise.resolve()
-          const step = readStepTokens(data?.["tokens"])
+          const step = tokenParts(data?.["tokens"])
           // step.failed 只有部分失败带 tokens；没有就跳过，避免写一条空记录。
           if (event.type === "session.step.failed" && step.input === 0 && step.output === 0) {
             return Promise.resolve()

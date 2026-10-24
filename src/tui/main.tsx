@@ -2,9 +2,9 @@ import { Plugin } from "@opencode/plugin/tui"
 import type { Context } from "@opencode/plugin/tui/context"
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js"
 
-import { resolveMessages, type Messages } from "../i18n/index.ts"
+import { localeOf, resolveMessages, type Messages } from "../i18n/index.ts"
 import { readEventSessionID } from "../shared/events.ts"
-import { formatTokens } from "../shared/format.ts"
+import { formatTokens } from "./format.ts"
 import { SETTINGS_COMMAND_ID, SETTINGS_SLASH_NAME, TUI_PLUGIN_ID } from "../shared/identity.ts"
 import { DEFAULT_SETTINGS, type Lang, type Settings } from "../shared/settings.ts"
 import { toolkitRpc, type PanelData, type PanelSubagent, type PanelSubagentDetail } from "../shared/rpc.ts"
@@ -43,11 +43,6 @@ type ContextStatsChoice = "enabled" | "showInput" | "showOutput" | "showCache" |
 
 /** 通知子菜单条目。 */
 type NotificationChoice = "enabled" | "onComplete" | "onQuestion" | "onPermission" | "onlyMainSession"
-
-/** 输入：设置里的语言枚举；输出：`resolveMessages` 需要的 locale。 */
-function localeOf(lang: Lang): string | undefined {
-  return lang === "auto" ? undefined : lang
-}
 
 /** 侧栏分区；每个分区注册成独立 slot，由宿主 gap 产生空行。 */
 export type SidebarSection = "goal" | "scheduling" | "tools" | "subagents"

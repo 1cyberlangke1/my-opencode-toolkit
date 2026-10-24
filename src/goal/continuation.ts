@@ -2,10 +2,10 @@ import type { Plugin } from "@opencode/plugin"
 
 import { isIdleEvent, readEventData } from "../shared/events.ts"
 import type { PluginEvent } from "../shared/events.ts"
-import { asRecord } from "../shared/json.ts"
 import { lastMessageIsUserInput } from "../shared/messages.ts"
 import { loadSettings } from "../shared/settings-store.ts"
 import type { Settings } from "../shared/settings.ts"
+import { tokenParts } from "../stats.ts"
 import type { GoalController, GoalUsage } from "./controller.ts"
 import { classifyGoalFailure } from "./error.ts"
 import { buildBudgetLimitPrompt, buildContinuationPrompt } from "./prompts.ts"
@@ -199,14 +199,8 @@ export function createGoalContinuation(args: {
 
   /** 输入：任意值；输出：本步的完整提示词/输出/缓存增量。预期：形状不对的字段按 0。 */
   const readUsage = (raw: unknown): Omit<GoalUsage, "elapsedSeconds"> => {
-    const record = asRecord(raw)
-    if (record === undefined) return { tokens: 0, input: 0, output: 0, cached: 0 }
-    const cache = asRecord(record["cache"]) ?? {}
-    const count = (value: unknown): number =>
-      typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0
-    const input = count(record["input"]) + count(cache["read"]) + count(cache["write"])
-    const output = count(record["output"]) + count(record["reasoning"])
-    return { tokens: input + output, input, output, cached: count(cache["read"]) }
+    const { input, output, cached } = tokenParts(raw)
+    return { tokens: input + output, input, output, cached }
   }
 
   return {

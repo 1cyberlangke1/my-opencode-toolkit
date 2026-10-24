@@ -1,6 +1,29 @@
 import type { Plugin } from "@opencode/plugin"
 
+import { asRecord } from "./shared/json.ts"
 import type { PanelSubagent, PanelSubagentDetail } from "./shared/rpc.ts"
+
+/** 输入：任意值；输出：正有限数，否则 0。 */
+function count(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0
+}
+
+/**
+ * 输入：step 事件里的 tokens 原始值。
+ * 输出：本步的 input / output / cached。
+ * 预期：input = 非缓存输入 + `cache.read` + `cache.write`；output 含 reasoning；cached 只算读。
+ *       形状不对的字段按 0；`input` 缺失时整体按空步处理。
+ */
+export function tokenParts(value: unknown): { input: number; output: number; cached: number } {
+  const record = asRecord(value)
+  if (record === undefined) return { input: 0, output: 0, cached: 0 }
+  const cache = asRecord(record["cache"]) ?? {}
+  return {
+    input: count(record["input"]) + count(cache["read"]) + count(cache["write"]),
+    output: count(record["output"]) + count(record["reasoning"]),
+    cached: count(cache["read"]),
+  }
+}
 
 /** 单个会话的累计统计。展示时只读；统计累加时持有可变副本。 */
 export type SessionStats = {

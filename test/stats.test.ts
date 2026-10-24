@@ -5,26 +5,25 @@ import type { Plugin } from "@opencode/plugin"
 import type { JsonStore } from "../src/shared/json.ts"
 import { statsKey } from "../src/shared/keys.ts"
 import type { SessionStats } from "../src/stats.ts"
-import { readStepTokens } from "../src/index.ts"
 import { loadStats, removeStats, saveStats } from "../src/stats-store.ts"
-import { buildStats, buildSubagentDetail, hitRatePercent, listSubagents } from "../src/stats.ts"
+import { buildStats, buildSubagentDetail, hitRatePercent, listSubagents, tokenParts } from "../src/stats.ts"
 
 const SESSION = "ses_test"
 
-describe("readStepTokens", () => {
+describe("tokenParts", () => {
   it("提取本步 token：input 含读写，output 含 reasoning，cached 只算读", () => {
-    const step = readStepTokens({ input: 100, output: 20, reasoning: 5, cache: { read: 30, write: 2 } })
+    const step = tokenParts({ input: 100, output: 20, reasoning: 5, cache: { read: 30, write: 2 } })
     expect(step).toEqual({ input: 132, output: 25, cached: 30 })
   })
 
   it("忽略非法 token 值", () => {
-    const step = readStepTokens({ input: -5, output: "x", cache: { read: Number.NaN } })
+    const step = tokenParts({ input: -5, output: "x", cache: { read: Number.NaN } })
     expect(step).toEqual({ input: 0, output: 0, cached: 0 })
   })
 
   it("形状不对时全为 0", () => {
-    expect(readStepTokens(null)).toEqual({ input: 0, output: 0, cached: 0 })
-    expect(readStepTokens("x")).toEqual({ input: 0, output: 0, cached: 0 })
+    expect(tokenParts(null)).toEqual({ input: 0, output: 0, cached: 0 })
+    expect(tokenParts("x")).toEqual({ input: 0, output: 0, cached: 0 })
   })
 })
 

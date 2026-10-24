@@ -34,10 +34,7 @@ export type CommandRunner = (command: string, args: readonly string[], timeoutMs
 const defaultRunner: CommandRunner = (command, args, timeoutMs) =>
   execFileAsync(command, [...args], { timeout: timeoutMs, windowsHide: true }).then(() => undefined)
 
-/** 输入：文本 + 上限；输出：截断后的文本。 */
-function truncate(text: string, max: number): string {
-  return text.length > max ? `${text.slice(0, max)}...` : text
-}
+import { truncate } from "../shared/format.ts"
 
 /**
  * 输入：命令名 + 该命令能快速成功退出的探测参数 + 执行器。

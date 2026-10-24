@@ -1,6 +1,22 @@
 import { describe, expect, it } from "vitest"
 
-import { formatTokens } from "../src/shared/format.ts"
+import { truncate } from "../src/shared/format.ts"
+import { formatTokens } from "../src/tui/format.ts"
+
+describe("truncate", () => {
+  it("默认让省略号占用额外 3 个字符", () => {
+    expect(truncate("abcdefgh", 5)).toBe("abcde...")
+    expect(truncate("abc", 5)).toBe("abc")
+  })
+
+  it("reserve=3 时总长度不超过 max", () => {
+    expect(truncate("abcdefgh", 5, 3)).toBe("ab...")
+  })
+
+  it("max 小于 reserve 时不产生负长度切片", () => {
+    expect(truncate("abcdefgh", 2, 3)).toBe("...")
+  })
+})
 
 describe("formatTokens", () => {
   it("小于一千原样输出", () => {

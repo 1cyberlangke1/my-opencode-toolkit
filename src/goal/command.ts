@@ -1,6 +1,6 @@
 import type { Plugin } from "@opencode/plugin"
 
-import { resolveMessages } from "../i18n/index.ts"
+import { localeOf, resolveMessages } from "../i18n/index.ts"
 import type { Lang } from "../shared/settings.ts"
 import { loadSettings } from "../shared/settings-store.ts"
 import type { GoalContinuation } from "./continuation.ts"
@@ -74,7 +74,7 @@ export async function registerGoalCommand(
   notify: (sessionID: string) => void,
 ): Promise<{ dispose(): Promise<void>; refresh(lang: Lang): Promise<void> }> {
   const settings = await loadSettings(ctx)
-  let messages = resolveMessages(settings.lang === "auto" ? undefined : settings.lang)
+  let messages = resolveMessages(localeOf(settings.lang))
 
   const registration = await ctx.command.transform((editor) => {
     editor.add({
@@ -107,7 +107,7 @@ export async function registerGoalCommand(
   return {
     dispose: () => registration.dispose(),
     async refresh(lang) {
-      messages = resolveMessages(lang === "auto" ? undefined : lang)
+      messages = resolveMessages(localeOf(lang))
       await ctx.command.reload()
     },
   }

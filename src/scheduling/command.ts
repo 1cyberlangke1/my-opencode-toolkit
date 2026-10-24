@@ -3,7 +3,7 @@ import { join } from "node:path"
 
 import type { Plugin } from "@opencode/plugin"
 
-import { resolveMessages } from "../i18n/index.ts"
+import { localeOf, resolveMessages } from "../i18n/index.ts"
 import type { SessionRoles } from "../goal/session-role.ts"
 import type { Lang } from "../shared/settings.ts"
 import { loadSettings } from "../shared/settings-store.ts"
@@ -105,7 +105,7 @@ export async function registerSchedulingCommands(
   }
 
   const settings = await loadSettings(ctx)
-  let messages = resolveMessages(settings.lang === "auto" ? undefined : settings.lang)
+  let messages = resolveMessages(localeOf(settings.lang))
 
   const registration = await ctx.command.transform((editor) => {
     editor.add({
@@ -190,7 +190,7 @@ export async function registerSchedulingCommands(
   return {
     dispose: () => registration.dispose(),
     async refresh(lang) {
-      messages = resolveMessages(lang === "auto" ? undefined : lang)
+      messages = resolveMessages(localeOf(lang))
       await ctx.command.reload()
     },
   }

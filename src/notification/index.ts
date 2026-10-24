@@ -1,7 +1,7 @@
 import type { Plugin } from "@opencode/plugin"
 
 import type { SessionRoles } from "../goal/session-role.ts"
-import { resolveMessages, type Messages } from "../i18n/index.ts"
+import { localeOf, resolveMessages, type Messages } from "../i18n/index.ts"
 import { readEventSessionID } from "../shared/events.ts"
 import { isSyntheticUserMessage } from "../shared/messages.ts"
 import { loadSettings } from "../shared/settings-store.ts"
@@ -36,10 +36,7 @@ function collapse(text: string): string {
     .join(" ")
 }
 
-/** 输入：文本 + 上限；输出：截断后的文本。 */
-function truncate(text: string, max: number): string {
-  return text.length > max ? `${text.slice(0, max)}...` : text
-}
+import { truncate } from "../shared/format.ts"
 
 /**
  * 输入：插件上下文、存储、会话角色、可选发送函数与平台。
@@ -62,9 +59,6 @@ export function createNotifier(args: {
   const lastCompleteAt = new Map<string, number>()
 
   /** 输入：设置里的语言；输出：`resolveMessages` 需要的 locale。 */
-  const localeOf = (settings: Settings): string | undefined =>
-    settings.lang === "auto" ? undefined : settings.lang
-
   /**
    * 输入：会话 ID + 文案。
    * 输出：`User: ...` / `Assistant: ...` 两行（可能为空）。
@@ -101,7 +95,7 @@ export function createNotifier(args: {
 
   /** 输入：会话 + 设置 + 通知类型；输出：无。预期：标题带会话名，发送失败静默。 */
   const notify = async (sessionID: string, settings: Settings, kind: NotificationKind): Promise<void> => {
-    const messages = resolveMessages(localeOf(settings))
+    const messages = resolveMessages(localeOf(settings.lang))
     const session = await ctx.session.get({ sessionID }).catch(() => undefined)
     const name = session?.title?.trim() ?? ""
     const title = name.length > 0 ? `${messages.notification.title} · ${name}` : messages.notification.title
