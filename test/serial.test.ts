@@ -59,4 +59,20 @@ describe("runSerial", () => {
     const second = globalSerialRegistry(key)
     expect(first).toBe(second)
   })
+
+  it("读改写包进同一个键时不丢更新", async () => {
+    // 模拟统计累加：读存档 → 等 IO → 写回。没有串行时三个任务都读到 0，最后只剩 3。
+    const registry = new Map<string, Promise<unknown>>()
+    let stored: number | undefined
+    const add = (value: number) =>
+      runSerial(registry, "ses_a", async () => {
+        const current = stored ?? 0
+        await delay(1)
+        stored = current + value
+      })
+
+    await Promise.all([add(1), add(2), add(3)])
+
+    expect(stored).toBe(6)
+  })
 })
