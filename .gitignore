@@ -10,6 +10,8 @@ build/
 .idea/
 tmp/
 .venv/
+# CI 本地复现用的 opencode 安装目录
+.ci/
 
 # 本地 AI 文档 + opencode 配置（不污染仓库）
 AGENTS.md
