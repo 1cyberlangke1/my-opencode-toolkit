@@ -68,13 +68,13 @@ export const en: Messages = {
     },
   },
   toast: {
-    planSkippedCron: "Plan mode is read-only; skipped the scheduled task",
-    planSkippedLoop: "Plan mode is read-only; skipped the loop",
+    planSkippedCron: "Plan mode: skipped scheduled task",
+    planSkippedLoop: "Plan mode: skipped loop",
   },
   notification: {
     title: "OpenCode",
     completed: "Task completed",
-    question: "The agent is asking a question",
+    question: "Agent needs input",
     permission: "Permission required",
     user: "User",
     assistant: "Assistant",

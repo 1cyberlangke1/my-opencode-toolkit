@@ -190,7 +190,7 @@ describe("notifier", () => {
     const notifier = createNotifier({ ctx: fakeCtx(), settings: makeStore(), roles: mainRoles, send })
 
     await notifier.handleToolBefore({ tool: "question", sessionID: SESSION })
-    expect(sent[0]?.[1]).toBe("The agent is asking a question")
+    expect(sent[0]?.[1]).toBe("Agent needs input")
   })
 
   it("其他工具不触发", async () => {
