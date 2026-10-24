@@ -2,6 +2,7 @@
 
 [![ci](https://github.com/1cyberlangke1/my-opencode-toolkit/actions/workflows/ci.yml/badge.svg)](https://github.com/1cyberlangke1/my-opencode-toolkit/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/my-opencode-toolkit)](https://www.npmjs.com/package/my-opencode-toolkit)
+[![license](https://img.shields.io/npm/l/my-opencode-toolkit)](LICENSE)
 
 OpenCode v2 插件，提供系统桌面通知、持久目标追踪（Goal）、定时与循环任务（Cron / Loop）以及 TUI 状态面板。
 
