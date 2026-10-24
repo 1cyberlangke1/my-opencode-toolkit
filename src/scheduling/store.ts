@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto"
 import { asRecord, type ScannableStore } from "../shared/json.ts"
 import { SCHEDULE_PREFIX, scheduleKey } from "../shared/keys.ts"
 import { forEachScannedEntry } from "../shared/scan.ts"
+import { globalSerialRegistry, runSerial } from "../shared/serial.ts"
 import {
   DEFAULT_CRON_JITTER_CONFIG,
   jitteredNextCronRunMs,
@@ -29,6 +30,13 @@ function formatLocalTime(ms: number): string {
 
 /** 存储格式版本。 */
 const STORE_VERSION = 1
+
+/**
+ * 进程级写队列：键是 `schedule:<sessionID>`。
+ * 同一份存档的「读最新 → 改 → 写回」必须串行，否则两个实例并发写会丢任务。
+ * 挂到 globalThis，热重载后仍然共享。
+ */
+const writeChains = globalSerialRegistry(Symbol.for("my-opencode-toolkit.schedule-writes"))
 
 /** 磁盘上的任务形状：没有运行时字段。 */
 type StoredJob = {
@@ -275,9 +283,12 @@ export function createSchedulingStore(
       job.nextRunAt = next
       jobs.set(job.id, job)
       if (durable) {
-        // 读最新存档再追加：别的实例可能刚给同一会话加了任务。
-        const stored = await readStored(sessionID)
-        await writeStored(sessionID, [...stored.filter((item) => item.id !== job.id), toStored(job)])
+        // 读最新存档再追加：别的实例可能刚给同一会话加了任务；
+        // 同一存档的读改写走进程级串行队列，避免并发写丢任务。
+        await runSerial(writeChains, scheduleKey(sessionID), async () => {
+          const stored = await readStored(sessionID)
+          await writeStored(sessionID, [...stored.filter((item) => item.id !== job.id), toStored(job)])
+        })
       }
       return { ok: true, job }
     },
@@ -301,9 +312,11 @@ export function createSchedulingStore(
         jobs.delete(id)
       }
       for (const sessionID of touched) {
-        const stored = await readStored(sessionID)
-        const remaining = stored.filter((item) => !targets.has(item.id))
-        if (remaining.length !== stored.length) await writeStored(sessionID, remaining)
+        await runSerial(writeChains, scheduleKey(sessionID), async () => {
+          const stored = await readStored(sessionID)
+          const remaining = stored.filter((item) => !targets.has(item.id))
+          if (remaining.length !== stored.length) await writeStored(sessionID, remaining)
+        })
       }
     },
 
@@ -327,22 +340,24 @@ export function createSchedulingStore(
         fired.add(id)
       }
       for (const sessionID of touched) {
-        const stored = await readStored(sessionID)
-        const next: StoredJob[] = []
-        let changed = false
-        for (const item of stored) {
-          if (removed.has(item.id)) {
+        await runSerial(writeChains, scheduleKey(sessionID), async () => {
+          const stored = await readStored(sessionID)
+          const next: StoredJob[] = []
+          let changed = false
+          for (const item of stored) {
+            if (removed.has(item.id)) {
+              changed = true
+              continue
+            }
+            if (!fired.has(item.id)) {
+              next.push(item)
+              continue
+            }
             changed = true
-            continue
+            next.push({ ...item, lastFiredAt: firedAt })
           }
-          if (!fired.has(item.id)) {
-            next.push(item)
-            continue
-          }
-          changed = true
-          next.push({ ...item, lastFiredAt: firedAt })
-        }
-        if (changed) await writeStored(sessionID, next)
+          if (changed) await writeStored(sessionID, next)
+        })
       }
     },
 

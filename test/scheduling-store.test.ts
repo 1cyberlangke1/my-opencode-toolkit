@@ -291,6 +291,23 @@ describe("location 归属与并发写入", () => {
     expect(stored?.jobs?.map((job) => job.prompt).sort()).toEqual(["from first", "from second"])
   })
 
+  it("两个实例并发新增不会互相覆盖", async () => {
+    // 同一份存储、两个实例同时「读最新 → 追加 → 写回」；没有进程级串行时后写会吞掉前一个。
+    const memory = new MemoryStore()
+    const first = createSchedulingStore(memory, { directory: "/mine" })
+    const second = createSchedulingStore(memory, { directory: "/mine" })
+
+    const [addedFirst, addedSecond] = await Promise.all([
+      first.addJob({ sessionID: SESSION, cron: "0 * * * *", prompt: "first", recurring: true, durable: true }),
+      second.addJob({ sessionID: SESSION, cron: "0 * * * *", prompt: "second", recurring: true, durable: true }),
+    ])
+    expect(addedFirst.ok).toBe(true)
+    expect(addedSecond.ok).toBe(true)
+
+    const stored = memory.values.get(scheduleKey(SESSION)) as { jobs?: { prompt?: string }[] } | undefined
+    expect(stored?.jobs?.map((job) => job.prompt).sort()).toEqual(["first", "second"])
+  })
+
   it("forget 只丢内存副本，不动存储", async () => {
     const { memory, store } = makeStore({ directory: "/mine" })
     const added = await store.addJob({
