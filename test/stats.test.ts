@@ -130,6 +130,41 @@ describe("子代理摘要", () => {
     expect(list[0]).toMatchObject({ input: 27, output: 6, cached: 5 })
   })
 
+  it("只取最新一页并排除归档会话，不翻游标", async () => {
+    const calls: unknown[] = []
+    const ctx = {
+      session: {
+        list: (input?: unknown) => {
+          calls.push(input)
+          const child = (id: string, updated: number) => ({
+            id,
+            title: id,
+            parentID: SESSION,
+            time: { updated },
+            tokens: { input: 1, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          })
+          return Promise.resolve({
+            // 默认按更新时间倒序；这里故意带一条边界重复项。
+            data: [child("child-new", 2), child("child-new", 2), child("child-old", 1)],
+            // 即使服务端给了下一页游标也不再翻页。
+            cursor: { next: "page-2" },
+          })
+        },
+      },
+    } as unknown as Plugin.Context
+
+    const list = await listSubagents(ctx, SESSION, 5)
+    expect(calls).toEqual([{ parentID: SESSION, archived: false, order: "desc", limit: 5 }])
+    expect(list.map((item) => item.id)).toEqual(["child-new", "child-old"])
+  })
+
+  it("子会话列表读取失败时返回空数组", async () => {
+    const ctx = {
+      session: { list: () => Promise.reject(new Error("boom")) },
+    } as unknown as Plugin.Context
+    expect(await listSubagents(ctx, SESSION)).toEqual([])
+  })
+
   it("详情复用 buildStats 的工具与命中率", async () => {
     const ctx = {
       session: {

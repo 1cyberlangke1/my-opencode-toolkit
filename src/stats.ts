@@ -14,40 +14,42 @@ export type SessionStats = {
 }
 
 /**
- * 输入：插件上下文 + 父会话 ID。
- * 输出：子会话列表；预期：按 parentID 过滤并逐页翻完，失败返回已收集部分。
+ * 输入：插件上下文 + 父会话 ID + 需要的数量。
+ * 输出：最新的子会话列表；预期：只取一页（默认按更新时间倒序），显式排除归档会话。
+ *       不翻页：游标锚点是可变的 `time_updated`，翻页期间会话被更新会漏项。
+ *       按 id 去重，避免服务端在边界上重复返回同一条。
  */
 type SubagentSession = Awaited<ReturnType<Plugin.Context["session"]["list"]>>["data"][number]
 
-async function collectSubagentSessions(ctx: Plugin.Context, sessionID: string): Promise<SubagentSession[]> {
-  const result: SubagentSession[] = []
-  let cursor: string | undefined
-  // 翻页上限：防止异常服务端返回循环 cursor 时无限循环。
-  for (let page = 0; page < 200; page += 1) {
-    const listed = await ctx.session
-      .list({ parentID: sessionID, ...(cursor === undefined ? {} : { cursor }) })
-      .catch(() => undefined)
-    if (listed === undefined) return result
-    result.push(...listed.data)
+async function collectSubagentSessions(
+  ctx: Plugin.Context,
+  sessionID: string,
+  limit: number,
+): Promise<SubagentSession[]> {
+  const listed = await ctx.session
+    .list({ parentID: sessionID, archived: false, order: "desc", limit })
+    .catch(() => undefined)
+  if (listed === undefined) return []
 
-    const next = listed.cursor.next
-    if (next === undefined || next === null || next === cursor) return result
-    cursor = next
-  }
-  return result
+  const seen = new Set<string>()
+  return listed.data.filter((session) => {
+    if (seen.has(session.id)) return false
+    seen.add(session.id)
+    return true
+  })
 }
 
 /**
  * 输入：插件上下文 + 父会话 ID。
  * 输出：按更新时间倒序的子代理摘要。
- * 预期：只返回列表所需字段，不读子会话消息；数量上限由调用方决定。
+ * 预期：只返回列表所需字段，不读子会话消息；只取最新一页，数量上限由调用方决定。
  */
 export async function listSubagents(
   ctx: Plugin.Context,
   sessionID: string,
   limit = 20,
 ): Promise<readonly PanelSubagent[]> {
-  const sessions = await collectSubagentSessions(ctx, sessionID)
+  const sessions = await collectSubagentSessions(ctx, sessionID, limit)
   return sessions
     .map((session) => {
       const cache = session.tokens.cache
