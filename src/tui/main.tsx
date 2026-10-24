@@ -3,7 +3,6 @@ import type { Context } from "@opencode/plugin/tui/context"
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js"
 
 import { localeOf, resolveMessages, type Messages } from "../i18n/index.ts"
-import { readEventSessionID } from "../shared/events.ts"
 import { formatTokens } from "./format.ts"
 import { SETTINGS_COMMAND_ID, SETTINGS_SLASH_NAME, TUI_PLUGIN_ID } from "../shared/identity.ts"
 import { DEFAULT_SETTINGS, type Lang, type Settings } from "../shared/settings.ts"
@@ -11,23 +10,10 @@ import { toolkitRpc, type PanelData, type PanelSubagent, type PanelSubagentDetai
 import { countdownColor, hitRateColor } from "./color.ts"
 import { configFileLayers } from "./config-layers.ts"
 import { formatAgo, formatCountdown, padRight, truncate } from "./format.ts"
-import { createPanelReader, panelRpcOptions as rpcOptions } from "./panel-cache.ts"
+import { createPanelFeed, createPanelReader, panelRpcOptions as rpcOptions } from "./panel-cache.ts"
 
 /** 主菜单条目。 */
 type MenuChoice = "language" | "goal" | "scheduling" | "sidebar" | "contextStats" | "notifications"
-
-/** 输入：事件 + 当前会话；输出：是否该刷新当前会话的面板。预期：别的会话/子代理的事件一律忽略。 */
-function isOwnSessionEvent(event: { readonly type: string; readonly data: unknown }, sessionID: string): boolean {
-  if (
-    event.type !== "session.idle" &&
-    event.type !== "session.step.ended" &&
-    event.type !== "session.step.failed" &&
-    event.type !== "session.usage.updated"
-  ) {
-    return false
-  }
-  return readEventSessionID(event) === sessionID
-}
 
 /** 侧栏子菜单条目：目标/定时任务的侧栏开关也归到这里。 */
 type SidebarChoice = "goal" | "scheduling" | "showTools" | "showSubagents"
@@ -55,10 +41,14 @@ export function Sidebar(props: {
   readonly readPanel?: (context: Context, sessionID: string) => Promise<PanelData>
 }) {
   const rpc = toolkitRpc(props.context.client)
-  const readPanel =
-    props.readPanel ?? ((context: Context, sessionID: string) => rpc.panelGet({ sessionID }, rpcOptions(context)))
-  const [panel, setPanel] = createSignal<PanelData | null>(null)
   const [now, setNow] = createSignal(Date.now())
+  const feed = createPanelFeed({
+    context: props.context,
+    sessionID: props.sessionID,
+    ...(props.readPanel === undefined ? {} : { readPanel: props.readPanel }),
+    onRefresh: () => setNow(Date.now()),
+  })
+  const panel = feed.panel
   const [goalOpen, setGoalOpen] = createSignal(true)
   const [schedulingOpen, setSchedulingOpen] = createSignal(true)
   const [toolsOpen, setToolsOpen] = createSignal(true)
@@ -67,36 +57,11 @@ export function Sidebar(props: {
   const [details, setDetails] = createSignal<
     Readonly<Record<string, PanelSubagentDetail | "loading" | "error">>
   >({})
-  let timer: ReturnType<typeof setTimeout> | undefined
 
-  /** 拉取面板数据；失败保留上一次结果。 */
-  const refresh = (): void => {
-    void readPanel(props.context, props.sessionID)
-      .then((data) => {
-        setPanel(data)
-        setNow(Date.now())
-      })
-      .catch(() => undefined)
-  }
-
+  // 目标用时每秒递增；面板刷新时也会重置基准，这里只负责走秒。
   onMount(() => {
-    refresh()
-    const off = props.context.data.listen(({ details: event }) => {
-      // 只刷新本会话：同目录别的会话和子代理的 step 不应重排当前侧栏。
-      if (!isOwnSessionEvent(event, props.sessionID)) return
-      if (timer !== undefined) clearTimeout(timer)
-      timer = setTimeout(refresh, 50)
-    })
-    const offPanel = rpc.events.on("panelUpdated", (event) => {
-      if (event.data.sessionID !== props.sessionID) return
-      if (timer !== undefined) clearTimeout(timer)
-      timer = setTimeout(refresh, 50)
-    })
     const clock = setInterval(() => setNow(Date.now()), 1_000)
     onCleanup(() => {
-      off()
-      offPanel()
-      if (timer !== undefined) clearTimeout(timer)
       clearInterval(clock)
     })
   })
@@ -395,34 +360,12 @@ export function ContextStats(props: {
   /** 可选的共享面板读取器；不传时自己发 RPC（测试与单独渲染用）。 */
   readonly readPanel?: (context: Context, sessionID: string) => Promise<PanelData>
 }) {
-  const rpc = toolkitRpc(props.context.client)
-  const readPanel =
-    props.readPanel ?? ((context: Context, sessionID: string) => rpc.panelGet({ sessionID }, rpcOptions(context)))
-  const [panel, setPanel] = createSignal<PanelData | null>(null)
-  let timer: ReturnType<typeof setTimeout> | undefined
-
-  const refresh = (): void => {
-    void readPanel(props.context, props.sessionID).then(setPanel).catch(() => undefined)
-  }
-
-  onMount(() => {
-    refresh()
-    const off = props.context.data.listen(({ details }) => {
-      if (!isOwnSessionEvent(details, props.sessionID)) return
-      if (timer !== undefined) clearTimeout(timer)
-      timer = setTimeout(refresh, 50)
-    })
-    const offPanel = rpc.events.on("panelUpdated", (event) => {
-      if (event.data.sessionID !== props.sessionID) return
-      if (timer !== undefined) clearTimeout(timer)
-      timer = setTimeout(refresh, 50)
-    })
-    onCleanup(() => {
-      off()
-      offPanel()
-      if (timer !== undefined) clearTimeout(timer)
-    })
+  const feed = createPanelFeed({
+    context: props.context,
+    sessionID: props.sessionID,
+    ...(props.readPanel === undefined ? {} : { readPanel: props.readPanel }),
   })
+  const panel = feed.panel
 
   const theme = props.context.theme
   const base = () => theme.text.base

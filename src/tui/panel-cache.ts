@@ -1,9 +1,14 @@
 import type { Context } from "@opencode/plugin/tui/context"
+import { createSignal, onCleanup, onMount, type Accessor } from "solid-js"
 
-import type { PanelData, ToolkitRpcClient } from "../shared/rpc.ts"
+import { readEventSessionID } from "../shared/events.ts"
+import { toolkitRpc, type PanelData, type ToolkitRpcClient } from "../shared/rpc.ts"
 
 /** 面板请求合并窗口：同一会话的重复刷新只发一次 RPC。 */
 const PANEL_CACHE_MS = 150
+
+/** 事件到刷新之间的合并窗口；连续 step 事件只刷新一次。 */
+const REFRESH_DEBOUNCE_MS = 50
 
 /** 输入：TUI 上下文；输出：RPC 路由选项。 */
 export function panelRpcOptions(context: Context): { readonly location?: { readonly directory: string } } {
@@ -32,4 +37,73 @@ export function createPanelReader(
     })
     return value
   }
+}
+
+/** 输入：事件 + 当前会话；输出：是否该刷新当前会话的面板。预期：别的会话/子代理的事件一律忽略。 */
+export function isOwnSessionEvent(
+  event: { readonly type: string; readonly data: unknown },
+  sessionID: string,
+): boolean {
+  if (
+    event.type !== "session.idle" &&
+    event.type !== "session.step.ended" &&
+    event.type !== "session.step.failed" &&
+    event.type !== "session.usage.updated"
+  ) {
+    return false
+  }
+  return readEventSessionID(event) === sessionID
+}
+
+/**
+ * 输入：TUI 上下文 + 会话 + 可选共享读取器 + 可选刷新回调。
+ * 输出：panel 信号与立即刷新函数。
+ * 预期：挂载时拉一次；`data.listen` 与 `panelUpdated` 都按 50ms 合并刷新；
+ *       卸载时统一清定时器与订阅。必须在组件 setup 内调用（依赖 Solid owner）。
+ */
+export function createPanelFeed(input: {
+  readonly context: Context
+  readonly sessionID: string
+  readonly readPanel?: (context: Context, sessionID: string) => Promise<PanelData>
+  readonly onRefresh?: () => void
+}): { readonly panel: Accessor<PanelData | null>; readonly refresh: () => void } {
+  const rpc = toolkitRpc(input.context.client)
+  const readPanel =
+    input.readPanel ??
+    ((context: Context, sessionID: string) => rpc.panelGet({ sessionID }, panelRpcOptions(context)))
+  const [panel, setPanel] = createSignal<PanelData | null>(null)
+  let timer: ReturnType<typeof setTimeout> | undefined
+
+  const refresh = (): void => {
+    void readPanel(input.context, input.sessionID)
+      .then((data) => {
+        setPanel(data)
+        input.onRefresh?.()
+      })
+      .catch(() => undefined)
+  }
+
+  const schedule = (): void => {
+    if (timer !== undefined) clearTimeout(timer)
+    timer = setTimeout(refresh, REFRESH_DEBOUNCE_MS)
+  }
+
+  onMount(() => {
+    refresh()
+    const off = input.context.data.listen(({ details }) => {
+      if (!isOwnSessionEvent(details, input.sessionID)) return
+      schedule()
+    })
+    const offPanel = rpc.events.on("panelUpdated", (event) => {
+      if (event.data.sessionID !== input.sessionID) return
+      schedule()
+    })
+    onCleanup(() => {
+      off()
+      offPanel()
+      if (timer !== undefined) clearTimeout(timer)
+    })
+  })
+
+  return { panel, refresh }
 }
