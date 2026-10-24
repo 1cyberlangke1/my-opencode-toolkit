@@ -30,6 +30,7 @@ const PANEL: PanelData = {
     cached: 500,
     hitRate: 33.33,
     subagents: 1,
+    lastTool: "read",
     tools: [
       { name: "read", count: 2 },
       { name: "zero", count: 0 },
@@ -93,6 +94,17 @@ async function mount(lang: "zh" | "en", panel: PanelData = PANEL) {
   )
 }
 
+/** 输入：app + 行内标记 + 片段文本；输出：该行里文本完全相同的 span；找不到返回 undefined。 */
+function findSpanOnLine(app: Awaited<ReturnType<typeof mount>>, lineText: string, text: string) {
+  for (const line of app.captureSpans().lines) {
+    if (!line.spans.map((span) => span.text).join("").includes(lineText)) continue
+    for (const span of line.spans) {
+      if (span.text === text) return span
+    }
+  }
+  return undefined
+}
+
 describe("sidebar panel", () => {
   test("渲染目标、缓存、工具与调度数量", async () => {
     const app = await mount("en")
@@ -116,6 +128,17 @@ describe("sidebar panel", () => {
     expect(frame).toMatch(/\n\s*\n[^\n]*Scheduled/)
     expect(frame).toMatch(/\n\s*\n[^\n]*Tools \(2\)/)
     expect(frame).not.toContain("41.67%")
+
+    await app.dispose()
+  })
+
+  test("最近调用的工具计数用成功绿，其余保持 muted", async () => {
+    const app = await mount("en")
+    await app.waitForFrame((text) => text.includes("[read](2)"))
+
+    // 主题里 success=#00ff00、muted=#888888；只验证计数片段，工具名不算。
+    expect(findSpanOnLine(app, "[read](2)", "(2)")?.fg.toInts()).toEqual([0, 255, 0, 255])
+    expect(findSpanOnLine(app, "[very_long_tool_name](1)", "(1)")?.fg.toInts()).toEqual([136, 136, 136, 255])
 
     await app.dispose()
   })

@@ -188,6 +188,8 @@ const PanelStatsJson = {
     cached: { type: "number" },
     hitRate: { type: "number" },
     subagents: { type: "number" },
+    /** 最近一次被调用的工具名；没有记录时为 null。 */
+    lastTool: { anyOf: [{ type: "string" }, { type: "null" }] },
     tools: {
       type: "array",
       items: {
@@ -198,7 +200,7 @@ const PanelStatsJson = {
       },
     },
   },
-  required: ["steps", "input", "output", "cached", "hitRate", "subagents", "tools"],
+  required: ["steps", "input", "output", "cached", "hitRate", "subagents", "lastTool", "tools"],
   additionalProperties: false,
 } as const
 
@@ -327,6 +329,8 @@ export type PanelStats = {
   readonly cached: number
   readonly hitRate: number
   readonly subagents: number
+  /** 最近一次被调用的工具名；没有记录时为 null。 */
+  readonly lastTool: string | null
   readonly tools: readonly { readonly name: string; readonly count: number }[]
 }
 

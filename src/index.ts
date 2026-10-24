@@ -41,7 +41,7 @@ function emptyPanel(): PanelData {
     goal: null,
     loops: [],
     jobs: [],
-    stats: { steps: 0, input: 0, output: 0, cached: 0, hitRate: 0, subagents: 0, tools: [] },
+    stats: { steps: 0, input: 0, output: 0, cached: 0, hitRate: 0, subagents: 0, lastTool: null, tools: [] },
     subagents: [],
   }
 }
@@ -184,6 +184,7 @@ export default Plugin.define({
           stats: {
             ...stats,
             hitRate: hitRatePercent(stats.input, stats.cached),
+            lastTool: stats.lastTool ?? null,
             tools,
             subagents: subagents.length,
           },
@@ -234,9 +235,13 @@ export default Plugin.define({
     })
     const toolAfter = await ctx.tool.hook("execute.after", async (input) => {
       if (!(await ownsSession(input.sessionID))) return
-      const stats = (await load(input.sessionID)) ?? emptyStats()
-      stats.tools[input.tool] = (stats.tools[input.tool] ?? 0) + 1
-      await saveStats(ctx.storage, input.sessionID, stats).catch(() => undefined)
+      // 与 token 记账共用同一条会话串行链：并发工具调用不会互相覆盖计数与 lastTool。
+      await runSerial(STATS_CHAINS, input.sessionID, async () => {
+        const stats = (await load(input.sessionID)) ?? emptyStats()
+        stats.tools[input.tool] = (stats.tools[input.tool] ?? 0) + 1
+        stats.lastTool = input.tool
+        await saveStats(ctx.storage, input.sessionID, stats).catch(() => undefined)
+      })
       // 工具刚执行完就通知侧栏刷新；失败不影响工具结果。
       void rpc.events.emit("panelUpdated", { sessionID: input.sessionID }).catch(() => undefined)
     })

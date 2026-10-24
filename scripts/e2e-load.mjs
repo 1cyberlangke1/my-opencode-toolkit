@@ -274,6 +274,7 @@ const readValue = (suffix) => {
 const settings = readValue("settings")
 const goal = readValue(`goal:${sessionID}`)
 const schedule = readValue(`schedule:${sessionID}`)
+const status = readValue(`status:${sessionID}`)
 db.close()
 
 if (!toolNames.includes("create_goal")) {
@@ -301,10 +302,13 @@ assert.equal(goal?.objective, GOAL_OBJECTIVE, "goal must be persisted under the 
 assert.equal(goal?.status, "complete", "goal must be completed before idle so no continuation follows")
 assert.equal(schedule?.jobs?.length, 1, "durable cron job must be persisted")
 assert.equal(schedule?.jobs?.[0]?.cron, "*/5 * * * *", "cron expression must round-trip")
+assert.equal(status?.lastTool, "update_goal", "lastTool must record the most recently executed tool")
+assert.equal(status?.tools?.update_goal, 1, "tool counts must persist per session")
 
 console.log("tools:", toolNames.length, "goal tools:", toolNames.filter((name) => name.endsWith("_goal")).join(","))
 console.log("goal:", JSON.stringify(goal))
 console.log("schedule:", JSON.stringify(schedule))
+console.log("status:", JSON.stringify(status))
 console.log("case passed: plugin loads, tools execute, goal and cron persist")
 
 server.kill()

@@ -212,9 +212,29 @@ describe("stats store", () => {
 
   it("saveStats / loadStats 往返保留字段", async () => {
     const store = memoryStore()
-    const stats: SessionStats = { steps: 3, input: 120, output: 40, cached: 90, tools: { read: 2, shell: 1 } }
+    const stats: SessionStats = {
+      steps: 3,
+      input: 120,
+      output: 40,
+      cached: 90,
+      lastTool: "read",
+      tools: { read: 2, shell: 1 },
+    }
     await saveStats(store, SESSION, stats)
     expect(await loadStats(store, SESSION)).toEqual(stats)
+  })
+
+  it("lastTool 非字符串或空串时丢弃，其余字段照常读取", async () => {
+    const store = memoryStore()
+    await store.set(statsKey(SESSION), {
+      steps: 1,
+      input: 1,
+      output: 0,
+      cached: 0,
+      lastTool: 42,
+      tools: {},
+    })
+    expect(await loadStats(store, SESSION)).toEqual({ steps: 1, input: 1, output: 0, cached: 0, tools: {} })
   })
 
   it("损坏数据返回 null，回退到重建", async () => {

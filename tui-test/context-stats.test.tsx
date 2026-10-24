@@ -21,6 +21,7 @@ function fakeContext(): Context {
       cached: 62_400_000,
       hitRate: 98.91,
       subagents: 0,
+      lastTool: null,
       tools: [],
     },
     subagents: [],

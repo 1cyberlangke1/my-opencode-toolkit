@@ -34,6 +34,9 @@ export function parseStoredStats(value: unknown): SessionStats | null {
     input: count(record["input"]),
     output: count(record["output"]),
     cached: count(record["cached"]),
+    ...(typeof record["lastTool"] === "string" && record["lastTool"].length > 0
+      ? { lastTool: record["lastTool"] }
+      : {}),
     tools,
   }
 }
@@ -58,6 +61,7 @@ export async function saveStats(store: JsonStore, sessionID: string, stats: Sess
     input: stats.input,
     output: stats.output,
     cached: stats.cached,
+    ...(stats.lastTool === undefined ? {} : { lastTool: stats.lastTool }),
     tools: { ...stats.tools },
   })
 }

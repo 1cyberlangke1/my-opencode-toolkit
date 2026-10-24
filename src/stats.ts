@@ -10,6 +10,8 @@ export type SessionStats = {
   output: number
   /** 缓存命中 token：只算 `cache.read`。 */
   cached: number
+  /** 最近一次被调用的工具名；没有记录时为 undefined。 */
+  lastTool?: string
   tools: Record<string, number>
 }
 

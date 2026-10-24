@@ -62,7 +62,7 @@ function fakeContext(options: {
             goal: null,
             loops: [],
             jobs: [],
-            stats: { steps: 0, input: 0, output: 0, cached: 0, hitRate: 0, subagents: 0, tools: [] },
+            stats: { steps: 0, input: 0, output: 0, cached: 0, hitRate: 0, subagents: 0, lastTool: null, tools: [] },
             subagents: [],
           }),
         events: {

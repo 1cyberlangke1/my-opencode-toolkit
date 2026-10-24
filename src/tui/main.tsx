@@ -213,6 +213,7 @@ export function Sidebar(props: {
   const subagents = (): readonly PanelSubagent[] => panel()?.subagents ?? []
   const visibleTools = (): readonly { readonly name: string; readonly count: number }[] =>
     (panel()?.stats.tools ?? []).filter((tool) => tool.count > 0)
+  const lastTool = (): string | null => panel()?.stats.lastTool ?? null
 
   return (
     <>
@@ -308,7 +309,10 @@ export function Sidebar(props: {
                   {(tool) => (
                     <text flexShrink={0}>
                       <span style={{ fg: base() }}>[{tool.name}]</span>
-                      <span style={{ fg: muted() }}>({String(tool.count)})</span>
+                      {/* 最近一次被调用的工具，计数用成功绿；其余保持 muted。 */}
+                      <span style={{ fg: tool.name === lastTool() ? success() : muted() }}>
+                        ({String(tool.count)})
+                      </span>
                     </text>
                   )}
                 </For>
