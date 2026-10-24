@@ -21,13 +21,21 @@ export function runSerial<T>(
   return next
 }
 
+/**
+ * 输入：全局符号 + 创建函数。
+ * 输出：挂在 `globalThis` 上的单例。
+ * 预期：同一个符号只创建一次；热重载与多 location 实例共享同一份。
+ */
+export function globalRegistry<T>(key: symbol, create: () => T): T {
+  const holder = globalThis as unknown as Record<symbol, T | undefined>
+  const existing = holder[key]
+  if (existing !== undefined) return existing
+  const created = create()
+  holder[key] = created
+  return created
+}
+
 /** 输入：全局符号；输出：跨热重载共享的串行注册表。 */
 export function globalSerialRegistry(key: symbol): Map<string, Promise<unknown>> {
-  const holder = globalThis as unknown as Record<symbol, Map<string, Promise<unknown>> | undefined>
-  let registry = holder[key]
-  if (registry === undefined) {
-    registry = new Map<string, Promise<unknown>>()
-    holder[key] = registry
-  }
-  return registry
+  return globalRegistry(key, () => new Map<string, Promise<unknown>>())
 }

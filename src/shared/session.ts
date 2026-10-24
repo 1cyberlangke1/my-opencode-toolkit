@@ -37,3 +37,13 @@ export async function locateSession(
     return isSessionMissingError(error) ? { kind: "missing" } : { kind: "unknown" }
   }
 }
+
+/**
+ * 输入：插件上下文 + 会话 ID。
+ * 输出：会话是否属于本实例 location。
+ * 预期：不存在或查询失败一律 false——宁可少记一次，也不能跨 location 重复记账。
+ */
+export async function ownsSession(ctx: Plugin.Context, sessionID: string): Promise<boolean> {
+  const located = await locateSession(ctx, sessionID)
+  return located.kind === "found" && located.directory === ctx.location.directory
+}

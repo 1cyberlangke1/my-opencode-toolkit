@@ -1,3 +1,5 @@
+import { globalRegistry } from "../shared/serial.ts"
+
 /**
  * cron 触发的进程级声明表。
  *
@@ -16,12 +18,7 @@ type Claim = {
 
 /** 输入：无；输出：进程级触发表。预期：同一个进程只创建一次。 */
 function claims(): Map<string, Claim> {
-  const holder = globalThis as unknown as Record<symbol, Map<string, Claim> | undefined>
-  const existing = holder[REGISTRY_KEY]
-  if (existing !== undefined) return existing
-  const created = new Map<string, Claim>()
-  holder[REGISTRY_KEY] = created
-  return created
+  return globalRegistry(REGISTRY_KEY, () => new Map<string, Claim>())
 }
 
 /** 输入：消息 ID；输出：是否抢到本次投递权。预期：过期的声明会被清理后重新可抢。 */

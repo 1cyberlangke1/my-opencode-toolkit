@@ -1,6 +1,6 @@
 import type { Plugin } from "@opencode/plugin"
 
-import { isIdleEvent, readEventData } from "../shared/events.ts"
+import { isIdleEvent, readEventSessionID } from "../shared/events.ts"
 import { lastMessageIsUserInput } from "../shared/messages.ts"
 import type { SessionLocation } from "../shared/session.ts"
 import { capTimerDelay } from "../shared/timer.ts"
@@ -235,9 +235,8 @@ export function createSchedulingContinuation(args: {
 
   return {
     async handle(event) {
-      const data = readEventData(event)
-      const sessionID = data?.["sessionID"]
-      if (typeof sessionID !== "string" || sessionID.length === 0) return
+      const sessionID = readEventSessionID(event)
+      if (sessionID === undefined) return
 
       if (isIdleEvent(event)) {
         // idle 表示上一轮已经结束；清掉 pending 让本轮可以继续注入。

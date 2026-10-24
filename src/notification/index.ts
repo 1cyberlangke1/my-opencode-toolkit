@@ -6,6 +6,7 @@ import { readEventSessionID } from "../shared/events.ts"
 import { isSyntheticUserMessage } from "../shared/messages.ts"
 import { loadSettings } from "../shared/settings-store.ts"
 import type { Settings } from "../shared/settings.ts"
+import { ownsSession } from "../shared/session.ts"
 import { createSender, type NotificationSender } from "./send.ts"
 
 /** 通知类型。 */
@@ -121,10 +122,7 @@ export function createNotifier(args: {
    * 预期：插件按 location 各加载一份，系统通知是副作用；只让会话所属 location 的实例发送，
    *       避免同一完成/权限事件弹出多次。读不到会话时拒绝——宁可少发一次，也不能重复弹窗。
    */
-  const inLocation = async (sessionID: string): Promise<boolean> => {
-    const session = await ctx.session.get({ sessionID }).catch(() => undefined)
-    return session?.location.directory === ctx.location.directory
-  }
+  const inLocation = (sessionID: string): Promise<boolean> => ownsSession(ctx, sessionID)
 
   return {
     async handle(event) {

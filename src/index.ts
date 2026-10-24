@@ -12,6 +12,7 @@ import { PLUGIN_ID } from "./shared/identity.ts"
 import { asRecord } from "./shared/json.ts"
 import { ToolkitRpc, type PanelData, type PanelSubagentDetail } from "./shared/rpc.ts"
 import { globalSerialRegistry, runSerial } from "./shared/serial.ts"
+import { ownsSession } from "./shared/session.ts"
 import { loadSettings, saveSettings } from "./shared/settings-store.ts"
 import { normalizeSettings } from "./shared/settings.ts"
 import { buildSubagentDetail, hitRatePercent, listSubagents, tokenParts } from "./stats.ts"
@@ -79,10 +80,8 @@ export default Plugin.define({
      *       只有会话所属实例记账。会话查不到（别的实例的会话）也拒绝，
      *       宁可少记不可重复累加。
      */
-    const ownsSession = async (sessionID: string): Promise<boolean> => {
-      const session = await ctx.session.get({ sessionID }).catch(() => undefined)
-      return session?.location.directory === ctx.location.directory
-    }
+    /** 输入：会话 ID；输出：是否属于本实例 location。预期：查询失败视为不属于。 */
+    const owns = (sessionID: string): Promise<boolean> => ownsSession(ctx, sessionID)
 
     // RPC 在 goal 之后注册；先用可替换发射器，命令执行时已指向真实 RPC。
     let emitPanelUpdated: (sessionID: string) => void = () => undefined
@@ -123,7 +122,7 @@ export default Plugin.define({
         const sessionID = typeof requested === "string" ? requested : ""
 
         // RPC 可能被任意实例接收；不属于本实例的会话读不到数据，直接返回空面板。
-        if (sessionID.length > 0 && !(await ownsSession(sessionID))) return emptyPanel()
+        if (sessionID.length > 0 && !(await owns(sessionID))) return emptyPanel()
 
         // 直接读存档；没有记录的会话（从未跑过 step）显示空统计。
         const stats =
@@ -179,7 +178,7 @@ export default Plugin.define({
         const sessionID = typeof requested === "string" ? requested : ""
         if (sessionID.length === 0) return emptyDetail()
         // 子代理会话同样必须属于本实例目录，避免跨 location 读别人的统计。
-        if (!(await ownsSession(sessionID))) return emptyDetail()
+        if (!(await owns(sessionID))) return emptyDetail()
         return buildSubagentDetail(ctx, sessionID)
       },
     })
@@ -216,7 +215,7 @@ export default Plugin.define({
       return Promise.resolve()
     })
     const toolAfter = await ctx.tool.hook("execute.after", async (input) => {
-      if (!(await ownsSession(input.sessionID))) return
+      if (!(await owns(input.sessionID))) return
       // 与 token 记账共用同一条会话串行链：并发工具调用不会互相覆盖计数与 lastTool。
       await runSerial(STATS_CHAINS, input.sessionID, async () => {
         const stats = (await load(input.sessionID)) ?? emptyStats()
@@ -257,7 +256,7 @@ export default Plugin.define({
             return Promise.resolve()
           }
           return runSerial(STATS_CHAINS, sessionID, async () => {
-            if (!(await ownsSession(sessionID))) return
+            if (!(await owns(sessionID))) return
             const stats = (await load(sessionID)) ?? emptyStats()
             stats.steps += 1
             stats.input += step.input
