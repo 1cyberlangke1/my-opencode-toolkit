@@ -10,11 +10,10 @@
  */
 
 import { strict as assert } from "node:assert"
-import { mkdtemp, mkdir, rm } from "node:fs/promises"
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { randomBytes } from "node:crypto"
-import { Database } from "bun:sqlite"
 
 const repo = process.cwd()
 const root = await mkdtemp(join(tmpdir(), "opencode-e2e-tools-"))
@@ -198,24 +197,12 @@ try {
   }
 
   // 关闭 goal/scheduling 后，新的主会话也应隐藏对应工具。
-  const pluginHex = Array.from("my-opencode-toolkit")
-    .map((char) => (char.codePointAt(0) ?? 0).toString(16).padStart(4, "0"))
-    .join("")
-  const db = new Database(join(root, "opencode.db"))
-  const key = `plugin:${pluginHex}:settings`
-  const row = db.query("select value from kv where key = ?").get(key)
-  assert.ok(typeof row?.value === "string", "plugin settings missing")
-  const settings = JSON.parse(row.value)
-  settings.goal = { ...settings.goal, enabled: false }
-  settings.scheduling = { ...settings.scheduling, enabled: false }
-  const at = Date.now()
-  db.query("insert or replace into kv (key, value, time_created, time_updated) values (?, ?, ?, ?)").run(
-    key,
-    JSON.stringify(settings),
-    at,
-    at,
+  // 插件设置只读自己的 JSONC；写 DB 的旧 seed 已失效。
+  await writeFile(
+    join(root, "config", "my-opencode-toolkit.json"),
+    `${JSON.stringify({ goal: { enabled: false }, scheduling: { enabled: false } }, null, 2)}\n`,
+    "utf8",
   )
-  db.close()
 
   const disabled = await newSession("tool-visibility-disabled")
   await prompt(disabled, "hello disabled")

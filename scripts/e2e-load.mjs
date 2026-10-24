@@ -296,7 +296,7 @@ for (const name of [
 }
 assert.ok(toolResultText.includes(GOAL_OBJECTIVE), `goal result missing objective, got ${toolResultText}`)
 assert.ok(toolResultText.includes('"status": "active"'), `goal result missing active status, got ${toolResultText}`)
-assert.equal(settings?.lang, "auto", "default settings must be written to storage")
+assert.equal(settings, undefined, "settings must not be written to plugin storage (JSONC only)")
 assert.equal(goal?.objective, GOAL_OBJECTIVE, "goal must be persisted under the session key")
 assert.equal(goal?.status, "complete", "goal must be completed before idle so no continuation follows")
 assert.equal(schedule?.jobs?.length, 1, "durable cron job must be persisted")
