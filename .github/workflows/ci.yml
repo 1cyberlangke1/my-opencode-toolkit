@@ -4,6 +4,8 @@ on:
   push:
     branches: [master]
   pull_request:
+  # 供 publish.yml 复用：发布前必须先跑完整检查。
+  workflow_call:
 
 permissions:
   contents: read
@@ -28,3 +30,4 @@ jobs:
         with:
           bun-version: latest
       - run: pnpm test:tui
+      - run: pnpm check:package
