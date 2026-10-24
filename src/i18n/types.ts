@@ -14,7 +14,6 @@ export type Messages = {
   }
   readonly menu: {
     readonly title: string
-    readonly enabled: string
     readonly language: string
     readonly notifications: string
     readonly goal: string
@@ -22,7 +21,6 @@ export type Messages = {
     readonly sidebar: string
     readonly contextStats: string
     readonly function: string
-    readonly showInSidebar: string
     readonly showLine: string
     readonly showInput: string
     readonly showOutput: string
@@ -42,20 +40,14 @@ export type Messages = {
     readonly showSubagents: string
   }
   readonly panel: {
-    readonly title: string
-    readonly context: string
     readonly goal: string
     readonly noGoal: string
     readonly scheduling: string
-    readonly loops: string
-    readonly jobs: string
     readonly next: string
-    readonly cache: string
     readonly hitRate: string
     readonly input: string
     readonly output: string
     readonly cached: string
-    readonly steps: string
     readonly tools: string
     readonly subagents: string
     readonly state: string
@@ -65,11 +57,6 @@ export type Messages = {
     readonly loading: string
     readonly error: string
     readonly status: Readonly<Record<string, string>>
-  }
-  readonly sidebar: {
-    readonly title: string
-    readonly on: string
-    readonly off: string
   }
   readonly toast: {
     /** Plan 模式跳过 cron 注入时的提示。 */

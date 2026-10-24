@@ -16,57 +16,69 @@ const SettingsGetInputJson = {
   additionalProperties: false,
 } as const
 
+/** 设置对象的字段表；写入与读取共用同一份，避免两处漂移。 */
+const SettingsFields = {
+  lang: { type: "string", enum: ["auto", "zh", "en"] },
+  enabled: { type: "boolean" },
+  notification: {
+    type: "object",
+    properties: {
+      enabled: { type: "boolean" },
+      onComplete: { type: "boolean" },
+      onQuestion: { type: "boolean" },
+      onPermission: { type: "boolean" },
+      onlyMainSession: { type: "boolean" },
+    },
+    required: ["enabled", "onComplete", "onQuestion", "onPermission", "onlyMainSession"],
+    additionalProperties: false,
+  },
+  goal: {
+    type: "object",
+    properties: { enabled: { type: "boolean" }, showInSidebar: { type: "boolean" } },
+    required: ["enabled", "showInSidebar"],
+    additionalProperties: false,
+  },
+  scheduling: {
+    type: "object",
+    properties: { enabled: { type: "boolean" }, showInSidebar: { type: "boolean" } },
+    required: ["enabled", "showInSidebar"],
+    additionalProperties: false,
+  },
+  sidebar: {
+    type: "object",
+    properties: { showTools: { type: "boolean" }, showSubagents: { type: "boolean" } },
+    required: ["showTools", "showSubagents"],
+    additionalProperties: false,
+  },
+  contextStats: {
+    type: "object",
+    properties: {
+      enabled: { type: "boolean" },
+      showInput: { type: "boolean" },
+      showOutput: { type: "boolean" },
+      showCache: { type: "boolean" },
+      showHitRate: { type: "boolean" },
+    },
+    required: ["enabled", "showInput", "showOutput", "showCache", "showHitRate"],
+    additionalProperties: false,
+  },
+} as const
+
+const SettingsRequired = [
+  "lang",
+  "enabled",
+  "notification",
+  "goal",
+  "scheduling",
+  "sidebar",
+  "contextStats",
+] as const
+
 /** 设置写入的输入：完整设置 + 层路径。 */
 const SettingsSetInputJson = {
   type: "object",
-  properties: {
-    lang: { type: "string", enum: ["auto", "zh", "en"] },
-    enabled: { type: "boolean" },
-    notification: {
-      type: "object",
-      properties: {
-        enabled: { type: "boolean" },
-        onComplete: { type: "boolean" },
-        onQuestion: { type: "boolean" },
-        onPermission: { type: "boolean" },
-        onlyMainSession: { type: "boolean" },
-      },
-      required: ["enabled", "onComplete", "onQuestion", "onPermission", "onlyMainSession"],
-      additionalProperties: false,
-    },
-    goal: {
-      type: "object",
-      properties: { enabled: { type: "boolean" }, showInSidebar: { type: "boolean" } },
-      required: ["enabled", "showInSidebar"],
-      additionalProperties: false,
-    },
-    scheduling: {
-      type: "object",
-      properties: { enabled: { type: "boolean" }, showInSidebar: { type: "boolean" } },
-      required: ["enabled", "showInSidebar"],
-      additionalProperties: false,
-    },
-    sidebar: {
-      type: "object",
-      properties: { showTools: { type: "boolean" }, showSubagents: { type: "boolean" } },
-      required: ["showTools", "showSubagents"],
-      additionalProperties: false,
-    },
-    contextStats: {
-      type: "object",
-      properties: {
-        enabled: { type: "boolean" },
-        showInput: { type: "boolean" },
-        showOutput: { type: "boolean" },
-        showCache: { type: "boolean" },
-        showHitRate: { type: "boolean" },
-      },
-      required: ["enabled", "showInput", "showOutput", "showCache", "showHitRate"],
-      additionalProperties: false,
-    },
-    layers: LayersJson,
-  },
-  required: ["lang", "enabled", "notification", "goal", "scheduling", "sidebar", "contextStats"],
+  properties: { ...SettingsFields, layers: LayersJson },
+  required: SettingsRequired,
   additionalProperties: false,
 } as const
 
@@ -81,57 +93,20 @@ const PanelInputJson = {
 /** 设置对象的 JSON Schema，服务端与 TUI 共用。 */
 const SettingsJson = {
   type: "object",
-  properties: {
-    lang: { type: "string", enum: ["auto", "zh", "en"] },
-    enabled: { type: "boolean" },
-    notification: {
-      type: "object",
-      properties: {
-        enabled: { type: "boolean" },
-        onComplete: { type: "boolean" },
-        onQuestion: { type: "boolean" },
-        onPermission: { type: "boolean" },
-        onlyMainSession: { type: "boolean" },
-      },
-      required: ["enabled", "onComplete", "onQuestion", "onPermission", "onlyMainSession"],
-      additionalProperties: false,
-    },
-    goal: {
-      type: "object",
-      properties: { enabled: { type: "boolean" }, showInSidebar: { type: "boolean" } },
-      required: ["enabled", "showInSidebar"],
-      additionalProperties: false,
-    },
-    scheduling: {
-      type: "object",
-      properties: { enabled: { type: "boolean" }, showInSidebar: { type: "boolean" } },
-      required: ["enabled", "showInSidebar"],
-      additionalProperties: false,
-    },
-    sidebar: {
-      type: "object",
-      properties: {
-        showTools: { type: "boolean" },
-        showSubagents: { type: "boolean" },
-      },
-      required: ["showTools", "showSubagents"],
-      additionalProperties: false,
-    },
-    contextStats: {
-      type: "object",
-      properties: {
-        enabled: { type: "boolean" },
-        showInput: { type: "boolean" },
-        showOutput: { type: "boolean" },
-        showCache: { type: "boolean" },
-        showHitRate: { type: "boolean" },
-      },
-      required: ["enabled", "showInput", "showOutput", "showCache", "showHitRate"],
-      additionalProperties: false,
-    },
-  },
-  required: ["lang", "enabled", "notification", "goal", "scheduling", "sidebar", "contextStats"],
+  properties: SettingsFields,
+  required: SettingsRequired,
   additionalProperties: false,
+} as const
+
+/** 工具计数列表；面板统计与子代理详情共用同一形状。 */
+const ToolCountsJson = {
+  type: "array",
+  items: {
+    type: "object",
+    properties: { name: { type: "string" }, count: { type: "number" } },
+    required: ["name", "count"],
+    additionalProperties: false,
+  },
 } as const
 
 /** 面板里的目标摘要。 */
@@ -190,15 +165,7 @@ const PanelStatsJson = {
     subagents: { type: "number" },
     /** 最近一次被调用的工具名；没有记录时为 null。 */
     lastTool: { anyOf: [{ type: "string" }, { type: "null" }] },
-    tools: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: { name: { type: "string" }, count: { type: "number" } },
-        required: ["name", "count"],
-        additionalProperties: false,
-      },
-    },
+    tools: ToolCountsJson,
   },
   required: ["steps", "input", "output", "cached", "hitRate", "subagents", "lastTool", "tools"],
   additionalProperties: false,
@@ -230,15 +197,7 @@ const PanelSubagentDetailJson = {
     output: { type: "number" },
     cached: { type: "number" },
     hitRate: { type: "number" },
-    tools: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: { name: { type: "string" }, count: { type: "number" } },
-        required: ["name", "count"],
-        additionalProperties: false,
-      },
-    },
+    tools: ToolCountsJson,
   },
   required: ["steps", "input", "output", "cached", "hitRate", "tools"],
   additionalProperties: false,

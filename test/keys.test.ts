@@ -1,12 +1,8 @@
 import { describe, expect, it } from "vitest"
 
-import { GOAL_PREFIX, SCHEDULE_PREFIX, SETTINGS_KEY, goalKey, scheduleKey } from "../src/shared/keys.ts"
+import { GOAL_PREFIX, SCHEDULE_PREFIX, goalKey, scheduleKey } from "../src/shared/keys.ts"
 
 describe("存储 key", () => {
-  it("设置 key 固定", () => {
-    expect(SETTINGS_KEY).toBe("settings")
-  })
-
   it("goal 与 schedule 前缀不同", () => {
     expect(GOAL_PREFIX).not.toBe(SCHEDULE_PREFIX)
   })

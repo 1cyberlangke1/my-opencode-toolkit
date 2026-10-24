@@ -39,8 +39,6 @@ export type Loop = {
   readonly intervalSeconds?: number
   readonly createdAt: number
   readonly expiresAt: number
-  /** 已触发次数（运行时）。 */
-  fires: number
   /** 下一次 fire 时刻（运行时，供 TUI 倒计时）。 */
   nextFireAt?: number
   /** dynamic 模式：`schedule_wakeup` 设定的待唤醒信息。 */

@@ -121,7 +121,6 @@ export function createLoopScheduler(args: {
       notifySkipped?.("loop", loop.sessionID)
       return false
     }
-    loop.fires += 1
     await inject(loop.sessionID, loop.prompt)
     return true
   }
@@ -196,7 +195,6 @@ export function createLoopScheduler(args: {
       ...(interval === undefined ? {} : { intervalSeconds: interval }),
       createdAt: now,
       expiresAt: now + DEFAULT_MAX_AGE_DAYS * 24 * 60 * 60 * 1000,
-      fires: 0,
     }
     loops.set(loop.id, loop)
     void fireLoop(loop).catch(() => undefined)

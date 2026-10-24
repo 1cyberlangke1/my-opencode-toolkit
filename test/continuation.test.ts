@@ -5,7 +5,6 @@ import { MemoryStore } from "./helpers.ts"
 import { createGoalContinuation } from "../src/goal/continuation.ts"
 import { createGoalController } from "../src/goal/controller.ts"
 import { DEFAULT_SETTINGS } from "../src/shared/settings.ts"
-import { SETTINGS_KEY } from "../src/shared/keys.ts"
 
 const SESSION = "ses_test"
 
@@ -52,16 +51,14 @@ function fakeCtx(log: PromptLog, messages: unknown[] = []): Plugin.Context {
   } as unknown as Plugin.Context
 }
 
-/** 输入：无；输出：启用了 goal 的存储。 */
-function storeWithGoalEnabled(): MemoryStore {
-  const store = new MemoryStore()
-  store.values.set(SETTINGS_KEY, DEFAULT_SETTINGS)
-  return store
+/** 输入：无；输出：空存储。预期：设置由参数注入，不再从 storage 读。 */
+function newStore(): MemoryStore {
+  return new MemoryStore()
 }
 
 describe("goal continuation", () => {
   it("idle 且目标 active 时注入一次续作", async () => {
-    const store = storeWithGoalEnabled()
+    const store = newStore()
     const controller = createGoalController(store)
     await controller.setGoal(SESSION, "ship it")
     const log: PromptLog = []
@@ -75,7 +72,7 @@ describe("goal continuation", () => {
   })
 
   it("两个会话的目标与 pending 互不影响", async () => {
-    const store = storeWithGoalEnabled()
+    const store = newStore()
     const controller = createGoalController(store)
     await controller.setGoal("ses_a", "goal-a")
     await controller.setGoal("ses_b", "goal-b")
@@ -97,7 +94,7 @@ describe("goal continuation", () => {
   })
 
   it("session.execution.succeeded 也视为 idle 并注入续作", async () => {
-    const store = storeWithGoalEnabled()
+    const store = newStore()
     const controller = createGoalController(store)
     await controller.setGoal(SESSION, "ship it")
     const log: PromptLog = []
@@ -110,7 +107,7 @@ describe("goal continuation", () => {
   })
 
   it("没有目标或已暂停时不注入", async () => {
-    const store = storeWithGoalEnabled()
+    const store = newStore()
     const controller = createGoalController(store)
     const log: PromptLog = []
     const continuation = createGoalContinuation({ ctx: fakeCtx(log), settings: DEFAULT_SETTINGS, controller, roles })
@@ -125,7 +122,6 @@ describe("goal continuation", () => {
 
   it("goal 关闭时不注入", async () => {
     const store = new MemoryStore()
-    store.values.set(SETTINGS_KEY, { ...DEFAULT_SETTINGS, goal: { enabled: false } })
     const controller = createGoalController(store)
     await controller.setGoal(SESSION, "x")
     const log: PromptLog = []
@@ -141,7 +137,7 @@ describe("goal continuation", () => {
   })
 
   it("注入后没有 step 时不重复注入", async () => {
-    const store = storeWithGoalEnabled()
+    const store = newStore()
     const controller = createGoalController(store)
     await controller.setGoal(SESSION, "x")
     const log: PromptLog = []
@@ -161,7 +157,7 @@ describe("goal continuation", () => {
   })
 
   it("执行失败后清掉 pending，下一次 idle 能重试", async () => {
-    const store = storeWithGoalEnabled()
+    const store = newStore()
     const controller = createGoalController(store)
     await controller.setGoal(SESSION, "x")
     const log: PromptLog = []
@@ -177,7 +173,7 @@ describe("goal continuation", () => {
   })
 
   it("step.ended 把输入/输出/缓存都计入目标", async () => {
-    const store = storeWithGoalEnabled()
+    const store = newStore()
     const controller = createGoalController(store)
     await controller.setGoal(SESSION, "x")
     const continuation = createGoalContinuation({
@@ -204,7 +200,7 @@ describe("goal continuation", () => {
   })
 
   it("记账达到 token 预算时发一次收尾提示", async () => {
-    const store = storeWithGoalEnabled()
+    const store = newStore()
     const controller = createGoalController(store)
     await controller.setGoal(SESSION, "ship it", 100)
     const log: PromptLog = []
@@ -239,7 +235,7 @@ describe("goal continuation", () => {
   })
 
   it("用户打断会暂停目标", async () => {
-    const store = storeWithGoalEnabled()
+    const store = newStore()
     const controller = createGoalController(store)
     await controller.setGoal(SESSION, "x")
     const log: PromptLog = []
@@ -256,7 +252,7 @@ describe("goal continuation", () => {
   })
 
   it("shutdown 打断不暂停", async () => {
-    const store = storeWithGoalEnabled()
+    const store = newStore()
     const controller = createGoalController(store)
     await controller.setGoal(SESSION, "x")
     const continuation = createGoalContinuation({ ctx: fakeCtx([]), settings: DEFAULT_SETTINGS, controller, roles })
@@ -270,7 +266,7 @@ describe("goal continuation", () => {
   })
 
   it("余额不足暂停并锁死，reset 后恢复", async () => {
-    const store = storeWithGoalEnabled()
+    const store = newStore()
     const controller = createGoalController(store)
     await controller.setGoal(SESSION, "x")
     const log: PromptLog = []
@@ -292,7 +288,7 @@ describe("goal continuation", () => {
   })
 
   it("末条是真实用户输入时跳过注入", async () => {
-    const store = storeWithGoalEnabled()
+    const store = newStore()
     const controller = createGoalController(store)
     await controller.setGoal(SESSION, "x")
     const log: PromptLog = []
@@ -308,7 +304,7 @@ describe("goal continuation", () => {
   })
 
   it("末条是我们注入的续作时继续注入", async () => {
-    const store = storeWithGoalEnabled()
+    const store = newStore()
     const controller = createGoalController(store)
     await controller.setGoal(SESSION, "x")
     const log: PromptLog = []
@@ -324,7 +320,7 @@ describe("goal continuation", () => {
   })
 
   it("子代理会话不注入续作", async () => {
-    const store = storeWithGoalEnabled()
+    const store = newStore()
     const controller = createGoalController(store)
     await controller.setGoal(SESSION, "x")
     const log: PromptLog = []
@@ -339,7 +335,7 @@ describe("goal continuation", () => {
   })
 
   it("pending 时重复 idle 只发一次，完成后不再续作", async () => {
-    const store = storeWithGoalEnabled()
+    const store = newStore()
     const controller = createGoalController(store)
     await controller.setGoal(SESSION, "x")
     const log: PromptLog = []
@@ -360,7 +356,7 @@ describe("goal continuation", () => {
   })
 
   it("同一 assistant step 重放只记一次 token", async () => {
-    const store = storeWithGoalEnabled()
+    const store = newStore()
     const controller = createGoalController(store)
     await controller.setGoal(SESSION, "x")
     const continuation = createGoalContinuation({ ctx: fakeCtx([]), settings: DEFAULT_SETTINGS, controller, roles })
@@ -379,7 +375,7 @@ describe("goal continuation", () => {
   })
 
   it("会话属于别的 location 时不记账", async () => {
-    const store = storeWithGoalEnabled()
+    const store = newStore()
     const controller = createGoalController(store)
     await controller.setGoal(SESSION, "x")
     // 会话在其他目录：本实例必须拒绝记账，否则跨实例事件被重复累加。
@@ -396,7 +392,7 @@ describe("goal continuation", () => {
   })
 
   it("会话查不到（undefined）时不记账", async () => {
-    const store = storeWithGoalEnabled()
+    const store = newStore()
     const controller = createGoalController(store)
     await controller.setGoal(SESSION, "x")
     // 会话查不到说明不是本实例目录的会话；放行 undefined 会导致 home 实例重复记账。
@@ -411,7 +407,7 @@ describe("goal continuation", () => {
   })
 
   it("两个插件实例收到同一 step 只记一次 token", async () => {
-    const store = storeWithGoalEnabled()
+    const store = newStore()
     const controller = createGoalController(store)
     await controller.setGoal(SESSION, "x")
     const first = createGoalContinuation({ ctx: fakeCtx([]), settings: DEFAULT_SETTINGS, controller, roles })
@@ -431,7 +427,7 @@ describe("goal continuation", () => {
   })
 
   it("删除会话清掉运行状态与目标", async () => {
-    const store = storeWithGoalEnabled()
+    const store = newStore()
     const controller = createGoalController(store)
     await controller.setGoal(SESSION, "x")
     const log: PromptLog = []

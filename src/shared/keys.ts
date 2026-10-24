@@ -6,9 +6,6 @@
  *       并在改插件名时更难迁移。
  */
 
-/** 全局设置的存储 key。 */
-export const SETTINGS_KEY = "settings"
-
 /** Goal 状态的 key 前缀，后面拼会话 ID。 */
 export const GOAL_PREFIX = "goal:"
 
