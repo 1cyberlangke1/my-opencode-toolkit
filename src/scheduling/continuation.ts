@@ -1,11 +1,11 @@
 import type { Plugin } from "@opencode/plugin"
 
 import { isIdleEvent, readEventSessionID } from "../shared/events.ts"
-import { lastMessageIsUserInput } from "../shared/messages.ts"
 import type { SessionLocation } from "../shared/session.ts"
 import { capTimerDelay } from "../shared/timer.ts"
 import type { SessionRoles } from "../goal/session-role.ts"
 import { claimCronMessage, releaseCronMessage, releaseSessionClaims } from "./fire-lock.ts"
+import { createSyntheticInjector } from "./inject.ts"
 import { isPlanSession } from "./plan.ts"
 import type { SchedulingStore } from "./store.ts"
 import { isRecurringTaskAged } from "./store.ts"
@@ -70,8 +70,14 @@ export function createSchedulingContinuation(args: {
   const { ctx, store, roles, shouldDefer, enabled, notifySkipped, locateSession } = args
   const now = args.now ?? Date.now
   const timers = new Map<string, ReturnType<typeof setTimeout>>()
-  const inFlight = new Set<string>()
-  const pending = new Set<string>()
+  const { inject, pending, inFlight } = createSyntheticInjector({
+    ctx,
+    roles,
+    marker: CRON_MARKER,
+    // 同一 job 的同一次触发只让一个实例真正调用 synthetic；失败时释放给其他实例重试。
+    claim: claimCronMessage,
+    release: releaseCronMessage,
+  })
   const lifecycle = { disposed: false }
 
   /** 输入：无；输出：插件是否已卸载。预期：await 之后用它再确认，避免继续注入或武装。 */
@@ -85,39 +91,6 @@ export function createSchedulingContinuation(args: {
    */
   const messageIDFor = (job: ScheduledJob, at: number): string =>
     `msg_cron_${job.id}_${String(job.nextRunAt ?? at)}`
-
-  /**
-   * 输入：会话 + 文本 + 消息 ID。
-   * 输出：是否注入成功。
-   * 预期：以 synthetic 消息注入并唤醒会话；`description` 与正文一致，TUI 灰字 notice
-   *       显示的就是模型收到的内容。并发、上一条未完成或末条是用户输入时跳过。
-   */
-  const inject = async (sessionID: string, text: string, id: string): Promise<boolean> => {
-    if (inFlight.has(sessionID) || pending.has(sessionID)) return false
-    if (await roles.isSubagent(sessionID)) return false
-    if (await lastMessageIsUserInput(ctx, sessionID, CRON_MARKER)) return false
-    // 同一 job 的同一次触发只让一个实例真正调用 synthetic；失败时释放给其他实例重试。
-    if (!claimCronMessage(id, sessionID)) return false
-    inFlight.add(sessionID)
-    try {
-      await ctx.session.synthetic({
-        sessionID,
-        id,
-        text,
-        description: text,
-        delivery: "steer",
-        resume: true,
-        metadata: { [CRON_MARKER]: true },
-      })
-      pending.add(sessionID)
-      return true
-    } catch {
-      releaseCronMessage(id)
-      return false
-    } finally {
-      inFlight.delete(sessionID)
-    }
-  }
 
   /** 输入：无；输出：无。预期：每个未来任务一个 timer，已有 timer 的不重复武装。 */
   const armTimers = (): void => {

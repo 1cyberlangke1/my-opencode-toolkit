@@ -29,12 +29,6 @@ function isOwnSessionEvent(event: { readonly type: string; readonly data: unknow
   return readEventSessionID(event) === sessionID
 }
 
-/** 目标子菜单条目。 */
-type GoalChoice = "enabled" | "showInSidebar"
-
-/** 定时任务子菜单条目。 */
-type SchedulingChoice = "enabled" | "showInSidebar"
-
 /** 侧栏子菜单条目：目标/定时任务的侧栏开关也归到这里。 */
 type SidebarChoice = "goal" | "scheduling" | "showTools" | "showSubagents"
 
@@ -527,42 +521,31 @@ export default Plugin.define({
     const onOff = (value: boolean): string => (value ? copy().menu.on : copy().menu.off)
 
     /** 目标子菜单：功能与侧栏显示独立。 */
-    const chooseGoal = async (): Promise<void> => {
+    /** 输入：`goal` 或 `scheduling`；输出：无。预期：循环切换功能开关，取消则退出。 */
+    const chooseFeature = async (key: "goal" | "scheduling"): Promise<void> => {
       for (;;) {
         const current = settings()
         const text = copy()
-        const choice = await context.ui.dialog.select<GoalChoice>({
-          title: text.menu.goal,
+        const choice = await context.ui.dialog.select<"enabled">({
+          title: key === "goal" ? text.menu.goal : text.menu.scheduling,
           options: [
-            { title: text.menu.function, value: "enabled", footer: onOff(current.goal.enabled) },
+            { title: text.menu.function, value: "enabled", footer: onOff(current[key].enabled) },
           ],
         })
         if (choice === undefined) return
-        await update({
-          ...current,
-          goal: { ...current.goal, [choice]: !current.goal[choice] },
-        })
+        await update(
+          key === "goal"
+            ? { ...current, goal: { ...current.goal, enabled: !current.goal.enabled } }
+            : { ...current, scheduling: { ...current.scheduling, enabled: !current.scheduling.enabled } },
+        )
       }
     }
 
+    /** 目标子菜单：只有功能开关；侧栏显示在侧栏子菜单。 */
+    const chooseGoal = (): Promise<void> => chooseFeature("goal")
+
     /** 定时任务子菜单：功能与侧栏显示独立。 */
-    const chooseScheduling = async (): Promise<void> => {
-      for (;;) {
-        const current = settings()
-        const text = copy()
-        const choice = await context.ui.dialog.select<SchedulingChoice>({
-          title: text.menu.scheduling,
-          options: [
-            { title: text.menu.function, value: "enabled", footer: onOff(current.scheduling.enabled) },
-          ],
-        })
-        if (choice === undefined) return
-        await update({
-          ...current,
-          scheduling: { ...current.scheduling, [choice]: !current.scheduling[choice] },
-        })
-      }
-    }
+    const chooseScheduling = (): Promise<void> => chooseFeature("scheduling")
 
     /** 侧栏显示子菜单。 */
     const chooseSidebar = async (): Promise<void> => {

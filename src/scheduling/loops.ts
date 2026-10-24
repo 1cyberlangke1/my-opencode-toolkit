@@ -3,9 +3,9 @@ import { randomUUID } from "node:crypto"
 import type { Plugin } from "@opencode/plugin"
 
 import { isIdleEvent, readEventSessionID } from "../shared/events.ts"
-import { lastMessageIsUserInput } from "../shared/messages.ts"
 import { capTimerDelay, MAX_TIMER_DELAY_MS } from "../shared/timer.ts"
 import { DEFAULT_MAX_AGE_DAYS, type Loop } from "./types.ts"
+import { createSyntheticInjector } from "./inject.ts"
 import { isPlanSession } from "./plan.ts"
 import type { SessionRoles } from "../goal/session-role.ts"
 
@@ -67,42 +67,16 @@ export function createLoopScheduler(args: {
   const isEnabled = args.enabled ?? ((): Promise<boolean> => Promise.resolve(true))
   const loops = new Map<string, Loop>()
   const timers = new Map<string, ReturnType<typeof setTimeout>>()
-  const inFlight = new Set<string>()
-  const pending = new Set<string>()
+  const { inject, pending, inFlight } = createSyntheticInjector({
+    ctx,
+    roles,
+    marker: LOOP_MARKER,
+  })
   const lifecycle = { disposed: false }
 
   /** 输入：会话 + prompt；输出：匹配的循环。预期：同一 prompt 只保留一个。 */
   const findLoop = (sessionID: string, prompt: string): Loop | undefined =>
     [...loops.values()].find((loop) => loop.sessionID === sessionID && loop.prompt === prompt)
-
-  /**
-   * 输入：会话 + 文本。
-   * 输出：是否注入成功。
-   * 预期：以 synthetic 消息注入并唤醒会话；`description` 与正文一致，TUI 灰字 notice
-   *       显示的就是模型收到的内容。子代理、并发、上一条未完成、末条是用户输入时跳过。
-   */
-  const inject = async (sessionID: string, text: string): Promise<boolean> => {
-    if (inFlight.has(sessionID) || pending.has(sessionID)) return false
-    if (await roles.isSubagent(sessionID)) return false
-    if (await lastMessageIsUserInput(ctx, sessionID, LOOP_MARKER)) return false
-    inFlight.add(sessionID)
-    try {
-      await ctx.session.synthetic({
-        sessionID,
-        text,
-        description: text,
-        delivery: "steer",
-        resume: true,
-        metadata: { [LOOP_MARKER]: true },
-      })
-      pending.add(sessionID)
-      return true
-    } catch {
-      return false
-    } finally {
-      inFlight.delete(sessionID)
-    }
-  }
 
   /**
    * 输入：循环。
