@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { globalSerialRegistry, runSerial } from "../src/shared/serial.ts"
+import { globalRegistry, globalSerialRegistry, runSerial } from "../src/shared/serial.ts"
 
 /** 输入：毫秒；输出：等待 Promise。预期：只用于制造执行顺序。 */
 function delay(ms: number): Promise<void> {
@@ -58,6 +58,24 @@ describe("runSerial", () => {
     const first = globalSerialRegistry(key)
     const second = globalSerialRegistry(key)
     expect(first).toBe(second)
+  })
+
+  it("globalRegistry 只创建一次，不同符号互不影响", () => {
+    const key = Symbol.for("my-opencode-toolkit.test-registry")
+    const other = Symbol.for("my-opencode-toolkit.test-registry-other")
+    let created = 0
+    const factory = (): { readonly id: number } => {
+      created += 1
+      return { id: created }
+    }
+
+    const first = globalRegistry(key, factory)
+    const second = globalRegistry(key, factory)
+    const third = globalRegistry(other, factory)
+
+    expect(first).toBe(second)
+    expect(third).not.toBe(first)
+    expect(created).toBe(2)
   })
 
   it("读改写包进同一个键时不丢更新", async () => {
