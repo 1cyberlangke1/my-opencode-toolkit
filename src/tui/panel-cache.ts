@@ -57,16 +57,17 @@ export function isOwnSessionEvent(
 
 /**
  * 输入：TUI 上下文 + 会话 + 可选共享读取器 + 可选刷新回调。
- * 输出：panel 信号与立即刷新函数。
+ * 输出：panel 信号。
  * 预期：挂载时拉一次；`data.listen` 与 `panelUpdated` 都按 50ms 合并刷新；
  *       卸载时统一清定时器与订阅。必须在组件 setup 内调用（依赖 Solid owner）。
+ *       刷新只由事件驱动，不对外暴露手动入口——外部拿到的旧值无法与定时器对齐。
  */
 export function createPanelFeed(input: {
   readonly context: Context
   readonly sessionID: string
   readonly readPanel?: (context: Context, sessionID: string) => Promise<PanelData>
   readonly onRefresh?: () => void
-}): { readonly panel: Accessor<PanelData | null>; readonly refresh: () => void } {
+}): { readonly panel: Accessor<PanelData | null> } {
   const rpc = toolkitRpc(input.context.client)
   const readPanel =
     input.readPanel ??
@@ -105,5 +106,5 @@ export function createPanelFeed(input: {
     })
   })
 
-  return { panel, refresh }
+  return { panel }
 }
