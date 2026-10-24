@@ -1,6 +1,7 @@
 import type { Plugin } from "@opencode/plugin"
 
 import type { PluginEvent } from "../shared/events.ts"
+import type { Lang } from "../shared/settings.ts"
 import type { Disposable } from "../shared/types.ts"
 import { registerGoalCommand } from "./command.ts"
 import { createGoalContinuation } from "./continuation.ts"
@@ -12,6 +13,8 @@ import { registerGoalTools } from "./tools.ts"
 export type GoalHandle = Disposable & {
   /** 输入：插件事件；输出：无。预期：续作与记账；由外层统一分发。 */
   handle(event: PluginEvent): Promise<void>
+  /** 输入：新语言；输出：无。预期：重注册 `/goal` 的本地化描述。 */
+  refreshCommands(lang: Lang): Promise<void>
 }
 
 /**
@@ -30,11 +33,14 @@ export async function registerGoal(
   const tools = await registerGoalTools(ctx, controller, roles, (sessionID) => {
     continuation.resetRunState(sessionID)
   })
-  const command = await registerGoalCommand(ctx, controller, continuation, notify)
+  const command = await registerGoalCommand(ctx, controller, continuation, roles, notify)
 
   return {
     handle(event) {
       return continuation.handle(event)
+    },
+    refreshCommands(lang) {
+      return command.refresh(lang)
     },
     async dispose() {
       await tools.dispose()

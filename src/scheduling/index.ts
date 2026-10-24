@@ -3,7 +3,9 @@ import type { Plugin } from "@opencode/plugin"
 import type { SessionRoles } from "../goal/session-role.ts"
 import type { PluginEvent } from "../shared/events.ts"
 import type { ScannableStore } from "../shared/json.ts"
+import type { Lang } from "../shared/settings.ts"
 import { loadSettings } from "../shared/settings-store.ts"
+import { locateSession } from "../shared/session.ts"
 import type { Disposable } from "../shared/types.ts"
 import { registerSchedulingCommands } from "./command.ts"
 import { createSchedulingContinuation } from "./continuation.ts"
@@ -19,6 +21,8 @@ export type SchedulingHandle = Disposable & {
   readonly scheduler: LoopScheduler
   /** 输入：插件事件；输出：无。预期：cron 触发与 loop 状态维护；由外层统一分发。 */
   handle(event: PluginEvent): Promise<void>
+  /** 输入：新语言；输出：无。预期：重注册 `/cron`、`/loop` 的本地化描述。 */
+  refreshCommands(lang: Lang): Promise<void>
 }
 
 /**
@@ -31,9 +35,17 @@ export async function registerScheduling(
   store: ScannableStore,
   roles: SessionRoles,
   shouldDefer: (sessionID: string) => Promise<boolean>,
-  notifySkipped?: (kind: "cron" | "loop") => void,
+  notifySkipped?: (kind: "cron" | "loop", sessionID: string) => void,
 ): Promise<SchedulingHandle> {
-  const jobs = createSchedulingStore(store)
+  // durable 任务记录创建时的目录；读取时按目录过滤，避免多 location 各武装一套 timer。
+  const jobs = createSchedulingStore(store, {
+    directory: ctx.location.directory,
+    sessionDirectory: async (sessionID) => {
+      const located = await locateSession(ctx, sessionID)
+      if (located.kind === "found") return located.directory
+      return located.kind === "missing" ? null : undefined
+    },
+  })
   await jobs.load()
 
   /** 输入：无；输出：总开关与 scheduling 开关是否都打开。 */
@@ -56,6 +68,7 @@ export async function registerScheduling(
     shouldDefer,
     ...(notifySkipped === undefined ? {} : { notifySkipped }),
     enabled: isEnabled,
+    locateSession: (sessionID) => locateSession(ctx, sessionID),
   })
   continuation.armTimers()
 
@@ -71,6 +84,9 @@ export async function registerScheduling(
     async handle(event) {
       await continuation.handle(event)
       await scheduler.handleEvent(event)
+    },
+    refreshCommands(lang) {
+      return commands.refresh(lang)
     },
     async dispose() {
       continuation.dispose()

@@ -11,7 +11,8 @@ export type SessionRoles = {
 /**
  * 输入：插件上下文。
  * 输出：带缓存的会话角色查询。
- * 预期：查询失败时不缓存，避免把子代理误判成主会话后一直错下去。
+ * 预期：查询失败时按子代理处理（fail-closed）：宁可少给一次工具，也不让子代理拿到主会话能力。
+ *       失败不缓存，下次请求重新查。
  */
 export function createSessionRoles(ctx: Plugin.Context): SessionRoles {
   const cache = new Map<string, boolean>()
@@ -22,7 +23,7 @@ export function createSessionRoles(ctx: Plugin.Context): SessionRoles {
       if (cached !== undefined) return cached
 
       const session = await ctx.session.get({ sessionID }).catch(() => undefined)
-      if (session === undefined) return false
+      if (session === undefined) return true
 
       const parentID = session.parentID
       const value = typeof parentID === "string" && parentID.length > 0

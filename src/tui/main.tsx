@@ -3,6 +3,7 @@ import type { Context } from "@opencode/plugin/tui/context"
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js"
 
 import { resolveMessages, type Messages } from "../i18n/index.ts"
+import { readEventSessionID } from "../shared/events.ts"
 import { formatTokens } from "../shared/format.ts"
 import { SETTINGS_COMMAND_ID, SETTINGS_SLASH_NAME, TUI_PLUGIN_ID } from "../shared/identity.ts"
 import { DEFAULT_SETTINGS, type Lang, type Settings } from "../shared/settings.ts"
@@ -10,13 +11,23 @@ import { toolkitRpc, type PanelData, type PanelSubagent, type PanelSubagentDetai
 import { countdownColor, hitRateColor } from "./color.ts"
 import { configFileLayers } from "./config-layers.ts"
 import { formatAgo, formatCountdown, padRight, truncate } from "./format.ts"
+import { createPanelReader, panelRpcOptions as rpcOptions } from "./panel-cache.ts"
 
 /** 主菜单条目。 */
 type MenuChoice = "language" | "goal" | "scheduling" | "sidebar" | "contextStats" | "notifications"
 
-/** RPC 路由选项：必须带上本插件 location，请求才会打到正确实例。 */
-const rpcOptions = (context: Context): { readonly location?: { readonly directory: string } } =>
-  context.location?.directory === undefined ? {} : { location: { directory: context.location.directory } }
+/** 输入：事件 + 当前会话；输出：是否该刷新当前会话的面板。预期：别的会话/子代理的事件一律忽略。 */
+function isOwnSessionEvent(event: { readonly type: string; readonly data: unknown }, sessionID: string): boolean {
+  if (
+    event.type !== "session.idle" &&
+    event.type !== "session.step.ended" &&
+    event.type !== "session.step.failed" &&
+    event.type !== "session.usage.updated"
+  ) {
+    return false
+  }
+  return readEventSessionID(event) === sessionID
+}
 
 /** 目标子菜单条目。 */
 type GoalChoice = "enabled" | "showInSidebar"
@@ -51,8 +62,12 @@ export function Sidebar(props: {
   readonly settings: () => Settings
   readonly copy: () => Messages
   readonly section: SidebarSection
+  /** 可选的共享面板读取器；不传时自己发 RPC（测试与单独渲染用）。 */
+  readonly readPanel?: (context: Context, sessionID: string) => Promise<PanelData>
 }) {
   const rpc = toolkitRpc(props.context.client)
+  const readPanel =
+    props.readPanel ?? ((context: Context, sessionID: string) => rpc.panelGet({ sessionID }, rpcOptions(context)))
   const [panel, setPanel] = createSignal<PanelData | null>(null)
   const [now, setNow] = createSignal(Date.now())
   const [goalOpen, setGoalOpen] = createSignal(true)
@@ -67,8 +82,7 @@ export function Sidebar(props: {
 
   /** 拉取面板数据；失败保留上一次结果。 */
   const refresh = (): void => {
-    void rpc
-      .panelGet({ sessionID: props.sessionID }, rpcOptions(props.context))
+    void readPanel(props.context, props.sessionID)
       .then((data) => {
         setPanel(data)
         setNow(Date.now())
@@ -79,17 +93,13 @@ export function Sidebar(props: {
   onMount(() => {
     refresh()
     const off = props.context.data.listen(({ details: event }) => {
-      if (
-        event.type !== "session.idle" &&
-        event.type !== "session.step.ended" &&
-        event.type !== "session.usage.updated"
-      ) {
-        return
-      }
+      // 只刷新本会话：同目录别的会话和子代理的 step 不应重排当前侧栏。
+      if (!isOwnSessionEvent(event, props.sessionID)) return
       if (timer !== undefined) clearTimeout(timer)
       timer = setTimeout(refresh, 50)
     })
-    const offPanel = rpc.events.on("panelUpdated", () => {
+    const offPanel = rpc.events.on("panelUpdated", (event) => {
+      if (event.data.sessionID !== props.sessionID) return
       if (timer !== undefined) clearTimeout(timer)
       timer = setTimeout(refresh, 50)
     })
@@ -389,29 +399,28 @@ export function ContextStats(props: {
   readonly sessionID: string
   readonly settings: () => Settings
   readonly copy: () => Messages
+  /** 可选的共享面板读取器；不传时自己发 RPC（测试与单独渲染用）。 */
+  readonly readPanel?: (context: Context, sessionID: string) => Promise<PanelData>
 }) {
   const rpc = toolkitRpc(props.context.client)
+  const readPanel =
+    props.readPanel ?? ((context: Context, sessionID: string) => rpc.panelGet({ sessionID }, rpcOptions(context)))
   const [panel, setPanel] = createSignal<PanelData | null>(null)
   let timer: ReturnType<typeof setTimeout> | undefined
 
   const refresh = (): void => {
-    void rpc.panelGet({ sessionID: props.sessionID }, rpcOptions(props.context)).then(setPanel).catch(() => undefined)
+    void readPanel(props.context, props.sessionID).then(setPanel).catch(() => undefined)
   }
 
   onMount(() => {
     refresh()
     const off = props.context.data.listen(({ details }) => {
-      if (
-        details.type !== "session.idle" &&
-        details.type !== "session.step.ended" &&
-        details.type !== "session.usage.updated"
-      ) {
-        return
-      }
+      if (!isOwnSessionEvent(details, props.sessionID)) return
       if (timer !== undefined) clearTimeout(timer)
       timer = setTimeout(refresh, 50)
     })
-    const offPanel = rpc.events.on("panelUpdated", () => {
+    const offPanel = rpc.events.on("panelUpdated", (event) => {
+      if (event.data.sessionID !== props.sessionID) return
       if (timer !== undefined) clearTimeout(timer)
       timer = setTimeout(refresh, 50)
     })
@@ -471,9 +480,11 @@ export default Plugin.define({
 
   async setup(context) {
     const rpc = toolkitRpc(context.client)
-    const callOptions = rpcOptions(context)
+    // 每次调用现算路由：setup 时 context.location 可能还没就绪，不能固化成常量。
+    const callOptions = (): ReturnType<typeof rpcOptions> => rpcOptions(context)
+    const readPanel = createPanelReader(rpc)
     const layers = await configFileLayers(context)
-    const initial = await rpc.settingsGet({ layers }, callOptions).catch((): Settings => DEFAULT_SETTINGS)
+    const initial = await rpc.settingsGet({ layers }, callOptions()).catch((): Settings => DEFAULT_SETTINGS)
     const [settings, setSettings] = createSignal<Settings>(initial)
 
     /** 输入：新设置；输出：无；预期：先乐观更新，失败回滚。 */
@@ -481,7 +492,7 @@ export default Plugin.define({
       const previous = settings()
       setSettings(next)
       try {
-        setSettings(await rpc.settingsSet({ ...next, layers }, callOptions))
+        setSettings(await rpc.settingsSet({ ...next, layers }, callOptions()))
       } catch {
         setSettings(previous)
       }
@@ -490,6 +501,8 @@ export default Plugin.define({
     const copy = (): Messages => resolveMessages(localeOf(settings().lang))
 
     const offToast = rpc.events.on("toast", (event) => {
+      // 事件会广播给所有 location 的 TUI；本 TUI 不认识的会话直接忽略，避免跨目录弹提示。
+      if (context.data.session.get(event.data.sessionID) === undefined) return
       const text = copy()
       context.ui.toast.show({
         message: event.data.kind === "cron" ? text.toast.planSkippedCron : text.toast.planSkippedLoop,
@@ -689,6 +702,7 @@ export default Plugin.define({
             settings={settings}
             copy={copy}
             section={section}
+            readPanel={readPanel}
           />
         ),
       }),
@@ -698,7 +712,13 @@ export default Plugin.define({
       append: "prompt.footer",
       render: (input) =>
         input.sessionID === undefined ? null : (
-          <ContextStats context={context} sessionID={input.sessionID} settings={settings} copy={copy} />
+          <ContextStats
+            context={context}
+            sessionID={input.sessionID}
+            settings={settings}
+            copy={copy}
+            readPanel={readPanel}
+          />
         ),
     })
 

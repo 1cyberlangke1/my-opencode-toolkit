@@ -16,6 +16,8 @@ const MESSAGE_MAX = 800
 /** 命令探测超时；发送超时。 */
 const PROBE_TIMEOUT_MS = 3_000
 const SEND_TIMEOUT_MS = 10_000
+/** 探测失败后的重试间隔：不能把一次失败当成永久不可用。 */
+const FINDER_RETRY_MS = 60_000
 
 /** 发送函数。 */
 export type NotificationSender = (title: string, message: string) => Promise<void>
@@ -50,10 +52,12 @@ function createCommandFinder(
   runner: CommandRunner,
 ): () => Promise<string | null> {
   let cached: string | null | undefined
+  let cachedAt = 0
   let pending: Promise<string | null> | undefined
 
   return async () => {
-    if (cached !== undefined) return cached
+    // 成功永久缓存；失败只缓存一分钟，避免命令装好后整个进程都发不出通知。
+    if (cached !== undefined && (cached !== null || Date.now() - cachedAt < FINDER_RETRY_MS)) return cached
     if (pending !== undefined) return pending
 
     pending = (async () => {
@@ -62,6 +66,9 @@ function createCommandFinder(
         cached = commandName
       } catch {
         cached = null
+      } finally {
+        cachedAt = Date.now()
+        pending = undefined
       }
       return cached
     })()

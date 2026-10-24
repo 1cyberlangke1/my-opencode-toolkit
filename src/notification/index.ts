@@ -125,11 +125,11 @@ export function createNotifier(args: {
    * 输入：会话 ID。
    * 输出：该会话是否属于当前插件实例的 location。
    * 预期：插件按 location 各加载一份，系统通知是副作用；只让会话所属 location 的实例发送，
-   *       避免同一完成/权限事件弹出多次。读不到会话时放行。
+   *       避免同一完成/权限事件弹出多次。读不到会话时拒绝——宁可少发一次，也不能重复弹窗。
    */
   const inLocation = async (sessionID: string): Promise<boolean> => {
     const session = await ctx.session.get({ sessionID }).catch(() => undefined)
-    return session === undefined || session.location.directory === ctx.location.directory
+    return session?.location.directory === ctx.location.directory
   }
 
   return {

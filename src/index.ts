@@ -10,7 +10,8 @@ import { registerScheduling } from "./scheduling/index.ts"
 import { dispatchEvent, readEventData, readEventSessionID, type EventHandler } from "./shared/events.ts"
 import { PLUGIN_ID } from "./shared/identity.ts"
 import { asRecord } from "./shared/json.ts"
-import { ToolkitRpc } from "./shared/rpc.ts"
+import { ToolkitRpc, type PanelData, type PanelSubagentDetail } from "./shared/rpc.ts"
+import { globalSerialRegistry, runSerial } from "./shared/serial.ts"
 import { loadSettings, saveSettings } from "./shared/settings-store.ts"
 import { normalizeSettings } from "./shared/settings.ts"
 import { buildSubagentDetail, hitRatePercent, listSubagents } from "./stats.ts"
@@ -29,6 +30,25 @@ function readLayers(input: unknown): readonly string[] | undefined {
 /** 输入：无；输出：空统计。 */
 function emptyStats(): SessionStats {
   return { steps: 0, input: 0, output: 0, cached: 0, tools: {} }
+}
+
+/** 统计读改写必须按会话串行，否则并发 step 事件会互相覆盖。 */
+const STATS_CHAINS = globalSerialRegistry(Symbol.for("my-opencode-toolkit.stats-chains"))
+
+/** 输入：无；输出：空面板。预期：会话不属于本实例时返回它，而不是别的目录的数据。 */
+function emptyPanel(): PanelData {
+  return {
+    goal: null,
+    loops: [],
+    jobs: [],
+    stats: { steps: 0, input: 0, output: 0, cached: 0, hitRate: 0, subagents: 0, tools: [] },
+    subagents: [],
+  }
+}
+
+/** 输入：无；输出：空子代理详情。 */
+function emptyDetail(): PanelSubagentDetail {
+  return { steps: 0, input: 0, output: 0, cached: 0, hitRate: 0, tools: [] }
 }
 
 /** 输入：任意值；输出：非负有限数，否则 0。 */
@@ -88,7 +108,7 @@ export default Plugin.define({
       emitPanelUpdated(sessionID)
     })
     // RPC 注册在后面；先用一个可替换的发射器，避免定时器回调早于 rpc 就绪。
-    let emitToast: (kind: "cron" | "loop") => void = () => undefined
+    let emitToast: (kind: "cron" | "loop", sessionID: string) => void = () => undefined
     const scheduling = await registerScheduling(
       ctx,
       ctx.storage,
@@ -97,8 +117,8 @@ export default Plugin.define({
         const current = await goalController.getGoal(sessionID)
         return current?.status === "active"
       },
-      (kind) => {
-        emitToast(kind)
+      (kind, sessionID) => {
+        emitToast(kind, sessionID)
       },
     )
 
@@ -109,12 +129,19 @@ export default Plugin.define({
         const layers = readLayers(input)
         const next = normalizeSettings(input)
         await saveSettings(ctx, next, layers)
+        // 命令描述在注册时生成；语言变了必须重注册，否则 /goal /cron /loop 一直显示旧语言。
+        await Promise.all([goal.refreshCommands(next.lang), scheduling.refreshCommands(next.lang)]).catch(
+          () => undefined,
+        )
         return loadSettings(ctx, layers)
       },
       panelGet: async (input) => {
         const record = asRecord(input)
         const requested = record?.["sessionID"]
         const sessionID = typeof requested === "string" ? requested : ""
+
+        // RPC 可能被任意实例接收；不属于本实例的会话读不到数据，直接返回空面板。
+        if (sessionID.length > 0 && !(await ownsSession(sessionID))) return emptyPanel()
 
         // 直接读存档；没有记录的会话（从未跑过 step）显示空统计。
         const stats =
@@ -124,6 +151,8 @@ export default Plugin.define({
           .sort((left, right) => right.count - left.count)
 
         const current = await goalController.getGoal(sessionID)
+        // 子代理列表只翻一次页：之前算数量与返回列表各查一遍。
+        const subagents = await listSubagents(ctx, sessionID)
 
         return {
           goal:
@@ -156,18 +185,18 @@ export default Plugin.define({
             ...stats,
             hitRate: hitRatePercent(stats.input, stats.cached),
             tools,
-            subagents: (await listSubagents(ctx, sessionID)).length,
+            subagents: subagents.length,
           },
-          subagents: await listSubagents(ctx, sessionID),
+          subagents,
         }
       },
       subagentGet: async (input) => {
         const record = asRecord(input)
         const requested = record?.["sessionID"]
         const sessionID = typeof requested === "string" ? requested : ""
-        if (sessionID.length === 0) {
-          return { steps: 0, input: 0, output: 0, cached: 0, hitRate: 0, tools: [] }
-        }
+        if (sessionID.length === 0) return emptyDetail()
+        // 子代理会话同样必须属于本实例目录，避免跨 location 读别人的统计。
+        if (!(await ownsSession(sessionID))) return emptyDetail()
         return buildSubagentDetail(ctx, sessionID)
       },
     })
@@ -177,8 +206,8 @@ export default Plugin.define({
     }
 
     // Plan 模式跳过 cron/loop 时通知 TUI 弹 toast；只提示，不改变调度结果。
-    emitToast = (kind) => {
-      void rpc.events.emit("toast", { reason: "planSkipped", kind }).catch(() => undefined)
+    emitToast = (kind, sessionID) => {
+      void rpc.events.emit("toast", { reason: "planSkipped", kind, sessionID }).catch(() => undefined)
     }
 
     // 功能关闭或子代理会话时，请求发给模型前就把对应工具从工具表移除。
@@ -196,8 +225,12 @@ export default Plugin.define({
 
     const notifier = createNotifier({ ctx, roles })
 
-    const toolBefore = await ctx.tool.hook("execute.before", async (input) => {
-      await notifier.handleToolBefore({ tool: input.tool, sessionID: input.sessionID })
+    // 系统通知可能跑十几秒（PowerShell 探测）；必须在后台发，不能阻塞工具执行与事件分发。
+    const toolBefore = await ctx.tool.hook("execute.before", (input) => {
+      void notifier
+        .handleToolBefore({ tool: input.tool, sessionID: input.sessionID })
+        .catch(() => undefined)
+      return Promise.resolve()
     })
     const toolAfter = await ctx.tool.hook("execute.after", async (input) => {
       if (!(await ownsSession(input.sessionID))) return
@@ -209,27 +242,36 @@ export default Plugin.define({
     })
 
     const handlers: EventHandler[] = [
-      (event) => notifier.handle(event),
+      (event) => {
+        // 通知是副作用且可能很慢；后台跑，不阻塞后面的 goal / 调度 / 记账 handler。
+        void notifier.handle(event).catch(() => undefined)
+        return Promise.resolve()
+      },
       (event) => goal.handle(event),
       (event) => {
         // goal 记账发生在 step.ended；记账后再刷新，避免 TUI 读到旧 tokensUsed。
-        if (event.type === "session.step.ended") {
+        if (event.type === "session.step.ended" || event.type === "session.step.failed") {
           const sessionID = readEventSessionID(event)
           if (sessionID !== undefined) emitPanelUpdated(sessionID)
         }
         return Promise.resolve()
       },
       (event) => scheduling.handle(event),
-      // 统计累加：token 在 step.ended，删除清理在 session.deleted。读存档 → 加 → 写回。
+      // 统计累加：token 在 step.ended / step.failed，删除清理在 session.deleted。
+      // 读存档 → 加 → 写回按会话串行；并发 step 事件共享同一个存档，不排队会互相覆盖。
       (event) => {
         const data = readEventData(event)
-        if (event.type === "session.step.ended") {
+        if (event.type === "session.step.ended" || event.type === "session.step.failed") {
           const sessionID = readEventSessionID(event)
           if (sessionID === undefined) return Promise.resolve()
-          return ownsSession(sessionID).then(async (owned) => {
-            if (!owned) return
+          const step = readStepTokens(data?.["tokens"])
+          // step.failed 只有部分失败带 tokens；没有就跳过，避免写一条空记录。
+          if (event.type === "session.step.failed" && step.input === 0 && step.output === 0) {
+            return Promise.resolve()
+          }
+          return runSerial(STATS_CHAINS, sessionID, async () => {
+            if (!(await ownsSession(sessionID))) return
             const stats = (await load(sessionID)) ?? emptyStats()
-            const step = readStepTokens(data?.["tokens"])
             stats.steps += 1
             stats.input += step.input
             stats.output += step.output

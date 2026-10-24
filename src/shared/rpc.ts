@@ -269,8 +269,9 @@ const ToastEventJson = {
   properties: {
     reason: { type: "string", enum: ["planSkipped"] },
     kind: { type: "string", enum: ["cron", "loop"] },
+    sessionID: { type: "string" },
   },
-  required: ["reason", "kind"],
+  required: ["reason", "kind", "sessionID"],
   additionalProperties: false,
 } as const
 
@@ -364,6 +365,7 @@ export type PanelData = {
 export type ToolkitToastEvent = {
   readonly reason: "planSkipped"
   readonly kind: "cron" | "loop"
+  readonly sessionID: string
 }
 
 /** 面板刷新事件的载荷。 */

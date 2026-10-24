@@ -41,6 +41,8 @@ type StoredJob = {
   readonly fireAt?: number
   readonly recurring?: boolean
   readonly permanent?: boolean
+  /** 创建任务时的 location 目录；旧数据没有这个字段。 */
+  readonly directory?: string
 }
 
 type StoredFile = {
@@ -75,17 +77,33 @@ export type SchedulingStore = {
   removeJobs(ids: string[]): Promise<void>
   /** 输入：任务 id 列表 + 触发时刻；输出：无。预期：recurring 重排下一次。 */
   markFired(ids: string[], firedAt: number): Promise<void>
+  /** 输入：任务 id 列表；输出：无。预期：只丢内存副本，不碰存储（任务属于别的 location）。 */
+  forget(ids: readonly string[]): void
   /** 输入：无；输出：内存中任务总数。 */
   count(): number
 }
 
+/** 存储的 location 归属检查。 */
+export type SchedulingStoreOptions = {
+  /** 本实例 location；写入任务时记录目录，读取时丢弃别的目录的任务。 */
+  readonly directory?: string
+  /** 输入：会话 ID；输出：会话所在目录、`null`（会话已不存在）或 `undefined`（查询失败）。 */
+  readonly sessionDirectory?: (sessionID: string) => Promise<string | null | undefined>
+}
+
 /**
- * 输入：可扫描存储。
+ * 输入：可扫描存储 + 可选 location 归属。
  * 输出：定时任务存储。
  * 预期：durable 任务写 `schedule:<sessionID>`；非 durable 只留内存。
+ *       记账一律「读最新存档 → 改 → 写回」，不再用实例内存里的陈旧快照整体覆盖共享存储。
  */
-export function createSchedulingStore(store: ScannableStore): SchedulingStore {
+export function createSchedulingStore(
+  store: ScannableStore,
+  options: SchedulingStoreOptions = {},
+): SchedulingStore {
   const jobs = new Map<string, ScheduledJob>()
+  const directory = options.directory
+  const sessionDirectory = options.sessionDirectory
 
   /** 输入：任务；输出：下一次触发毫秒。预期：recurring 带正向抖动，one-shot 带提前量。 */
   const computeNext = (job: ScheduledJob, fromMs: number): number | null =>
@@ -104,16 +122,33 @@ export function createSchedulingStore(store: ScannableStore): SchedulingStore {
     ...(job.fireAt === undefined ? {} : { fireAt: job.fireAt }),
     ...(job.recurring === true ? { recurring: true } : {}),
     ...(job.permanent === true ? { permanent: true } : {}),
+    ...(directory === undefined ? {} : { directory }),
   })
 
-  /** 输入：会话 ID；输出：无。预期：只写 durable 任务；没有 durable 任务时删 key。 */
-  const persist = async (sessionID: string): Promise<void> => {
-    const durable = [...jobs.values()].filter((job) => job.sessionID === sessionID && job.durable !== false)
-    if (durable.length === 0) {
+  /**
+   * 输入：会话 ID。
+   * 输出：存储里的 durable 任务（不含运行时字段）。
+   * 预期：每次从存储现读，避免用实例内存里的陈旧视图覆盖别的实例刚写入的任务。
+   */
+  const readStored = async (sessionID: string): Promise<StoredJob[]> => {
+    const record = asRecord(await store.get(scheduleKey(sessionID)))
+    const rawJobs = record?.["jobs"]
+    if (!Array.isArray(rawJobs)) return []
+    const result: StoredJob[] = []
+    for (const raw of rawJobs) {
+      const parsed = parseStored(raw)
+      if (parsed !== null) result.push(parsed)
+    }
+    return result
+  }
+
+  /** 输入：会话 ID + durable 任务；输出：无。预期：空列表删 key，否则整体写回。 */
+  const writeStored = async (sessionID: string, list: readonly StoredJob[]): Promise<void> => {
+    if (list.length === 0) {
       await store.remove(scheduleKey(sessionID))
       return
     }
-    const file: StoredFile = { version: STORE_VERSION, jobs: durable.map(toStored) }
+    const file: StoredFile = { version: STORE_VERSION, jobs: [...list] }
     await store.set(scheduleKey(sessionID), file)
   }
 
@@ -129,6 +164,7 @@ export function createSchedulingStore(store: ScannableStore): SchedulingStore {
     if (typeof createdAt !== "number" || !Number.isFinite(createdAt)) return null
     const lastFiredAt = record["lastFiredAt"]
     const fireAt = record["fireAt"]
+    const directory = record["directory"]
     return {
       id,
       sessionID,
@@ -139,20 +175,38 @@ export function createSchedulingStore(store: ScannableStore): SchedulingStore {
       ...(typeof fireAt === "number" && Number.isFinite(fireAt) ? { fireAt } : {}),
       ...(record["recurring"] === true ? { recurring: true } : {}),
       ...(record["permanent"] === true ? { permanent: true } : {}),
+      ...(typeof directory === "string" && directory.length > 0 ? { directory } : {}),
     }
   }
 
   return {
     async load() {
-      await forEachScannedEntry(store, SCHEDULE_PREFIX, (entry) => {
+      await forEachScannedEntry(store, SCHEDULE_PREFIX, async (entry) => {
+        const sessionID = entry.key.slice(SCHEDULE_PREFIX.length)
+        if (sessionID.length === 0) return
+
+        // location 归属：会话属于别的目录时不加载，避免 N 个实例各武装一套 timer 重复注入。
+        if (sessionDirectory !== undefined) {
+          const located = await sessionDirectory(sessionID).catch(() => undefined)
+          // null = 结构化确认会话已不存在：清掉孤儿 key，否则每个实例都会永远重试。
+          if (located === null) {
+            await store.remove(entry.key)
+            return
+          }
+          // undefined = 查询失败：保留数据和内存任务，下个 tick 再说。
+          if (typeof located === "string" && directory !== undefined && located !== directory) return
+        }
+
         const record = asRecord(entry.value)
-        if (record === undefined) return Promise.resolve()
+        if (record === undefined) return
         const rawJobs = record["jobs"]
-        if (!Array.isArray(rawJobs)) return Promise.resolve()
+        if (!Array.isArray(rawJobs)) return
 
         for (const raw of rawJobs) {
           const stored = parseStored(raw)
           if (stored === null) continue
+          // 旧数据没有 directory：照常加载；新数据按本实例目录过滤。
+          if (directory !== undefined && stored.directory !== undefined && stored.directory !== directory) continue
           const job: ScheduledJob = { ...stored, durable: true }
           const next =
             job.recurring === true
@@ -164,7 +218,6 @@ export function createSchedulingStore(store: ScannableStore): SchedulingStore {
           job.nextRunAt = next
           jobs.set(job.id, job)
         }
-        return Promise.resolve()
       })
     },
 
@@ -221,7 +274,11 @@ export function createSchedulingStore(store: ScannableStore): SchedulingStore {
       }
       job.nextRunAt = next
       jobs.set(job.id, job)
-      if (durable) await persist(sessionID)
+      if (durable) {
+        // 读最新存档再追加：别的实例可能刚给同一会话加了任务。
+        const stored = await readStored(sessionID)
+        await writeStored(sessionID, [...stored.filter((item) => item.id !== job.id), toStored(job)])
+      }
       return { ok: true, job }
     },
 
@@ -235,6 +292,7 @@ export function createSchedulingStore(store: ScannableStore): SchedulingStore {
     },
 
     async removeJobs(ids) {
+      const targets = new Set(ids)
       const touched = new Set<string>()
       for (const id of ids) {
         const job = jobs.get(id)
@@ -242,10 +300,16 @@ export function createSchedulingStore(store: ScannableStore): SchedulingStore {
         touched.add(job.sessionID)
         jobs.delete(id)
       }
-      for (const sessionID of touched) await persist(sessionID)
+      for (const sessionID of touched) {
+        const stored = await readStored(sessionID)
+        const remaining = stored.filter((item) => !targets.has(item.id))
+        if (remaining.length !== stored.length) await writeStored(sessionID, remaining)
+      }
     },
 
     async markFired(ids, firedAt) {
+      const fired = new Set<string>()
+      const removed = new Set<string>()
       const touched = new Set<string>()
       for (const id of ids) {
         const job = jobs.get(id)
@@ -255,12 +319,36 @@ export function createSchedulingStore(store: ScannableStore): SchedulingStore {
         const next = computeNext(job, firedAt)
         if (next === null) {
           // 再也没有下一次：删掉任务，避免 nextRunAt 永远停在过去、每次 idle 都重复触发。
+          removed.add(id)
           jobs.delete(id)
           continue
         }
         job.nextRunAt = next
+        fired.add(id)
       }
-      for (const sessionID of touched) await persist(sessionID)
+      for (const sessionID of touched) {
+        const stored = await readStored(sessionID)
+        const next: StoredJob[] = []
+        let changed = false
+        for (const item of stored) {
+          if (removed.has(item.id)) {
+            changed = true
+            continue
+          }
+          if (!fired.has(item.id)) {
+            next.push(item)
+            continue
+          }
+          changed = true
+          next.push({ ...item, lastFiredAt: firedAt })
+        }
+        if (changed) await writeStored(sessionID, next)
+      }
+    },
+
+    forget(ids) {
+      // 只丢内存副本：存储里的任务属于别的 location 实例。
+      for (const id of ids) jobs.delete(id)
     },
 
     count() {

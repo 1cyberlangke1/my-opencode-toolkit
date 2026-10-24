@@ -25,7 +25,9 @@ type ToastCall = {
 }
 
 /** RPC toast 事件处理器。 */
-type ToastHandler = (event: { readonly data: { readonly reason: string; readonly kind: string } }) => void
+type ToastHandler = (event: {
+  readonly data: { readonly reason: string; readonly kind: string; readonly sessionID: string }
+}) => void
 
 /**
  * 输入：可选的对话框选择序列与设置写入实现。
@@ -95,6 +97,9 @@ function fakeContext(options: {
     },
     data: {
       listen: () => () => undefined,
+      session: {
+        get: (id: string) => (id === "ses_1" ? { id } : undefined),
+      },
     },
   } as unknown as Context
 
@@ -204,14 +209,18 @@ describe("tui plugin setup", () => {
     const { context, toastHandlers, toasts } = fakeContext({})
     const cleanup = await plugin.setup(context)
 
-    toastHandlers[0]?.({ data: { reason: "planSkipped", kind: "cron" } })
+    toastHandlers[0]?.({ data: { reason: "planSkipped", kind: "cron", sessionID: "ses_1" } })
     expect(toasts).toHaveLength(1)
     expect(toasts[0]?.variant).toBe("warning")
     expect(toasts[0]?.message).toMatch(/Plan mode is read-only|Plan 模式只读/)
 
-    toastHandlers[0]?.({ data: { reason: "planSkipped", kind: "loop" } })
+    toastHandlers[0]?.({ data: { reason: "planSkipped", kind: "loop", sessionID: "ses_1" } })
     expect(toasts).toHaveLength(2)
     expect(toasts[1]?.message).toMatch(/skipped the loop|已跳过循环/)
+
+    // 不是本 TUI 认识的会话：事件来自别的 location，不能弹。
+    toastHandlers[0]?.({ data: { reason: "planSkipped", kind: "cron", sessionID: "ses_other" } })
+    expect(toasts).toHaveLength(2)
 
     await cleanup?.()
   })

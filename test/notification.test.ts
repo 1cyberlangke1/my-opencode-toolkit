@@ -220,4 +220,20 @@ describe("notifier", () => {
 
     await expect(notifier.handle({ type: "session.idle", data: { sessionID: SESSION } })).resolves.toBeUndefined()
   })
+
+  it("读不到会话时不发通知，避免多实例重复弹窗", async () => {
+    const { sent, send } = makeSender()
+    const ctx = {
+      location: { directory: "/test" },
+      session: {
+        get: () => Promise.resolve(undefined),
+        context: () => Promise.resolve([]),
+      },
+    } as unknown as Plugin.Context
+    const notifier = createNotifier({ ctx, settings: makeStore(), roles: mainRoles, send })
+
+    await notifier.handle({ type: "session.idle", data: { sessionID: SESSION } })
+
+    expect(sent).toHaveLength(0)
+  })
 })

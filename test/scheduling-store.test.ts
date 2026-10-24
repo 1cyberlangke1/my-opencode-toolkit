@@ -2,15 +2,15 @@ import { describe, expect, it } from "vitest"
 
 import { MemoryStore } from "./helpers.ts"
 import { scheduleKey } from "../src/shared/keys.ts"
-import { createSchedulingStore, isRecurringTaskAged } from "../src/scheduling/store.ts"
+import { createSchedulingStore, isRecurringTaskAged, type SchedulingStoreOptions } from "../src/scheduling/store.ts"
 import { MAX_JOBS, type ScheduledJob } from "../src/scheduling/types.ts"
 
 const SESSION = "ses_test"
 
-/** 输入：无；输出：绑定内存存储的任务存储。 */
-function makeStore() {
+/** 输入：可选 location 归属；输出：绑定内存存储的任务存储。 */
+function makeStore(options: SchedulingStoreOptions = {}) {
   const memory = new MemoryStore()
-  return { memory, store: createSchedulingStore(memory) }
+  return { memory, store: createSchedulingStore(memory, options) }
 }
 
 describe("scheduling store", () => {
@@ -197,6 +197,116 @@ describe("scheduling store", () => {
     const { store } = makeStore()
     const result = await store.addJob({ sessionID: SESSION, cron: "0 0 1 1 *", prompt: "yearly", recurring: true })
     expect(result.ok).toBe(true)
+  })
+})
+
+describe("location 归属与并发写入", () => {
+  /** 输入：目录等字段；输出：一条可持久化的 recurring 任务。 */
+  function storedJob(directory?: string): {
+    id: string
+    sessionID: string
+    cron: string
+    prompt: string
+    createdAt: number
+    recurring: true
+    directory?: string
+  } {
+    return {
+      id: "a0000001",
+      sessionID: SESSION,
+      cron: "0 * * * *",
+      prompt: "x",
+      createdAt: Date.now(),
+      recurring: true,
+      ...(directory === undefined ? {} : { directory }),
+    }
+  }
+
+  it("不加载别的 location 写入的任务", async () => {
+    const { memory, store } = makeStore({ directory: "/mine" })
+    memory.values.set(scheduleKey(SESSION), { version: 1, jobs: [storedJob("/other")] })
+
+    await store.load()
+
+    expect(store.listJobs(SESSION)).toHaveLength(0)
+  })
+
+  it("旧数据没有 directory 时照常加载", async () => {
+    const { memory, store } = makeStore({ directory: "/mine" })
+    memory.values.set(scheduleKey(SESSION), { version: 1, jobs: [storedJob()] })
+
+    await store.load()
+
+    expect(store.listJobs(SESSION)).toHaveLength(1)
+  })
+
+  it("会话已不存在时清掉孤儿 key", async () => {
+    const { memory, store } = makeStore({
+      directory: "/mine",
+      sessionDirectory: () => Promise.resolve(null),
+    })
+    memory.values.set(scheduleKey("ses_gone"), { version: 1, jobs: [storedJob("/mine")] })
+
+    await store.load()
+
+    expect(memory.values.has(scheduleKey("ses_gone"))).toBe(false)
+  })
+
+  it("会话查询失败时不删数据", async () => {
+    const { memory, store } = makeStore({
+      directory: "/mine",
+      sessionDirectory: () => Promise.resolve(undefined),
+    })
+    memory.values.set(scheduleKey(SESSION), { version: 1, jobs: [storedJob("/mine")] })
+
+    await store.load()
+
+    expect(memory.values.has(scheduleKey(SESSION))).toBe(true)
+  })
+
+  it("新增任务不会覆盖别的实例刚写入的任务", async () => {
+    // 两个实例共享同一份存储；第二个实例从未 load，内存视图是空的。
+    const memory = new MemoryStore()
+    const first = createSchedulingStore(memory, { directory: "/mine" })
+    const second = createSchedulingStore(memory, { directory: "/mine" })
+
+    const addedFirst = await first.addJob({
+      sessionID: SESSION,
+      cron: "0 * * * *",
+      prompt: "from first",
+      recurring: true,
+      durable: true,
+    })
+    const addedSecond = await second.addJob({
+      sessionID: SESSION,
+      cron: "0 * * * *",
+      prompt: "from second",
+      recurring: true,
+      durable: true,
+    })
+    expect(addedFirst.ok).toBe(true)
+    expect(addedSecond.ok).toBe(true)
+
+    const stored = memory.values.get(scheduleKey(SESSION)) as { jobs?: { prompt?: string }[] } | undefined
+    expect(stored?.jobs?.map((job) => job.prompt).sort()).toEqual(["from first", "from second"])
+  })
+
+  it("forget 只丢内存副本，不动存储", async () => {
+    const { memory, store } = makeStore({ directory: "/mine" })
+    const added = await store.addJob({
+      sessionID: SESSION,
+      cron: "0 * * * *",
+      prompt: "x",
+      recurring: true,
+      durable: true,
+    })
+    expect(added.ok).toBe(true)
+    if (!added.ok) return
+
+    store.forget([added.job.id])
+
+    expect(store.count()).toBe(0)
+    expect(memory.values.has(scheduleKey(SESSION))).toBe(true)
   })
 })
 

@@ -14,6 +14,8 @@ const LOOP_MARKER = "loopContinuation"
 
 /** dynamic 模式没有 `schedule_wakeup` 时的兜底唤醒（20 分钟）。 */
 const FALLBACK_WAKEUP_MS = 20 * 60 * 1000
+/** 被功能开关 / 让路 / Plan 模式跳过的 tick，隔一分钟再试，不能销毁循环。 */
+const SKIPPED_RETRY_MS = 60 * 1000
 const WAKEUP_MIN_S = 60
 const WAKEUP_MAX_S = 3600
 
@@ -56,8 +58,8 @@ export function createLoopScheduler(args: {
   readonly ctx: Plugin.Context
   readonly roles: SessionRoles
   readonly shouldDefer: (sessionID: string) => Promise<boolean>
-  /** 输入：被 Plan 模式跳过的任务类型；输出：无。预期：只负责提示，不影响调度。 */
-  readonly notifySkipped?: (kind: "cron" | "loop") => void
+  /** 输入：被 Plan 模式跳过的任务类型 + 会话；输出：无。预期：只负责提示，不影响调度。 */
+  readonly notifySkipped?: (kind: "cron" | "loop", sessionID: string) => void
   /** 输入：无；输出：scheduling 是否启用。缺省视为启用（测试与旧调用兼容）。 */
   readonly enabled?: () => Promise<boolean>
 }): LoopScheduler {
@@ -102,21 +104,26 @@ export function createLoopScheduler(args: {
     }
   }
 
-  /** 输入：循环；输出：无。预期：触发一次注入；过期则停掉。 */
-  const fireLoop = async (loop: Loop): Promise<void> => {
+  /**
+   * 输入：循环。
+   * 输出：这一 tick 是否已消费（注入过，或过期后主动销毁）。
+   * 预期：功能关闭、让路、Plan 模式都算「未消费」，调用方必须保留循环稍后再试，不能销毁。
+   */
+  const fireLoop = async (loop: Loop): Promise<boolean> => {
     if (Date.now() >= loop.expiresAt) {
       stopLoop(loop.sessionID, loop.id)
-      return
+      return true
     }
     // 功能关闭时循环暂停，但不销毁；重新开启后下一个 timer 继续。
-    if (!(await isEnabled().catch(() => false))) return
-    if (await shouldDefer(loop.sessionID).catch(() => false)) return
+    if (!(await isEnabled().catch(() => false))) return false
+    if (await shouldDefer(loop.sessionID).catch(() => false)) return false
     if (await isPlanSession(ctx, loop.sessionID)) {
-      notifySkipped?.("loop")
-      return
+      notifySkipped?.("loop", loop.sessionID)
+      return false
     }
     loop.fires += 1
     await inject(loop.sessionID, loop.prompt)
+    return true
   }
 
   /** 输入：循环 + 延迟毫秒；输出：无。预期：重设 timer，`unref` 不阻止进程退出。 */
@@ -141,15 +148,21 @@ export function createLoopScheduler(args: {
     timers.set(loop.id, handle)
   }
 
-  /** 输入：循环；输出：无。预期：触发后按模式决定下一次。 */
+  /** 输入：循环；输出：无。预期：触发后按模式决定下一次；跳过的 tick 不销毁 dynamic 循环。 */
   const handleFire = async (loop: Loop): Promise<void> => {
     if (lifecycle.disposed) return
     const hadWakeup = loop.pendingWakeup
-    await fireLoop(loop)
+    const consumed = await fireLoop(loop)
     if (!loops.has(loop.id)) return
 
     if (loop.mode === "fixed" && loop.intervalSeconds !== undefined) {
       armLoop(loop, loop.intervalSeconds * 1000)
+      return
+    }
+
+    if (!consumed) {
+      // 功能关闭 / 让路 / Plan 模式：保留 pendingWakeup，过一会儿再试，绝不销毁循环。
+      armLoop(loop, SKIPPED_RETRY_MS)
       return
     }
 

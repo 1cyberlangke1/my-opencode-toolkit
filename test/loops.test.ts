@@ -152,6 +152,22 @@ describe("loop scheduler", () => {
     scheduler.dispose()
   })
 
+  it("dynamic 循环被让路跳过时不销毁", async () => {
+    const log: string[] = []
+    const scheduler = createLoopScheduler({
+      ctx: fakeCtx(log),
+      roles,
+      shouldDefer: () => Promise.resolve(true),
+    })
+
+    const loop = scheduler.startLoop(SESSION, "check", undefined)
+    await flush()
+
+    expect(log).toHaveLength(0)
+    expect(scheduler.listLoops(SESSION).map((item) => item.id)).toContain(loop.id)
+    scheduler.dispose()
+  })
+
   it("非正间隔退化为 dynamic，不会忙循环", async () => {
     const log: string[] = []
     const scheduler = createLoopScheduler({ ctx: fakeCtx(log), roles, shouldDefer: () => Promise.resolve(false) })

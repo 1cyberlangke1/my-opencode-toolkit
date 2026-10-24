@@ -2,6 +2,7 @@ import type { Plugin } from "@opencode/plugin"
 
 import { isIdleEvent, readEventData } from "../shared/events.ts"
 import { lastMessageIsUserInput } from "../shared/messages.ts"
+import type { SessionLocation } from "../shared/session.ts"
 import { capTimerDelay } from "../shared/timer.ts"
 import type { SessionRoles } from "../goal/session-role.ts"
 import { claimCronMessage, releaseCronMessage, releaseSessionClaims } from "./fire-lock.ts"
@@ -60,11 +61,13 @@ export function createSchedulingContinuation(args: {
   readonly roles: SessionRoles
   readonly shouldDefer: (sessionID: string) => Promise<boolean>
   readonly enabled: () => Promise<boolean>
-  /** 输入：被 Plan 模式跳过的任务类型；输出：无。预期：只负责提示，不影响调度。 */
-  readonly notifySkipped?: (kind: "cron" | "loop") => void
+  /** 输入：会话 ID；输出：会话位置。预期：别的 location 的任务只丢内存副本，查询失败只顺延。 */
+  readonly locateSession?: (sessionID: string) => Promise<SessionLocation>
+  /** 输入：被 Plan 模式跳过的任务类型 + 会话；输出：无。预期：只负责提示，不影响调度。 */
+  readonly notifySkipped?: (kind: "cron" | "loop", sessionID: string) => void
   readonly now?: () => number
 }): SchedulingContinuation {
-  const { ctx, store, roles, shouldDefer, enabled, notifySkipped } = args
+  const { ctx, store, roles, shouldDefer, enabled, notifySkipped, locateSession } = args
   const now = args.now ?? Date.now
   const timers = new Map<string, ReturnType<typeof setTimeout>>()
   const inFlight = new Set<string>()
@@ -168,9 +171,22 @@ export function createSchedulingContinuation(args: {
     }
     if (isDisposed()) return
 
+    // location 归属：别的实例的会话只丢本实例的内存副本；查询失败顺延，绝不消费任务。
+    if (locateSession !== undefined) {
+      const located = await locateSession(job.sessionID)
+      if (located.kind === "unknown") {
+        postpone(job, DELIVERY_RETRY_MS)
+        return
+      }
+      if (located.kind === "missing" || located.directory !== ctx.location.directory) {
+        store.forget([job.id])
+        return
+      }
+    }
+
     if (await isPlanSession(ctx, job.sessionID)) {
       if (isDisposed()) return
-      notifySkipped?.("cron")
+      notifySkipped?.("cron", job.sessionID)
       // 直接跳过本次注入；任务仍按正常节奏重排/删除，不做额外重试。
       if (recurring) await store.markFired([job.id], at)
       else await store.removeJobs([job.id])
@@ -193,6 +209,16 @@ export function createSchedulingContinuation(args: {
 
   /** 输入：会话 ID；输出：无。预期：处理该会话已到点的任务，否则补武装 timer。 */
   const handleIdle = async (sessionID: string): Promise<void> => {
+    // 事件会广播到所有实例；不是自己的会话就丢掉本实例的内存任务，避免重复注入。
+    if (locateSession !== undefined) {
+      const located = await locateSession(sessionID)
+      if (located.kind === "unknown") return
+      if (located.kind === "missing" || located.directory !== ctx.location.directory) {
+        store.forget(store.listJobs(sessionID).map((job) => job.id))
+        pending.delete(sessionID)
+        return
+      }
+    }
     if (!(await enabled())) return
     const at = now()
     const due = store

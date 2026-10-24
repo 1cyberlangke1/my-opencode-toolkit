@@ -126,7 +126,8 @@ describe("子代理摘要", () => {
 
     const list = await listSubagents(ctx, SESSION)
     expect(list.map((item) => item.id)).toEqual(["child-new", "child-old"])
-    expect(list[0]).toMatchObject({ input: 27, output: 4, cached: 5 })
+    // output 与详情口径一致：output + reasoning = 4 + 2。
+    expect(list[0]).toMatchObject({ input: 27, output: 6, cached: 5 })
   })
 
   it("详情复用 buildStats 的工具与命中率", async () => {

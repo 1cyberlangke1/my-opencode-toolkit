@@ -25,6 +25,7 @@ function fakeCtx(
   ids?: string[],
 ): Plugin.Context {
   return {
+    location: { directory: "/work" },
     session: {
       get: () => Promise.resolve({ agent }),
       prompt: (input: { text: string }) => {
@@ -445,6 +446,80 @@ describe("scheduling continuation", () => {
     await continuation.handle({ type: "session.deleted", data: { sessionID: SESSION } })
 
     expect(store.listJobs(SESSION)).toHaveLength(0)
+    continuation.dispose()
+  })
+
+  it("会话属于别的 location 时不注入，只丢本实例的内存任务", async () => {
+    const log: string[] = []
+    const store = makeStore()
+    const added = await store.addJob({ sessionID: SESSION, cron: "* * * * *", prompt: "ping", recurring: true })
+    expect(added.ok).toBe(true)
+    if (!added.ok) return
+    makeDue(store, added.job.id)
+
+    const continuation = createSchedulingContinuation({
+      ctx: fakeCtx(log),
+      store,
+      roles,
+      shouldDefer: () => Promise.resolve(false),
+      enabled: () => Promise.resolve(true),
+      locateSession: () => Promise.resolve({ kind: "found", directory: "/other" }),
+      now: () => NOW,
+    })
+    await continuation.handle({ type: "session.idle", data: { sessionID: SESSION } })
+
+    expect(log).toHaveLength(0)
+    expect(store.count()).toBe(0)
+    continuation.dispose()
+  })
+
+  it("会话已不存在时丢掉内存任务", async () => {
+    const log: string[] = []
+    const store = makeStore()
+    const added = await store.addJob({ sessionID: SESSION, cron: "* * * * *", prompt: "ping", recurring: true })
+    expect(added.ok).toBe(true)
+    if (!added.ok) return
+    makeDue(store, added.job.id)
+
+    const continuation = createSchedulingContinuation({
+      ctx: fakeCtx(log),
+      store,
+      roles,
+      shouldDefer: () => Promise.resolve(false),
+      enabled: () => Promise.resolve(true),
+      locateSession: () => Promise.resolve({ kind: "missing" }),
+      now: () => NOW,
+    })
+    await continuation.handle({ type: "session.idle", data: { sessionID: SESSION } })
+
+    expect(log).toHaveLength(0)
+    expect(store.count()).toBe(0)
+    continuation.dispose()
+  })
+
+  it("会话查询失败时顺延，不消费任务", async () => {
+    const log: string[] = []
+    const store = makeStore()
+    const added = await store.addJob({ sessionID: SESSION, cron: "* * * * *", prompt: "ping", recurring: true })
+    expect(added.ok).toBe(true)
+    if (!added.ok) return
+    makeDue(store, added.job.id)
+
+    const continuation = createSchedulingContinuation({
+      ctx: fakeCtx(log),
+      store,
+      roles,
+      shouldDefer: () => Promise.resolve(false),
+      enabled: () => Promise.resolve(true),
+      locateSession: () => Promise.resolve({ kind: "unknown" }),
+      now: () => NOW,
+    })
+    await continuation.handle({ type: "session.idle", data: { sessionID: SESSION } })
+
+    expect(log).toHaveLength(0)
+    // 任务既没有被注入，也没有被删掉。
+    expect(store.getJob(added.job.id)).toBeDefined()
+    expect(store.getJob(added.job.id)?.lastFiredAt).toBeUndefined()
     continuation.dispose()
   })
 })

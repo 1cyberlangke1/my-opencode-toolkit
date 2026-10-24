@@ -58,7 +58,8 @@ export async function listSubagents(
         ...(session.outcome === undefined ? {} : { outcome: session.outcome }),
         updatedAt: session.time.updated,
         input: session.tokens.input + cache.read + cache.write,
-        output: session.tokens.output,
+        // 与详情口径一致：output 含 reasoning。
+        output: session.tokens.output + session.tokens.reasoning,
         cached: cache.read,
       }
     })

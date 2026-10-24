@@ -1,10 +1,12 @@
 import type { Plugin } from "@opencode/plugin"
 
 import { resolveMessages } from "../i18n/index.ts"
+import type { Lang } from "../shared/settings.ts"
 import { loadSettings } from "../shared/settings-store.ts"
 import type { GoalContinuation } from "./continuation.ts"
 import type { GoalController } from "./controller.ts"
 import { parseGoalCommand } from "./parse-command.ts"
+import type { SessionRoles } from "./session-role.ts"
 
 const USAGE = "Usage: /goal [<objective>|pause|resume|clear|edit]"
 
@@ -59,24 +61,35 @@ async function applyGoalCommand(
 }
 
 /**
- * 输入：插件上下文 + 控制器 + 续作控制器。
- * 输出：注册 `/goal` 命令，返回注销句柄。
+ * 输入：插件上下文 + 控制器 + 续作控制器 + 会话角色。
+ * 输出：注册 `/goal` 命令，返回注销与刷新句柄。
  * 预期：命令本身不进对话流；执行后把反馈作为普通 prompt 发给当前会话。
+ *       描述文案在 refresh 后按新语言重注册，不再固定 setup 时的语言。
  */
 export async function registerGoalCommand(
   ctx: Plugin.Context,
   controller: GoalController,
   continuation: GoalContinuation,
+  roles: SessionRoles,
   notify: (sessionID: string) => void,
-): Promise<{ dispose(): Promise<void> }> {
+): Promise<{ dispose(): Promise<void>; refresh(lang: Lang): Promise<void> }> {
   const settings = await loadSettings(ctx)
-  const messages = resolveMessages(settings.lang === "auto" ? undefined : settings.lang)
+  let messages = resolveMessages(settings.lang === "auto" ? undefined : settings.lang)
 
   const registration = await ctx.command.transform((editor) => {
     editor.add({
       name: "goal",
       description: messages.command.goal,
       execute: async (input) => {
+        // 子代理不能操作目标：它不会续作，记账还会污染父会话的预算。
+        if (await roles.isSubagent(input.sessionID)) {
+          await ctx.session.prompt({
+            sessionID: input.sessionID,
+            text: "Error: /goal is not available to subagents.",
+            delivery: input.delivery,
+          })
+          return
+        }
         const settings = await loadSettings(ctx)
         const parsed = parseGoalCommand(input.prompt.text)
         // clear / show 是清理与查看，功能关闭时也允许，避免目标被永久锁在存储里。
@@ -91,5 +104,11 @@ export async function registerGoalCommand(
     })
   })
   await ctx.command.reload()
-  return registration
+  return {
+    dispose: () => registration.dispose(),
+    async refresh(lang) {
+      messages = resolveMessages(lang === "auto" ? undefined : lang)
+      await ctx.command.reload()
+    },
+  }
 }

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import { createSender, type CommandRunner } from "../src/notification/send.ts"
 
@@ -69,6 +69,33 @@ describe("createSender", () => {
 
     await expect(send("t", "m")).resolves.toBeUndefined()
     expect(calls).toHaveLength(1)
+  })
+
+  it("探测失败不是永久缓存，过一分钟后重试", async () => {
+    vi.useFakeTimers()
+    try {
+      let probeAttempts = 0
+      const runner: CommandRunner = (command, args) => {
+        if (command === "notify-send" && args[0] === "--help") {
+          probeAttempts += 1
+          // 第一次探测失败，模拟命令还没装好；之后成功。
+          return probeAttempts === 1 ? Promise.reject(new Error("command missing")) : Promise.resolve()
+        }
+        return Promise.resolve()
+      }
+      const send = createSender("linux", runner)
+
+      await send("t", "m")
+      // 没到重试窗口：仍然用缓存的失败结果。
+      await send("t", "m")
+      expect(probeAttempts).toBe(1)
+
+      vi.setSystemTime(Date.now() + 61_000)
+      await send("t", "m")
+      expect(probeAttempts).toBe(2)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("不支持的平台是空实现", async () => {
