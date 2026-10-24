@@ -1,4 +1,4 @@
-import { Rpc } from "@opencode/plugin/rpc"
+import type { Rpc } from "@opencode/plugin/rpc"
 
 import { RPC_ID } from "./identity.ts"
 import type { Settings } from "./settings.ts"
@@ -236,8 +236,14 @@ const ToastEventJson = {
   additionalProperties: false,
 } as const
 
-/** 服务端与 TUI 共用的 RPC 定义。 */
-export const ToolkitRpc: Rpc.PortableDefinition = Rpc.define({
+/**
+ * 服务端与 TUI 共用的 RPC 定义。
+ *
+ * 这里用字面量而不是 `Rpc.define(...)`：`define` 只做「错误名不能以 rpc. 开头」的运行时校验
+ * 并把入参原样返回，没有别的副作用。改成纯字面量后 TUI 产物不再需要运行时导入
+ * `@opencode/plugin/rpc`（该模块不在宿主的运行时模块表里，npm 安装后无法解析）。
+ */
+export const ToolkitRpc: Rpc.PortableDefinition = {
   id: RPC_ID,
   methods: {
     settingsGet: { input: SettingsGetInputJson, output: SettingsJson },
@@ -249,7 +255,7 @@ export const ToolkitRpc: Rpc.PortableDefinition = Rpc.define({
     toast: { schema: ToastEventJson },
     panelUpdated: { schema: PanelUpdatedEventJson },
   },
-})
+}
 
 /** 面板目标摘要。 */
 export type PanelGoal = {

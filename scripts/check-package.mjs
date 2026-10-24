@@ -15,6 +15,8 @@ const REQUIRED = [
   "tui.ts",
   "src/index.ts",
   "src/tui/main.tsx",
+  // npm 安装后的 TUI 入口：预编译产物，缺了它插件加载会退回 react JSX。
+  "dist/tui.js",
 ]
 
 const npmArgs = ["pack", "--dry-run", "--json"]

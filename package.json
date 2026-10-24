@@ -26,10 +26,11 @@
   },
   "exports": {
     ".": "./index.ts",
-    "./tui": "./tui.ts"
+    "./tui": "./dist/tui.js"
   },
   "files": [
     "src",
+    "dist",
     "index.ts",
     "tui.ts"
   ],
@@ -43,11 +44,24 @@
     "@opentui/solid": ">=0.5.17",
     "solid-js": ">=1.9.0"
   },
+  "peerDependenciesMeta": {
+    "@opentui/core": {
+      "optional": true
+    },
+    "@opentui/solid": {
+      "optional": true
+    },
+    "solid-js": {
+      "optional": true
+    }
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm test:tui && pnpm check:package",
     "check:package": "node scripts/check-package.mjs",
+    "build:tui": "bun scripts/build-tui.mjs",
+    "prepack": "bun run build:tui",
     "test": "vitest run",
     "test:tui": "cd tui-test && bun test",
     "test:e2e": "bun scripts/e2e-load.mjs && bun scripts/e2e-tool-visibility.mjs && bun scripts/e2e-synthetic.mjs && bun scripts/e2e-synthetic.mjs --compact",
