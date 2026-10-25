@@ -23,8 +23,8 @@ describe("notification formatting", () => {
   it("toast 脚本是一行且包含转义后的内容", () => {
     const script = buildWindowsToastScript("t'<", "m&")
     expect(script).not.toContain("\n")
-    expect(script).toContain("t&apos;&lt;")
-    expect(script).toContain("m&amp;")
+    expect(script).toContain("t''<")
+    expect(script).toContain("m&")
     expect(script).toContain("ToastNotificationManager")
   })
 })

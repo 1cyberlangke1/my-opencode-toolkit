@@ -21,11 +21,12 @@ export function escapeXmlText(input: string): string {
 /**
  * 输入：标题 + 正文。
  * 输出：一行 PowerShell 脚本，弹出 Windows toast。
- * 预期：先 XML 转义（给 toast 模板），再单引号转义（给 -Command 字符串）。
+ * 预期：只做 PowerShell 单引号转义；XML 实体由 `CreateTextNode` 负责，
+ *       这里再转一次会变成字面量 `&amp;`（toast 里就能看到 `&amp;`）。
  */
 export function buildWindowsToastScript(title: string, message: string): string {
-  const psTitle = escapePowerShellSingleQuotedText(escapeXmlText(title))
-  const psMessage = escapePowerShellSingleQuotedText(escapeXmlText(message))
+  const psTitle = escapePowerShellSingleQuotedText(title)
+  const psMessage = escapePowerShellSingleQuotedText(message)
 
   return `
 [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null

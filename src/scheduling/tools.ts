@@ -88,7 +88,8 @@ export async function registerSchedulingTools(
           cron: input.cron,
           prompt,
           recurring: input.recurring ?? true,
-          durable: input.durable ?? false,
+          // 默认持久化，与 /cron 对齐：工具创建的任务不该在插件重启后悄悄消失。
+          durable: input.durable ?? true,
         })
         if (!result.ok) return { output: {}, content: `Error: ${result.error}` }
         onJobAdded?.()

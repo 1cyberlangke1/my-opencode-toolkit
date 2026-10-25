@@ -118,9 +118,12 @@ export function createSchedulingContinuation(args: {
     }
   }
 
-  /** 输入：任务 + 延迟；输出：无。预期：只改运行时 nextRunAt 并重新武装，不消费任务。 */
-  const postpone = (job: ScheduledJob, delayMs: number): void => {
-    job.nextRunAt = now() + delayMs
+  /** 输入：任务 + 延迟；输出：无。预期：顺延并把新时刻落盘（one-shot 重启后仍会重试），再重新武装。 */
+  const postpone = async (job: ScheduledJob, delayMs: number): Promise<void> => {
+    const at = now() + delayMs
+    // 落盘失败也不能丢掉内存里的顺延，否则本次 tick 会重复触发。
+    await store.postpone(job.id, at).catch(() => undefined)
+    job.nextRunAt = at
     armTimers()
   }
 
@@ -134,12 +137,12 @@ export function createSchedulingContinuation(args: {
     // 关闭或让路时先不消费任务：否则 one-shot 会在用户重新开启前被静默丢掉。
     const on = await enabled().catch(() => false)
     if (!on) {
-      postpone(job, DISABLED_RETRY_MS)
+      await postpone(job, DISABLED_RETRY_MS)
       return
     }
     const defer = await shouldDefer(job.sessionID).catch(() => false)
     if (defer) {
-      postpone(job, DEFERRED_RETRY_MS)
+      await postpone(job, DEFERRED_RETRY_MS)
       return
     }
     if (isDisposed()) return
@@ -148,7 +151,7 @@ export function createSchedulingContinuation(args: {
     if (locateSession !== undefined) {
       const located = await locateSession(job.sessionID)
       if (located.kind === "unknown") {
-        postpone(job, DELIVERY_RETRY_MS)
+        await postpone(job, DELIVERY_RETRY_MS)
         return
       }
       if (located.kind === "missing" || located.directory !== ctx.location.directory) {
@@ -160,18 +163,24 @@ export function createSchedulingContinuation(args: {
     if (await isPlanSession(ctx, job.sessionID)) {
       if (isDisposed()) return
       notifySkipped?.("cron", job.sessionID)
-      // 直接跳过本次注入；任务仍按正常节奏重排/删除，不做额外重试。
+      // 跳过本次注入：recurring 只跳过这一拍；one-shot 必须顺延而不是删除，
+      // 否则用户切回 build agent 后这个一次性任务就永远消失了。
       if (recurring) await store.markFired([job.id], at)
-      else await store.removeJobs([job.id])
+      else await postpone(job, DEFERRED_RETRY_MS)
       armTimers()
       return
     }
 
-    const delivered = await inject(job.sessionID, buildFirePrompt(job, new Date(at)), messageIDFor(job, at))
+    const outcome = await inject(job.sessionID, buildFirePrompt(job, new Date(at)), messageIDFor(job, at))
     if (isDisposed()) return
-    if (!delivered) {
-      // 会话忙或末条是用户输入：保留任务稍后重试，one-shot 不会因此丢失。
-      postpone(job, DELIVERY_RETRY_MS)
+    // 没抢到锁 = 另一个实例已经在投递同一次触发；这里再顺延只会让 ID 变掉、60 秒后二次注入。
+    if (outcome === "claim-lost") {
+      armTimers()
+      return
+    }
+    if (outcome === "skipped") {
+      // 会话忙或末条是用户输入：保留任务稍后重试（one-shot 的顺延时刻会落盘）。
+      await postpone(job, DELIVERY_RETRY_MS)
       return
     }
 

@@ -163,20 +163,14 @@ describe("scheduling store", () => {
     expect(store.listJobs(SESSION)).toHaveLength(0)
   })
 
-  it("一次性任务跨年回绕时返回语义化错误", async () => {
+  it("近期一次性任务正常接受（跨年不再被启发式误拒）", async () => {
     const { store } = makeStore()
-    const now = new Date()
-    // 构造一个在当前年份已经过去的月日时间点（例如 2 分钟前），写死具体的日和月
-    const past = new Date(now.getTime() - 120_000)
-    // 跨年首日边界兜底：确保 past 在同一年内
-    if (past.getFullYear() === now.getFullYear()) {
-      const cron = `${String(past.getMinutes())} ${String(past.getHours())} ${String(past.getDate())} ${String(past.getMonth() + 1)} *`
-      const result = await store.addJob({ sessionID: SESSION, cron, prompt: "past", recurring: false })
-      expect(result.ok).toBe(false)
-      if (!result.ok) {
-        expect(result.error).toContain("has already passed for this year and wrapped around to next year")
-      }
-    }
+    // 旧实现用「跨年 + 距离 > 24h」判定过期，会把 12-29 建的 1 月 1 日任务误拒。
+    // 现在只保留 7 天窗口，这里验证近期任务不会再被误杀。
+    const soon = new Date(Date.now() + 120_000)
+    const cron = `${String(soon.getMinutes())} ${String(soon.getHours())} ${String(soon.getDate())} ${String(soon.getMonth() + 1)} *`
+    const result = await store.addJob({ sessionID: SESSION, cron, prompt: "soon", recurring: false })
+    expect(result.ok).toBe(true)
   })
 
   it("一次性任务超过 7 天上限返回语义化错误", async () => {

@@ -25,6 +25,8 @@ export type ScheduledJob = {
   readonly durable?: boolean
   /** one-shot 的稳定计划触发时刻；持久化，避免重启后按“下一次 cron”重新补跑。 */
   fireAt?: number
+  /** 投递失败后顺延到的时刻；持久化，重启后仍按这个时间重试而不是丢弃任务。 */
+  retryAt?: number
   /** 运行时字段：下一次 fire 时刻。 */
   nextRunAt?: number
 }

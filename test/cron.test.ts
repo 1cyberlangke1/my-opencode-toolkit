@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest"
 
+import { resolveMessages } from "../src/i18n/index.ts"
+
 import {
   computeNextCronRun,
   cronToHuman,
+  formatCronHuman,
   jitteredNextCronRunMs,
   nextCronRunMs,
   oneShotJitteredNextCronRunMs,
@@ -117,5 +120,28 @@ describe("cronToHuman", () => {
 
   it("无法识别时回退原文", () => {
     expect(cronToHuman("0 0 1 6 *")).toBe("0 0 1 6 *")
+  })
+})
+
+describe("formatCronHuman", () => {
+  const zh = resolveMessages("zh")
+  const en = resolveMessages("en")
+
+  it("zh：常见表达式本地化", () => {
+    expect(formatCronHuman("*/5 * * * *", zh.cron, zh.cron.days)).toBe("每 5 分钟")
+    expect(formatCronHuman("* * * * *", zh.cron, zh.cron.days)).toBe("每分钟")
+    expect(formatCronHuman("0 * * * *", zh.cron, zh.cron.days)).toBe("每小时")
+    expect(formatCronHuman("30 14 * * *", zh.cron, zh.cron.days)).toBe("每天 14:30")
+    expect(formatCronHuman("30 14 * * 1", zh.cron, zh.cron.days)).toBe("每周一 14:30")
+    expect(formatCronHuman("30 14 * * 1-5", zh.cron, zh.cron.days)).toBe("工作日 14:30")
+  })
+
+  it("en：常见表达式本地化", () => {
+    expect(formatCronHuman("*/5 * * * *", en.cron, en.cron.days)).toBe("Every 5 minutes")
+    expect(formatCronHuman("30 14 * * *", en.cron, en.cron.days)).toBe("Every day at 14:30")
+  })
+
+  it("认不出的表达式原样返回", () => {
+    expect(formatCronHuman("45 21 25 10 *", zh.cron, zh.cron.days)).toBe("45 21 25 10 *")
   })
 })

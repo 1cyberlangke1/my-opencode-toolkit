@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto"
 
 import type { JsonStore } from "../shared/json.ts"
 import { goalKey } from "../shared/keys.ts"
+import { globalSerialRegistry, runSerial } from "../shared/serial.ts"
 import { parseGoal, type Goal, type GoalStatus } from "./types.ts"
 
 /**
@@ -94,4 +95,12 @@ export async function setGoalStatus(
 /** 输入：无；输出：当前 Unix 秒。预期：整秒，便于存储与展示。 */
 export function nowSeconds(): number {
   return Math.trunc(Date.now() / 1000)
+}
+
+/** goal 存档的进程级串行队列：记账与状态切换必须排队，否则后写的会把先写的状态冲掉。 */
+const goalChains = globalSerialRegistry(Symbol.for("my-opencode-toolkit.goal-chains"))
+
+/** 输入：会话 ID + 读改写函数；输出：该函数的结果。预期：同一会话的 goal 写操作串行执行。 */
+export function withGoalLock<T>(sessionID: string, task: () => Promise<T>): Promise<T> {
+  return runSerial(goalChains, sessionID, task)
 }

@@ -41,7 +41,7 @@ describe("createSyntheticInjector", () => {
       marker: "cronContinuation",
     })
 
-    expect(await injector.inject("ses_a", "go on")).toBe(true)
+    expect(await injector.inject("ses_a", "go on")).toBe("sent")
     expect(calls).toHaveLength(1)
     expect(calls[0]?.description).toBe("go on")
     expect(calls[0]?.metadata["cronContinuation"]).toBe(true)
@@ -62,8 +62,8 @@ describe("createSyntheticInjector", () => {
       marker: "loopContinuation",
     })
 
-    expect(await injector.inject("ses_a", "first")).toBe(true)
-    expect(await injector.inject("ses_a", "second")).toBe(false)
+    expect(await injector.inject("ses_a", "first")).toBe("sent")
+    expect(await injector.inject("ses_a", "second")).toBe("skipped")
     expect(calls).toBe(1)
   })
 
@@ -81,7 +81,7 @@ describe("createSyntheticInjector", () => {
       claim: () => false,
     })
 
-    expect(await injector.inject("ses_a", "go on", "msg_1")).toBe(false)
+    expect(await injector.inject("ses_a", "go on", "msg_1")).toBe("claim-lost")
     expect(calls).toBe(0)
     expect(injector.inFlight.size).toBe(0)
     expect(injector.pending.size).toBe(0)
@@ -105,12 +105,12 @@ describe("createSyntheticInjector", () => {
       },
     })
 
-    expect(await injector.inject("ses_a", "go on", "msg_1")).toBe(false)
+    expect(await injector.inject("ses_a", "go on", "msg_1")).toBe("skipped")
     expect(released).toEqual(["msg_1"])
     expect(injector.pending.size).toBe(0)
     expect(injector.inFlight.size).toBe(0)
 
-    expect(await injector.inject("ses_a", "go on", "msg_1")).toBe(true)
+    expect(await injector.inject("ses_a", "go on", "msg_1")).toBe("sent")
   })
 
   it("子代理会话不注入", async () => {
@@ -126,7 +126,7 @@ describe("createSyntheticInjector", () => {
       marker: "loopContinuation",
     })
 
-    expect(await injector.inject("ses_child", "go on")).toBe(false)
+    expect(await injector.inject("ses_child", "go on")).toBe("skipped")
     expect(calls).toBe(0)
   })
 
@@ -144,7 +144,7 @@ describe("createSyntheticInjector", () => {
       marker: "loopContinuation",
     })
 
-    expect(await injector.inject("ses_a", "go on")).toBe(false)
+    expect(await injector.inject("ses_a", "go on")).toBe("skipped")
     expect(calls).toBe(0)
   })
 })

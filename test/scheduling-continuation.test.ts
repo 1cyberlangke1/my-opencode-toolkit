@@ -306,7 +306,7 @@ describe("scheduling continuation", () => {
     continuation.dispose()
   })
 
-  it("plan 模式跳过 one-shot 注入并按原计划消费", async () => {
+  it("plan 模式跳过 one-shot 注入并顺延而不是删除", async () => {
     const log: string[] = []
     const skipped: string[] = []
     const store = makeStore()
@@ -328,7 +328,10 @@ describe("scheduling continuation", () => {
 
     expect(log).toHaveLength(0)
     expect(skipped).toEqual(["cron"])
-    expect(store.getJob(added.job.id)).toBeUndefined()
+    // 切回 build agent 后这次性任务还要能跑：只顺延，不删除。
+    const kept = store.getJob(added.job.id)
+    expect(kept).toBeDefined()
+    expect(kept?.nextRunAt ?? 0).toBeGreaterThan(NOW)
     continuation.dispose()
   })
 

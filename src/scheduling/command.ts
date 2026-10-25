@@ -74,6 +74,17 @@ async function loadMaintenancePrompt(directory: string | undefined): Promise<str
 }
 
 /**
+ * 输入：毫秒时间戳。
+ * 输出：`MM-DD HH:MM`（本地时区）。
+ * 预期：一次性任务回执用，和侧栏显示保持同一口径。
+ */
+function formatOneShotAt(ms: number): string {
+  const at = new Date(ms)
+  const pad = (value: number): string => value.toString().padStart(2, "0")
+  return `${pad(at.getMonth() + 1)}-${pad(at.getDate())} ${pad(at.getHours())}:${pad(at.getMinutes())}`
+}
+
+/**
  * 输入：`/cron` 参数。
  * 输出：`{ expr, prompt }` 或错误文本。
  * 预期：前 5 个 token 是 cron 表达式，剩余为 prompt。
@@ -163,7 +174,7 @@ export async function registerSchedulingCommands(
             return `Cancelled job ${id}.`
           }
 
-          const once = /^once\s+(.+)$/is.exec(raw)
+          const once = /^once\b\s*(.*)$/is.exec(raw)
           const body = once === null ? raw : (once[1] ?? "")
           const split = splitCron(body)
           if (split === null) return "Usage: /cron <expr> <prompt> | /cron once <expr> <prompt> | /cron list | /cron delete <id>"
@@ -180,7 +191,8 @@ export async function registerSchedulingCommands(
           const job = result.job
           return job.recurring === true
             ? `Scheduled recurring job ${job.id} (${formatCronHuman(job.cron, messages.cron, messages.cron.days)}): ${job.prompt}`
-            : `Scheduled one-shot task ${job.id} (${formatCronHuman(job.cron, messages.cron, messages.cron.days)}): ${job.prompt}`
+            : // 一次性任务不能套「每天 09:00」这种描述：用 oneShot + 真实触发时刻，和侧栏口径一致。
+              `Scheduled one-shot task ${job.id} (${messages.cron.oneShot(formatOneShotAt(job.fireAt ?? job.nextRunAt ?? Date.now()))}): ${job.prompt}`
         })()
         await ctx.session.prompt({ sessionID: input.sessionID, text, delivery: input.delivery })
       },

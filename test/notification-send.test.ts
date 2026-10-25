@@ -30,8 +30,8 @@ describe("createSender", () => {
     expect(calls[0]?.args).toEqual(["-NoProfile", "-Command", "exit 0"])
 
     const script = calls[1]?.args.at(-1) ?? ""
-    expect(script).toContain("A &amp; B")
-    expect(script).toContain("it&apos;s &lt;ok&gt;")
+    expect(script).toContain("A & B")
+    expect(script).toContain("it''s <ok>")
   })
 
   it("macOS 用 osascript 并转义反斜杠与双引号", async () => {

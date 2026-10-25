@@ -1,5 +1,5 @@
 import type { JsonStore } from "../shared/json.ts"
-import { clearGoal, createGoal, nowSeconds, readGoal, setGoalStatus, writeGoal } from "./store.ts"
+import { clearGoal, createGoal, nowSeconds, readGoal, setGoalStatus, withGoalLock, writeGoal } from "./store.ts"
 import type { Goal } from "./types.ts"
 
 /** 同一阻塞原因连续出现多少次才判定为 blocked。 */
@@ -35,7 +35,7 @@ export type GoalController = {
  * 预期：所有状态转换都落盘；不合法转换返回 `null` 或原目标，不抛异常。
  */
 export function createGoalController(store: JsonStore): GoalController {
-  return {
+  const controller: GoalController = {
     async setGoal(sessionID, objective, tokenBudget) {
       await clearGoal(store, sessionID)
       const goal = await createGoal(store, sessionID, objective)
@@ -122,5 +122,23 @@ export function createGoalController(store: JsonStore): GoalController {
       await writeGoal(store, updated)
       return updated
     },
+  }
+
+  /**
+   * 所有写路径都过同一把会话级锁：`step.ended` 记账与 `/goal pause|complete` 是并发的读改写，
+   * 不串行就会出现「暂停后又被记账覆盖回 active」。
+   */
+  return {
+    ...controller,
+    setGoal: (sessionID, objective, tokenBudget) =>
+      withGoalLock(sessionID, () => controller.setGoal(sessionID, objective, tokenBudget)),
+    pauseGoal: (sessionID) => withGoalLock(sessionID, () => controller.pauseGoal(sessionID)),
+    resumeGoal: (sessionID) => withGoalLock(sessionID, () => controller.resumeGoal(sessionID)),
+    clearGoal: (sessionID) => withGoalLock(sessionID, () => controller.clearGoal(sessionID)),
+    markComplete: (sessionID) => withGoalLock(sessionID, () => controller.markComplete(sessionID)),
+    markBlocked: (sessionID, reason) =>
+      withGoalLock(sessionID, () => controller.markBlocked(sessionID, reason)),
+    accountUsage: (sessionID, usage) =>
+      withGoalLock(sessionID, () => controller.accountUsage(sessionID, usage)),
   }
 }

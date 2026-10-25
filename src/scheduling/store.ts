@@ -13,21 +13,6 @@ import {
 } from "./cron.ts"
 import { DEFAULT_MAX_AGE_DAYS, JOB_ID_LENGTH, MAX_JOBS, type ScheduledJob } from "./types.ts"
 
-/**
- * 输入：时间戳（毫秒）。
- * 输出：本地时间的 `YYYY-MM-DD HH:mm` 字符串。
- * 预期：两位补零，用于错误信息展示。
- */
-function formatLocalTime(ms: number): string {
-  const d = new Date(ms)
-  const year = String(d.getFullYear())
-  const month = String(d.getMonth() + 1).padStart(2, "0")
-  const day = String(d.getDate()).padStart(2, "0")
-  const hour = String(d.getHours()).padStart(2, "0")
-  const minute = String(d.getMinutes()).padStart(2, "0")
-  return `${year}-${month}-${day} ${hour}:${minute}`
-}
-
 /** 存储格式版本。 */
 const STORE_VERSION = 1
 
@@ -47,6 +32,7 @@ type StoredJob = {
   readonly createdAt: number
   readonly lastFiredAt?: number
   readonly fireAt?: number
+  readonly retryAt?: number
   readonly recurring?: boolean
   readonly permanent?: boolean
   /** 创建任务时的 location 目录；旧数据没有这个字段。 */
@@ -85,6 +71,8 @@ export type SchedulingStore = {
   removeJobs(ids: string[]): Promise<void>
   /** 输入：任务 id 列表 + 触发时刻；输出：无。预期：recurring 重排下一次。 */
   markFired(ids: string[], firedAt: number): Promise<void>
+  /** 输入：任务 id + 顺延时刻；输出：无。预期：落盘 retryAt，重启后仍按这个时间重试。 */
+  postpone(id: string, at: number): Promise<void>
   /** 输入：任务 id 列表；输出：无。预期：只丢内存副本，不碰存储（任务属于别的 location）。 */
   forget(ids: readonly string[]): void
   /** 输入：无；输出：内存中任务总数。 */
@@ -128,6 +116,7 @@ export function createSchedulingStore(
     createdAt: job.createdAt,
     ...(job.lastFiredAt === undefined ? {} : { lastFiredAt: job.lastFiredAt }),
     ...(job.fireAt === undefined ? {} : { fireAt: job.fireAt }),
+    ...(job.retryAt === undefined ? {} : { retryAt: job.retryAt }),
     ...(job.recurring === true ? { recurring: true } : {}),
     ...(job.permanent === true ? { permanent: true } : {}),
     ...(directory === undefined ? {} : { directory }),
@@ -172,6 +161,7 @@ export function createSchedulingStore(
     if (typeof createdAt !== "number" || !Number.isFinite(createdAt)) return null
     const lastFiredAt = record["lastFiredAt"]
     const fireAt = record["fireAt"]
+    const retryAt = record["retryAt"]
     const directory = record["directory"]
     return {
       id,
@@ -181,6 +171,7 @@ export function createSchedulingStore(
       createdAt,
       ...(typeof lastFiredAt === "number" && Number.isFinite(lastFiredAt) ? { lastFiredAt } : {}),
       ...(typeof fireAt === "number" && Number.isFinite(fireAt) ? { fireAt } : {}),
+      ...(typeof retryAt === "number" && Number.isFinite(retryAt) ? { retryAt } : {}),
       ...(record["recurring"] === true ? { recurring: true } : {}),
       ...(record["permanent"] === true ? { permanent: true } : {}),
       ...(typeof directory === "string" && directory.length > 0 ? { directory } : {}),
@@ -217,9 +208,10 @@ export function createSchedulingStore(
           if (directory !== undefined && stored.directory !== undefined && stored.directory !== directory) continue
           const job: ScheduledJob = { ...stored, durable: true }
           const next =
-            job.recurring === true
+            stored.retryAt ??
+            (job.recurring === true
               ? computeNext(job, job.lastFiredAt ?? job.createdAt)
-              : (stored.fireAt ?? computeNext(job, job.createdAt))
+              : (stored.fireAt ?? computeNext(job, job.createdAt)))
           // 算不出下一次的任务不会再触发；one-shot 过点也不补跑，避免重启后把同一次触发算成下一次。
           if (next === null || (job.recurring !== true && next <= Date.now())) continue
           if (job.recurring !== true) job.fireAt = next
@@ -261,15 +253,8 @@ export function createSchedulingStore(
         return { ok: false, error: `Cron expression '${cron}' did not produce a future execution time.` }
       }
       if (!recurring) {
-        const nowDate = new Date(now)
-        const nextDate = new Date(next)
-        // 跨年回绕判定：跨了年份且距离当前超过 24 小时（排除跨年夜正常跨几分钟的情况）
-        if (nextDate.getFullYear() > nowDate.getFullYear() && next - now > 24 * 60 * 60 * 1000) {
-          return {
-            ok: false,
-            error: `The scheduled time '${cron}' has already passed for this year and wrapped around to next year (${formatLocalTime(next)}). Please specify a future time.`,
-          }
-        }
+        // 跨年本身不是「已过期」的证据：12-29 建 1 月 1 日的任务完全合法。
+        // 真正的上限由下面的 7 天窗口负责，这里不再用「跨年 + 24h」的启发式误伤。
         const maxAgeMs = DEFAULT_MAX_AGE_DAYS * 24 * 60 * 60 * 1000
         if (next - now > maxAgeMs) {
           const days = Math.round((next - now) / (24 * 60 * 60 * 1000))
@@ -318,6 +303,28 @@ export function createSchedulingStore(
           if (remaining.length !== stored.length) await writeStored(sessionID, remaining)
         })
       }
+    },
+
+    /**
+     * 输入：任务 id + 顺延到的时刻。
+     * 输出：无。
+     * 预期：只改这一个任务的 retryAt/nextRunAt 并落盘；one-shot 重启后仍按顺延时刻重试，
+     *       不会被 load() 当成「已过点」静默丢弃。
+     */
+    async postpone(id, at) {
+      const job = jobs.get(id)
+      if (job === undefined) return
+      job.retryAt = at
+      job.nextRunAt = at
+      if (job.durable !== true) return
+      await runSerial(writeChains, scheduleKey(job.sessionID), async () => {
+        const stored = await readStored(job.sessionID)
+        if (!stored.some((item) => item.id === id)) return
+        await writeStored(
+          job.sessionID,
+          stored.map((item) => (item.id === id ? { ...item, retryAt: at } : item)),
+        )
+      })
     },
 
     async markFired(ids, firedAt) {

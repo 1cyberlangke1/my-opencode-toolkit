@@ -95,8 +95,9 @@ export function createLoopScheduler(args: {
       notifySkipped?.("loop", loop.sessionID)
       return false
     }
-    await inject(loop.sessionID, loop.prompt)
-    return true
+    // 投递失败（末条是真实用户输入 / 会话忙 / 角色查询失败）不能算「已消费」：
+    // 否则 dynamic 循环会在收尾 tick 被 stopLoop 销毁，最后一刀 prompt 直接丢。
+    return (await inject(loop.sessionID, loop.prompt)) === "sent"
   }
 
   /** 输入：循环 + 延迟毫秒；输出：无。预期：重设 timer，`unref` 不阻止进程退出。 */
