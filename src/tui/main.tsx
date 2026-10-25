@@ -283,9 +283,14 @@ export function Sidebar(props: {
           }
         >
           <box flexDirection="column" gap={0}>
-            {sectionHeader(props.copy().panel.subagents, subagentsOpen(), () => {
-              setSubagentsOpen(!subagentsOpen())
-            })}
+            {sectionHeader(
+              props.copy().panel.subagents,
+              subagentsOpen(),
+              () => {
+                setSubagentsOpen(!subagentsOpen())
+              },
+              subagents().length,
+            )}
             <Show when={subagentsOpen()}>
               <box paddingLeft={2} flexDirection="column" gap={0}>
                 <For each={subagents()}>
