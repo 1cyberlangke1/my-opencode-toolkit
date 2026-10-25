@@ -27,6 +27,10 @@ export type ScheduledJob = {
   fireAt?: number
   /** 投递失败后顺延到的时刻；持久化，重启后仍按这个时间重试而不是丢弃任务。 */
   retryAt?: number
+  /** 用户请求的计划时刻（不含提前量）；只用于展示，和真实 fireAt 区分开。 */
+  requestedAt?: number
+  /** 最近一次尝试投递的时刻；崩溃前先落盘，重启后据此避免重复触发同一次。 */
+  lastAttemptAt?: number
   /** 运行时字段：下一次 fire 时刻。 */
   nextRunAt?: number
 }

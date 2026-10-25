@@ -170,6 +170,7 @@ export default Plugin.define({
             cron: job.cron,
             prompt: job.prompt,
             recurring: job.recurring === true,
+            ...(job.requestedAt === undefined ? {} : { requestedAt: job.requestedAt }),
             ...(job.nextRunAt === undefined ? {} : { nextRunAt: job.nextRunAt }),
           })),
           stats: {

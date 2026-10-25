@@ -199,7 +199,7 @@ export function Sidebar(props: {
    */
   const jobSchedule = (job: PanelJob): string => {
     const copy = props.copy()
-    if (job.recurring === false) return copy.cron.oneShot(formatDateTime(job.nextRunAt ?? now()))
+    if (job.recurring === false) return copy.cron.oneShot(formatDateTime(job.requestedAt ?? job.nextRunAt ?? now()))
     return formatCronHuman(job.cron, copy.cron, copy.cron.days)
   }
 

@@ -172,6 +172,9 @@ export function createSchedulingContinuation(args: {
       return
     }
 
+    // 投递前先落盘「这次已经尝试过」：崩在 synthetic 与 markFired 之间时，
+    // 重启后不会再按旧 lastFiredAt 把同一次触发再跑一遍。
+    await store.markAttempted(job.id, at).catch(() => undefined)
     const outcome = await inject(job.sessionID, buildFirePrompt(job, new Date(at)), messageIDFor(job, at))
     if (isDisposed()) return
     // 没抢到锁 = 另一个实例已经在投递同一次触发；这里再顺延只会让 ID 变掉、60 秒后二次注入。

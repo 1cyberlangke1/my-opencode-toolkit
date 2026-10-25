@@ -340,4 +340,36 @@ describe("isRecurringTaskAged", () => {
     expect(isRecurringTaskAged({ ...base }, 8 * 24 * 60 * 60 * 1000)).toBe(false)
     expect(isRecurringTaskAged({ ...base, recurring: true, permanent: true }, 8 * 24 * 60 * 60 * 1000)).toBe(false)
   })
+
+  it("一次性任务记录准点 requestedAt，提前量只改 fireAt", async () => {
+    const { store } = makeStore()
+    // 分钟为 0 时 one-shot 会带提前量；requestedAt 必须是用户请求的准点。
+    const result = await store.addJob({ sessionID: SESSION, cron: "0 9 * * *", prompt: "standup", recurring: false })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const requested = new Date(result.job.requestedAt ?? 0)
+    expect(requested.getHours()).toBe(9)
+    expect(requested.getMinutes()).toBe(0)
+    expect(result.job.fireAt ?? 0).toBeLessThanOrEqual(result.job.requestedAt ?? 0)
+  })
+
+  it("投递前落盘的 lastAttemptAt 让重启后不重复同一次触发", async () => {
+    const { memory, store } = makeStore()
+    const added = await store.addJob({
+      sessionID: SESSION,
+      cron: "*/5 * * * *",
+      prompt: "ping",
+      recurring: true,
+      durable: true,
+    })
+    expect(added.ok).toBe(true)
+    if (!added.ok) return
+    const fired = Date.now()
+    await store.markAttempted(added.job.id, fired)
+    const restarted = createSchedulingStore(memory)
+    await restarted.load()
+    // 没有 lastAttemptAt 时旧逻辑会按旧 lastFiredAt 把同一次再排出来；这里至少不能早于尝试时刻。
+    const next = restarted.getJob(added.job.id)?.nextRunAt ?? 0
+    expect(next).toBeGreaterThan(fired)
+  })
 })

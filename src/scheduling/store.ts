@@ -33,6 +33,8 @@ type StoredJob = {
   readonly lastFiredAt?: number
   readonly fireAt?: number
   readonly retryAt?: number
+  readonly requestedAt?: number
+  readonly lastAttemptAt?: number
   readonly recurring?: boolean
   readonly permanent?: boolean
   /** 创建任务时的 location 目录；旧数据没有这个字段。 */
@@ -71,6 +73,8 @@ export type SchedulingStore = {
   removeJobs(ids: string[]): Promise<void>
   /** 输入：任务 id 列表 + 触发时刻；输出：无。预期：recurring 重排下一次。 */
   markFired(ids: string[], firedAt: number): Promise<void>
+  /** 输入：任务 id + 尝试时刻；输出：无。预期：投递前落盘，崩溃重启后不重复同一次。 */
+  markAttempted(id: string, at: number): Promise<void>
   /** 输入：任务 id + 顺延时刻；输出：无。预期：落盘 retryAt，重启后仍按这个时间重试。 */
   postpone(id: string, at: number): Promise<void>
   /** 输入：任务 id 列表；输出：无。预期：只丢内存副本，不碰存储（任务属于别的 location）。 */
@@ -117,6 +121,8 @@ export function createSchedulingStore(
     ...(job.lastFiredAt === undefined ? {} : { lastFiredAt: job.lastFiredAt }),
     ...(job.fireAt === undefined ? {} : { fireAt: job.fireAt }),
     ...(job.retryAt === undefined ? {} : { retryAt: job.retryAt }),
+    ...(job.requestedAt === undefined ? {} : { requestedAt: job.requestedAt }),
+    ...(job.lastAttemptAt === undefined ? {} : { lastAttemptAt: job.lastAttemptAt }),
     ...(job.recurring === true ? { recurring: true } : {}),
     ...(job.permanent === true ? { permanent: true } : {}),
     ...(directory === undefined ? {} : { directory }),
@@ -162,6 +168,8 @@ export function createSchedulingStore(
     const lastFiredAt = record["lastFiredAt"]
     const fireAt = record["fireAt"]
     const retryAt = record["retryAt"]
+    const requestedAt = record["requestedAt"]
+    const lastAttemptAt = record["lastAttemptAt"]
     const directory = record["directory"]
     return {
       id,
@@ -172,6 +180,8 @@ export function createSchedulingStore(
       ...(typeof lastFiredAt === "number" && Number.isFinite(lastFiredAt) ? { lastFiredAt } : {}),
       ...(typeof fireAt === "number" && Number.isFinite(fireAt) ? { fireAt } : {}),
       ...(typeof retryAt === "number" && Number.isFinite(retryAt) ? { retryAt } : {}),
+      ...(typeof requestedAt === "number" && Number.isFinite(requestedAt) ? { requestedAt } : {}),
+      ...(typeof lastAttemptAt === "number" && Number.isFinite(lastAttemptAt) ? { lastAttemptAt } : {}),
       ...(record["recurring"] === true ? { recurring: true } : {}),
       ...(record["permanent"] === true ? { permanent: true } : {}),
       ...(typeof directory === "string" && directory.length > 0 ? { directory } : {}),
@@ -211,7 +221,7 @@ export function createSchedulingStore(
           const next =
             stored.retryAt ??
             (job.recurring === true
-              ? computeNext(job, job.lastFiredAt ?? job.createdAt)
+              ? computeNext(job, Math.max(job.lastFiredAt ?? job.createdAt, job.lastAttemptAt ?? 0))
               : (stored.fireAt ?? computeNext(job, job.createdAt)))
           // 算不出下一次的任务不会再触发；one-shot 过点也不补跑，避免重启后把同一次触发算成下一次。
           if (next === null || (job.recurring !== true && next <= Date.now())) continue
@@ -268,6 +278,8 @@ export function createSchedulingStore(
           }
         }
         job.fireAt = next
+        // 展示用：用户请求的准点时刻，提前量只影响实际 fireAt。
+        job.requestedAt = nextCronRunMs(cron, now) ?? next
       }
       job.nextRunAt = next
       jobs.set(job.id, job)
@@ -327,6 +339,26 @@ export function createSchedulingStore(
         await writeStored(
           job.sessionID,
           stored.map((item) => (item.id === id ? { ...item, retryAt: at } : item)),
+        )
+      })
+    },
+
+    /**
+     * 输入：任务 id + 尝试时刻。
+     * 输出：无。
+     * 预期：投递前先落盘 lastAttemptAt；崩溃重启后据此跳过同一次触发，避免重复注入。
+     */
+    async markAttempted(id, at) {
+      const job = jobs.get(id)
+      if (job === undefined) return
+      job.lastAttemptAt = at
+      if (job.durable !== true) return
+      await runSerial(writeChains, scheduleKey(job.sessionID), async () => {
+        const stored = await readStored(job.sessionID)
+        if (!stored.some((item) => item.id === id)) return
+        await writeStored(
+          job.sessionID,
+          stored.map((item) => (item.id === id ? { ...item, lastAttemptAt: at } : item)),
         )
       })
     },

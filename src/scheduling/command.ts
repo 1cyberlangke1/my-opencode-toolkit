@@ -192,7 +192,7 @@ export async function registerSchedulingCommands(
           return job.recurring === true
             ? `Scheduled recurring job ${job.id} (${formatCronHuman(job.cron, messages.cron, messages.cron.days)}): ${job.prompt}`
             : // 一次性任务不能套「每天 09:00」这种描述：用 oneShot + 真实触发时刻，和侧栏口径一致。
-              `Scheduled one-shot task ${job.id} (${messages.cron.oneShot(formatOneShotAt(job.fireAt ?? job.nextRunAt ?? Date.now()))}): ${job.prompt}`
+              `Scheduled one-shot task ${job.id} (${messages.cron.oneShot(formatOneShotAt(job.requestedAt ?? job.fireAt ?? job.nextRunAt ?? Date.now()))}): ${job.prompt}`
         })()
         await ctx.session.prompt({ sessionID: input.sessionID, text, delivery: input.delivery })
       },
