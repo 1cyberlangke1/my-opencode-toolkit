@@ -6,6 +6,7 @@ import { createGoalController } from "./goal/controller.ts"
 import { createSessionRoles } from "./goal/session-role.ts"
 import { createNotifier } from "./notification/index.ts"
 import { hideSchedulingTools } from "./scheduling/filter.ts"
+import { DEFAULT_MAX_AGE_DAYS } from "./scheduling/types.ts"
 import { registerScheduling } from "./scheduling/index.ts"
 import { dispatchEvent, readEventData, readEventSessionID, type EventHandler } from "./shared/events.ts"
 import { PLUGIN_ID } from "./shared/identity.ts"
@@ -171,6 +172,9 @@ export default Plugin.define({
             prompt: job.prompt,
             recurring: job.recurring === true,
             ...(job.requestedAt === undefined ? {} : { requestedAt: job.requestedAt }),
+            ...(job.recurring === true && job.permanent !== true
+              ? { expiresAt: job.createdAt + DEFAULT_MAX_AGE_DAYS * 24 * 60 * 60 * 1000 }
+              : {}),
             ...(job.nextRunAt === undefined ? {} : { nextRunAt: job.nextRunAt }),
           })),
           stats: {

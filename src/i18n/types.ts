@@ -57,6 +57,8 @@ export type Messages = {
     readonly loading: string
     readonly error: string
     readonly status: Readonly<Record<string, string>>
+    /** 循环任务剩余天数；到期后会被自动清理。 */
+    readonly expires: (days: string) => string
   }
   readonly toast: {
     /** Plan 模式跳过 cron 注入时的提示。 */

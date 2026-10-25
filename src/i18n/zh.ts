@@ -66,6 +66,7 @@ export const zh: Messages = {
       interrupted: "已中断",
       running: "运行中",
     },
+    expires: (days) => `剩 ${days} 天`,
   },
   toast: {
     planSkippedCron: "Plan 模式只读，已跳过定时任务",

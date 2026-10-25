@@ -23,7 +23,7 @@ const PANEL: PanelData = {
   },
   loops: [{ id: "loop1", mode: "fixed", prompt: "loop prompt" }],
   jobs: [
-    { id: "job1", cron: "0 * * * *", prompt: "job prompt", recurring: true },
+    { id: "job1", cron: "0 * * * *", prompt: "job prompt", recurring: true, expiresAt: Date.now() + 3 * 86_400_000 },
     { id: "job2", cron: "45 21 25 10 *", prompt: "one shot", recurring: false, nextRunAt: Date.now() + 60_000 },
   ],
   stats: {
@@ -122,6 +122,8 @@ describe("sidebar panel", () => {
     expect(frame).not.toContain("+1")
     expect(frame).toContain("Scheduled")
     expect(frame).toContain("Every hour")
+    // 到期时间要显示出来，否则 7 天后任务静默消失没人知道喵。
+    expect(frame).toContain("3d left")
     expect(frame).toMatch(/Once at \d\d-\d\d \d\d:\d\d/)
     expect(frame).toContain("one shot")
     expect(frame).toContain("loop prompt")

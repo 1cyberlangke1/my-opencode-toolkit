@@ -66,6 +66,7 @@ export const en: Messages = {
       interrupted: "interrupted",
       running: "running",
     },
+    expires: (days) => `${days}d left`,
   },
   toast: {
     planSkippedCron: "Plan mode: skipped scheduled task",

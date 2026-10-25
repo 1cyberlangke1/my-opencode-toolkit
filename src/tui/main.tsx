@@ -200,7 +200,11 @@ export function Sidebar(props: {
   const jobSchedule = (job: PanelJob): string => {
     const copy = props.copy()
     if (job.recurring === false) return copy.cron.oneShot(formatDateTime(job.requestedAt ?? job.nextRunAt ?? now()))
-    return formatCronHuman(job.cron, copy.cron, copy.cron.days)
+    const text = formatCronHuman(job.cron, copy.cron, copy.cron.days)
+    if (job.expiresAt === undefined) return text
+    // 循环任务 7 天后会被自动清理：把剩余天数摆在时间后面，避免它静默消失。
+    const days = Math.max(0, Math.ceil((job.expiresAt - now()) / 86_400_000))
+    return `${text} · ${copy.panel.expires(days.toString())}`
   }
 
   /** 运行中的子代理数：outcome 缺失表示还没结束。 */
