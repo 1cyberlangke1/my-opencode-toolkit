@@ -1,13 +1,13 @@
 import { Plugin } from "@opencode/plugin/tui"
 import type { Context } from "@opencode/plugin/tui/context"
-import { createSignal, For, onCleanup, onMount, Show } from "solid-js"
+import { createEffect, createSignal, For, onCleanup, onMount, Show, type JSX } from "solid-js"
 
 import { localeOf, resolveMessages, type Messages } from "../i18n/index.ts"
 import { formatTokens } from "./format.ts"
 import { SETTINGS_COMMAND_ID, SETTINGS_SLASH_NAME, TUI_PLUGIN_ID } from "../shared/identity.ts"
 import { DEFAULT_SETTINGS, type Lang, type Settings } from "../shared/settings.ts"
 import { toolkitRpc, type PanelData, type PanelSubagent, type PanelSubagentDetail } from "../shared/rpc.ts"
-import { countdownColor, hitRateColor } from "./color.ts"
+import { countdownColor, dim, hitRateColor } from "./color.ts"
 import { configFileLayers } from "./config-layers.ts"
 import { formatAgo, formatCountdown, padRight, truncate } from "./format.ts"
 import { createPanelFeed, createPanelReader, panelRpcOptions as rpcOptions } from "./panel-cache.ts"
@@ -42,6 +42,8 @@ export function Sidebar(props: {
 }) {
   const rpc = toolkitRpc(props.context.client)
   const [now, setNow] = createSignal(Date.now())
+  /** 呼吸灯相位：0..PULSE_PERIOD_MS，只在有运行中项时才走。 */
+  const [pulse, setPulse] = createSignal(0)
   const feed = createPanelFeed({
     context: props.context,
     sessionID: props.sessionID,
@@ -74,6 +76,21 @@ export function Sidebar(props: {
   const error = () => theme.text.feedback.error.base
   const info = () => theme.text.feedback.info.base
 
+  /** 呼吸灯节奏：80ms 一帧，1.6s 一个来回。 */
+  const PULSE_MS = 80
+  const PULSE_PERIOD_MS = 1_600
+
+  /**
+   * 输入：主题色 + 是否呼吸。
+   * 输出：当前帧的灯色。
+   * 预期：呼吸时只压亮度（0.45→1.0 正弦来回），不换色相、不改字符宽度。
+   */
+  const lampColor = (color: ReturnType<typeof success>, breathing: boolean) => {
+    if (!breathing) return color
+    const phase = (pulse() / PULSE_PERIOD_MS) * Math.PI * 2
+    return dim(color, 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(phase)))
+  }
+
   /** 输入：状态字符串；输出：本地化状态名。 */
   const statusLabel = (text: Messages, status: string): string => text.panel.status[status] ?? status
 
@@ -86,36 +103,41 @@ export function Sidebar(props: {
     return base()
   }
 
-  /** 输入：子代理 outcome；输出：状态颜色。 */
+  /** 输入：子代理 outcome；输出：状态颜色。预期：跑=绿呼吸，成功=青，失败=红，中断=黄。 */
   const subagentStatusColor = (outcome: PanelSubagent["outcome"]) => {
-    if (outcome === "succeeded") return success()
-    if (outcome === "failed" || outcome === "interrupted") return error()
-    return warning()
+    if (outcome === "succeeded") return info()
+    if (outcome === "failed") return error()
+    if (outcome === "interrupted") return warning()
+    return success()
   }
 
-  /** 输入：标签 + 值 + 颜色；输出：对齐后的单行。 */
+  /** 输入：标签 + 值 + 颜色；输出：对齐后的单行。预期：冒号后至少留一个空格。 */
   const labelRow = (
     label: string,
     value: string,
     color: string | ReturnType<typeof base> = base(),
-  ) => (
-    <text>
-      <span style={{ fg: muted() }}>{padRight(`${label}:`, 8)}</span>
-      <span style={{ fg: color }}>{value}</span>
-    </text>
-  )
+  ) => {
+    const text = `${label}:`
+    const padded = padRight(text, 6)
+    // 英文标签本身就够长时不补空格，这里保证冒号后至少一个空格。
+    const column = padded.length > text.length ? padded : `${padded} `
+    return (
+      <text>
+        <span style={{ fg: muted() }}>{column}</span>
+        <span style={{ fg: color }}>{value}</span>
+      </text>
+    )
+  }
 
-  /** 输入：标题 + 展开状态 + 切换函数 + 可选计数；输出：可点击的分区标题。 */
-  const sectionHeader = (label: string, open: boolean, toggle: () => void, count?: number) => (
+  /** 输入：标题 + 展开状态 + 切换函数 + 尾部元素；输出：可点击的分区标题。 */
+  const sectionHeader = (label: string, open: boolean, toggle: () => void, trailing?: JSX.Element) => (
     <box flexDirection="row" height={1} onMouseDown={toggle}>
       <box flexDirection="row" gap={1}>
         <text fg={base()}>{open ? "▼" : "▶"}</text>
         <text fg={base()}>
           <b>{label}</b>
         </text>
-        <Show when={count !== undefined}>
-          <text fg={muted()}>{`(${String(count)})`}</text>
-        </Show>
+        {trailing}
       </box>
     </box>
   )
@@ -169,6 +191,30 @@ export function Sidebar(props: {
     (panel()?.stats.tools ?? []).filter((tool) => tool.count > 0)
   const lastTool = (): string | null => panel()?.stats.lastTool ?? null
 
+  /** 运行中的子代理数：outcome 缺失表示还没结束。 */
+  const runningSubagents = (): number => subagents().filter((item) => item.outcome === undefined).length
+  /** 失败的子代理数。 */
+  const failedSubagents = (): number => subagents().filter((item) => item.outcome === "failed").length
+
+  let pulseTimer: ReturnType<typeof setInterval> | undefined
+
+  // 只有存在「运行中」的灯才走帧；全部停下就关掉定时器，不空转。
+  createEffect(() => {
+    const active = runningSubagents() + (goal()?.status === "active" ? 1 : 0)
+    if (active > 0) {
+      pulseTimer ??= setInterval(() => setPulse(Date.now() % PULSE_PERIOD_MS), PULSE_MS)
+      return
+    }
+    if (pulseTimer !== undefined) {
+      clearInterval(pulseTimer)
+      pulseTimer = undefined
+      setPulse(0)
+    }
+  })
+  onCleanup(() => {
+    if (pulseTimer !== undefined) clearInterval(pulseTimer)
+  })
+
   return (
     <>
         <Show
@@ -182,7 +228,9 @@ export function Sidebar(props: {
           <box flexDirection="column" gap={0}>
             {sectionHeader(props.copy().panel.goal, goalOpen(), () => {
               setGoalOpen(!goalOpen())
-            })}
+            }, (
+              <text fg={lampColor(goalStatusColor(goal()?.status ?? ""), goal()?.status === "active")}>●</text>
+            ))}
             <Show when={goalOpen()}>
               <box paddingLeft={2} flexDirection="column" gap={0}>
                 {labelRow(props.copy().panel.goal, truncate(goal()?.objective ?? "", 22))}
@@ -255,7 +303,7 @@ export function Sidebar(props: {
               () => {
                 setToolsOpen(!toolsOpen())
               },
-              visibleTools().length,
+              <text fg={muted()}>{`(${String(visibleTools().length)})`}</text>,
             )}
             <Show when={toolsOpen()}>
               <box paddingLeft={2} flexDirection="row" flexWrap="wrap" columnGap={1} rowGap={0}>
@@ -289,7 +337,19 @@ export function Sidebar(props: {
               () => {
                 setSubagentsOpen(!subagentsOpen())
               },
-              subagents().length,
+              <box flexDirection="row" gap={0}>
+                <text fg={muted()}>(</text>
+                <Show when={runningSubagents() > 0}>
+                  <text fg={lampColor(success(), true)}>●</text>
+                  <text fg={muted()}>{` ${String(runningSubagents())}`}</text>
+                </Show>
+                <Show when={failedSubagents() > 0}>
+                  <text fg={muted()}>{runningSubagents() > 0 ? " " : ""}</text>
+                  <text fg={error()}>●</text>
+                  <text fg={muted()}>{` ${String(failedSubagents())}`}</text>
+                </Show>
+                <text fg={muted()}>)</text>
+              </box>,
             )}
             <Show when={subagentsOpen()}>
               <box paddingLeft={2} flexDirection="column" gap={0}>
@@ -304,7 +364,16 @@ export function Sidebar(props: {
                           }}
                         >
                           <span style={{ fg: base() }}>{open() ? "▼ " : "▶ "}</span>
-                          <span style={{ fg: subagentStatusColor(subagent.outcome) }}>● </span>
+                          <span
+                      style={{
+                        fg: lampColor(
+                          subagentStatusColor(subagent.outcome),
+                          subagent.outcome === undefined,
+                        ),
+                      }}
+                    >
+                      ●{" "}
+                    </span>
                           <span style={{ fg: base() }}>{truncate(subagent.title, 16)}</span>
                           <span style={{ fg: muted() }}>
                             {" "}

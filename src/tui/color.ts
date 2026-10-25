@@ -6,9 +6,52 @@
  * 预期：命中率 0% 纯红、50% 黄、100% 纯绿；倒计时越近越红。
  */
 
+import { RGBA } from "@opentui/core"
+
 const RED = "#ef4444"
 const YELLOW = "#eab308"
 const GREEN = "#22c55e"
+
+/** OpenTUI 的颜色对象：r/g/b 是 0-1 归一化值。 */
+export type ColorLike = {
+  readonly r: number
+  readonly g: number
+  readonly b: number
+  readonly a?: number
+}
+
+/** 颜色可以是 hex 字符串，也可以是 OpenTUI 的 RGBA 对象（r/g/b 为 0-1）。 */
+export type ColorValue = string | ColorLike
+
+/** 输入：hex 字符串；输出：0-255 RGB；非法回退黑色。 */
+function parseColor(value: string): { readonly r: number; readonly g: number; readonly b: number } {
+  const match = /^#([\da-f]{6})$/i.exec(value.trim())
+  if (match === null) return { r: 0, g: 0, b: 0 }
+  const hex = match[1] ?? "000000"
+  return {
+    r: Number.parseInt(hex.slice(0, 2), 16),
+    g: Number.parseInt(hex.slice(2, 4), 16),
+    b: Number.parseInt(hex.slice(4, 6), 16),
+  }
+}
+
+/**
+ * 输入：颜色（hex 或 RGBA 对象）+ 0-1 亮度系数。
+ * 输出：同色相、压暗后的颜色；hex 进 hex 出，对象进 RGBA 出。
+ * 预期：只缩放 r/g/b，alpha 保持不变；系数越界时夹到 0-1。
+ */
+export function dim(color: ColorValue, factor: number): string | RGBA {
+  const k = Math.max(0, Math.min(1, factor))
+  if (typeof color === "string") {
+    const { r, g, b } = parseColor(color)
+    const channel = (value: number): string =>
+      Math.round(Math.max(0, Math.min(255, value * k)))
+        .toString(16)
+        .padStart(2, "0")
+    return `#${channel(r)}${channel(g)}${channel(b)}`
+  }
+  return RGBA.fromValues(color.r * k, color.g * k, color.b * k, color.a ?? 1)
+}
 
 type Rgb = { readonly r: number; readonly g: number; readonly b: number }
 

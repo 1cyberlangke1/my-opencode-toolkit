@@ -120,7 +120,8 @@ describe("sidebar panel", () => {
     expect(frame).toContain("Scheduled")
     expect(frame).toContain("0 * * * *")
     expect(frame).toContain("loop prompt")
-    expect(frame).toContain("Subagents (1)")
+    expect(frame).toContain("Goal ●")
+    expect(frame).toContain("Subagents (● 1)")
     expect(frame).toContain("review")
     expect(frame).toContain("Tools (2)")
     expect(frame).toContain("[read](2)")
@@ -128,6 +129,40 @@ describe("sidebar panel", () => {
     expect(frame).toMatch(/\n\s*\n[^\n]*Scheduled/)
     expect(frame).toMatch(/\n\s*\n[^\n]*Tools \(2\)/)
     expect(frame).not.toContain("41.67%")
+
+    await app.dispose()
+  })
+
+  test("子代理灯：运行=绿呼吸、失败=红常亮，标题两盏计数灯", async () => {
+    const panel: PanelData = {
+      ...PANEL,
+      subagents: [
+        { id: "run1", title: "running", updatedAt: Date.now(), input: 1, output: 1, cached: 0 },
+        {
+          id: "bad1",
+          title: "broken",
+          outcome: "failed",
+          updatedAt: Date.now(),
+          input: 1,
+          output: 1,
+          cached: 0,
+        },
+      ],
+    }
+    const app = await mount("en", panel)
+    const frame = await app.waitForFrame((text) => text.includes("broken"))
+
+    expect(frame).toContain("Subagents (● 1 ● 1)")
+
+    // 失败的灯是主题 error 色常亮。
+    expect(findSpanOnLine(app, "broken", "● ")?.fg.toInts()).toEqual([255, 0, 0, 255])
+
+    // 运行中的灯是 success 绿被呼吸压暗：红/蓝通道为 0，绿色在 0 与 255 之间。
+    const running = findSpanOnLine(app, "running", "● ")?.fg.toInts() ?? []
+    expect(running[0]).toBe(0)
+    expect(running[2]).toBe(0)
+    expect(running[1] ?? 0).toBeGreaterThan(0)
+    expect(running[1] ?? 255).toBeLessThan(255)
 
     await app.dispose()
   })
