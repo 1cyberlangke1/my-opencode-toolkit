@@ -163,17 +163,24 @@ export async function writeConfigValues(path: string, patch: ConfigValues): Prom
   }
 }
 
-/** 输入：低→高路径；输出：最近已存在文件；都不存在返回全局路径。 */
+/**
+ * 输入：低→高路径。
+ * 输出：最近一个「存在且能解析」的文件；没有可写的就回退到全局路径。
+ * 预期：写目标不能只看「文件存在」——坏掉的 JSONC 层会让保存永远失败，
+ *       而写到下层本来就能生效，没必要卡死。
+ */
 export async function nearestExistingConfig(paths: readonly string[]): Promise<string | undefined> {
   for (let index = paths.length - 1; index >= 0; index -= 1) {
     const path = paths[index]
     if (path === undefined) continue
     try {
       await stat(path)
-      return path
     } catch {
-      // 继续找
+      continue
     }
+    const read = await readConfigFile(path)
+    // 解析失败：跳过这一层，继续往更低的层找。
+    if (read.error === undefined) return path
   }
   return paths[0]
 }
