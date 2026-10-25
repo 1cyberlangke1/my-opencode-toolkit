@@ -286,7 +286,8 @@ export function Sidebar(props: {
                     <text>
                       <span style={{ fg: muted() }}>⏰ </span>
                       <span style={{ fg: base() }}>{truncate(job.cron, 12)}</span>
-                      <span style={{ fg: muted() }}> · {props.copy().panel.next} </span>
+                      <span style={{ fg: muted() }}> · {truncate(job.prompt, 14)} · </span>
+                      <span style={{ fg: muted() }}>{props.copy().panel.next} </span>
                       <span style={{ fg: countdownColor((job.nextRunAt ?? now()) - now()) }}>
                         {formatCountdown((job.nextRunAt ?? now()) - now())}
                       </span>

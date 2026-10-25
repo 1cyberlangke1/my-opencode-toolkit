@@ -120,6 +120,7 @@ describe("sidebar panel", () => {
     expect(frame).toContain("Scheduled")
     expect(frame).toContain("0 * * * *")
     expect(frame).toContain("loop prompt")
+    expect(frame).toContain("job prompt")
     expect(frame).toContain("Goal ●")
     expect(frame).toContain("Subagents (● 1)")
     expect(frame).toContain("review")
