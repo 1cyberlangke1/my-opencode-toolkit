@@ -15,7 +15,7 @@ import { globalSerialRegistry, runSerial } from "./shared/serial.ts"
 import { ownsSession } from "./shared/session.ts"
 import { loadSettings, saveSettings } from "./shared/settings-store.ts"
 import { normalizeSettings } from "./shared/settings.ts"
-import { buildSubagentDetail, hitRatePercent, listSubagents, tokenParts } from "./stats.ts"
+import { buildStats, buildSubagentDetail, hitRatePercent, listSubagents, tokenParts } from "./stats.ts"
 import type { SessionStats } from "./stats.ts"
 import { loadStats, removeStats, saveStats } from "./stats-store.ts"
 
@@ -124,9 +124,18 @@ export default Plugin.define({
         // RPC 可能被任意实例接收；不属于本实例的会话读不到数据，直接返回空面板。
         if (sessionID.length > 0 && !(await owns(sessionID))) return emptyPanel()
 
-        // 直接读存档；没有记录的会话（从未跑过 step）显示空统计。
-        const stats =
-          sessionID.length > 0 ? (await load(sessionID)) ?? emptyStats() : emptyStats()
+        // 存档缺失/损坏时从消息历史重建一次：否则旧会话在启用插件后永远显示 0，
+        // 而子代理详情走的是 buildStats，两处口径会不一致。
+        let stats: SessionStats = emptyStats()
+        if (sessionID.length > 0) {
+          const stored = await load(sessionID)
+          if (stored !== null) {
+            stats = stored
+          } else {
+            stats = await buildStats(ctx, sessionID).catch(() => emptyStats())
+            await saveStats(ctx.storage, sessionID, stats).catch(() => undefined)
+          }
+        }
         const tools = Object.entries(stats.tools)
           .map(([name, count]) => ({ name, count }))
           .sort((left, right) => right.count - left.count)

@@ -41,6 +41,12 @@ function fakeCtx(
       },
       context: () => Promise.resolve([]),
     },
+    storage: {
+      get: () => Promise.resolve(undefined),
+      set: () => Promise.resolve(),
+      remove: () => Promise.resolve(),
+      scan: () => Promise.resolve([]),
+    },
   } as unknown as Plugin.Context
 }
 

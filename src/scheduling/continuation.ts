@@ -1,6 +1,7 @@
 import type { Plugin } from "@opencode/plugin"
 
 import { isIdleEvent, readEventSessionID } from "../shared/events.ts"
+import { scheduleKey } from "../shared/keys.ts"
 import type { SessionLocation } from "../shared/session.ts"
 import { capTimerDelay } from "../shared/timer.ts"
 import type { SessionRoles } from "../goal/session-role.ts"
@@ -236,6 +237,8 @@ export function createSchedulingContinuation(args: {
           }
         }
         await store.removeJobs(ids)
+        // 内存里没加载到的孤儿条目（过期/别的实例写的）也要一起清掉，否则 key 永不清。
+        await ctx.storage.remove(scheduleKey(sessionID)).catch(() => undefined)
         inFlight.delete(sessionID)
         pending.delete(sessionID)
         roles.forget(sessionID)

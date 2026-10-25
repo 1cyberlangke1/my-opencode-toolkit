@@ -201,6 +201,7 @@ export function createSchedulingStore(
         const rawJobs = record["jobs"]
         if (!Array.isArray(rawJobs)) return
 
+        const kept: StoredJob[] = []
         for (const raw of rawJobs) {
           const stored = parseStored(raw)
           if (stored === null) continue
@@ -217,7 +218,10 @@ export function createSchedulingStore(
           if (job.recurring !== true) job.fireAt = next
           job.nextRunAt = next
           jobs.set(job.id, job)
+          kept.push(stored)
         }
+        // 过期/损坏的条目必须从存储里清掉：否则 key 只增不减，用户也看不到、删不掉。
+        if (kept.length !== rawJobs.length) await writeStored(sessionID, kept)
       })
     },
 
