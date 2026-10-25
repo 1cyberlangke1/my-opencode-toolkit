@@ -185,6 +185,9 @@ function parseCronHuman(cron: string): CronHuman {
   const [minute = "", hour = "", dayOfMonth = "", month = "", dayOfWeek = ""] = parts
 
   const everyMin = /^\*\/(\d+)$/.exec(minute)
+  if (minute === "*" && hour === "*" && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
+    return { kind: "every_minute", n: 1 }
+  }
   if (everyMin !== null && hour === "*" && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
     return { kind: "every_minute", n: Number.parseInt(everyMin[1] ?? "1", 10) }
   }
@@ -239,6 +242,46 @@ export function cronToHuman(cron: string): string {
       return `weekly on ${DAY_NAMES[human.day] ?? String(human.day)} at ${formatTime(human.hour, human.minute)}`
     case "weekdays":
       return `weekdays at ${formatTime(human.hour, human.minute)}`
+    case "raw":
+      return human.text
+  }
+}
+
+/** 本地化 cron 描述所需文案；由 i18n 的 cron 组提供。 */
+export type CronCopy = {
+  readonly everyMinute: string
+  readonly everyNMinutes: (n: string) => string
+  readonly everyHour: string
+  readonly everyHourAt: (minute: string) => string
+  readonly everyNHours: (n: string) => string
+  readonly everyNHoursAt: (n: string, minute: string) => string
+  readonly daily: (time: string) => string
+  readonly weekly: (day: string, time: string) => string
+  readonly weekdays: (time: string) => string
+}
+
+/**
+ * 输入：cron 字符串 + 本地化文案。
+ * 输出：本地化的人类可读描述；认不出的表达式原样返回。
+ * 预期：和 cronToHuman 同构，只是文案走 i18n。
+ */
+export function formatCronHuman(cron: string, copy: CronCopy, days: readonly string[]): string {
+  const human = parseCronHuman(cron)
+  switch (human.kind) {
+    case "every_minute":
+      return human.n === 1 ? copy.everyMinute : copy.everyNMinutes(String(human.n))
+    case "every_hour":
+      return human.minute === 0
+        ? copy.everyHour
+        : copy.everyHourAt(String(human.minute).padStart(2, "0"))
+    case "every_n_hours":
+      return copy.everyNHoursAt(String(human.n), String(human.minute).padStart(2, "0"))
+    case "daily":
+      return copy.daily(formatTime(human.hour, human.minute))
+    case "weekly":
+      return copy.weekly(days[human.day] ?? String(human.day), formatTime(human.hour, human.minute))
+    case "weekdays":
+      return copy.weekdays(formatTime(human.hour, human.minute))
     case "raw":
       return human.text
   }

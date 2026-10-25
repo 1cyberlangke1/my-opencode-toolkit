@@ -22,7 +22,10 @@ const PANEL: PanelData = {
     timeUsedSeconds: 10,
   },
   loops: [{ id: "loop1", mode: "fixed", prompt: "loop prompt" }],
-  jobs: [{ id: "job1", cron: "0 * * * *", prompt: "job prompt" }],
+  jobs: [
+    { id: "job1", cron: "0 * * * *", prompt: "job prompt", recurring: true },
+    { id: "job2", cron: "45 21 25 10 *", prompt: "one shot", recurring: false, nextRunAt: Date.now() + 60_000 },
+  ],
   stats: {
     steps: 3,
     input: 1000,
@@ -118,7 +121,9 @@ describe("sidebar panel", () => {
     expect(frame).not.toContain("zero")
     expect(frame).not.toContain("+1")
     expect(frame).toContain("Scheduled")
-    expect(frame).toContain("0 * * * *")
+    expect(frame).toContain("Every hour")
+    expect(frame).toMatch(/Once at \d\d-\d\d \d\d:\d\d/)
+    expect(frame).toContain("one shot")
     expect(frame).toContain("loop prompt")
     expect(frame).toContain("job prompt")
     expect(frame).toContain("Goal ●")

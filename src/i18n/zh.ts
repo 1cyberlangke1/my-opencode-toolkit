@@ -79,4 +79,17 @@ export const zh: Messages = {
     user: "用户",
     assistant: "助手",
   },
+  cron: {
+    everyMinute: "每分钟",
+    everyNMinutes: (n) => `每 ${n} 分钟`,
+    everyHour: "每小时",
+    everyHourAt: (minute) => `每小时 :${minute}`,
+    everyNHours: (n) => `每 ${n} 小时`,
+    everyNHoursAt: (n, minute) => `每 ${n} 小时 :${minute}`,
+    daily: (time) => `每天 ${time}`,
+    weekly: (day, time) => `每周${day} ${time}`,
+    weekdays: (time) => `工作日 ${time}`,
+    oneShot: (time) => `仅一次 ${time}`,
+    days: ["日", "一", "二", "三", "四", "五", "六"],
+  },
 }

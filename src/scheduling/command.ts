@@ -9,7 +9,7 @@ import type { Lang } from "../shared/settings.ts"
 import { loadSettings } from "../shared/settings-store.ts"
 import type { LoopScheduler } from "./loops.ts"
 import type { SchedulingStore } from "./store.ts"
-import { cronToHuman } from "./cron.ts"
+import { formatCronHuman } from "./cron.ts"
 
 /** 内置维护提示词（没有 `loop.md` 时的默认）。 */
 export const DEFAULT_LOOP_MAINTENANCE_PROMPT =
@@ -148,7 +148,7 @@ export async function registerSchedulingCommands(
             return jobs
               .map((job) => {
                 const kind = job.recurring === true ? "recurring" : "one-shot"
-                return `${job.id} — ${cronToHuman(job.cron)} (${kind}): ${job.prompt}`
+                return `${job.id} — ${formatCronHuman(job.cron, messages.cron, messages.cron.days)} (${kind}): ${job.prompt}`
               })
               .join("\n")
           }
@@ -179,8 +179,8 @@ export async function registerSchedulingCommands(
           onJobAdded?.()
           const job = result.job
           return job.recurring === true
-            ? `Scheduled recurring job ${job.id} (${cronToHuman(job.cron)}): ${job.prompt}`
-            : `Scheduled one-shot task ${job.id} (${cronToHuman(job.cron)}): ${job.prompt}`
+            ? `Scheduled recurring job ${job.id} (${formatCronHuman(job.cron, messages.cron, messages.cron.days)}): ${job.prompt}`
+            : `Scheduled one-shot task ${job.id} (${formatCronHuman(job.cron, messages.cron, messages.cron.days)}): ${job.prompt}`
         })()
         await ctx.session.prompt({ sessionID: input.sessionID, text, delivery: input.delivery })
       },

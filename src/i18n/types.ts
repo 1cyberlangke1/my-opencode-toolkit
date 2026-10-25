@@ -72,4 +72,18 @@ export type Messages = {
     readonly user: string
     readonly assistant: string
   }
+  /** cron 的人类可读描述；days 是周日到周六的短名。 */
+  readonly cron: {
+    readonly everyMinute: string
+    readonly everyNMinutes: (n: string) => string
+    readonly everyHour: string
+    readonly everyHourAt: (minute: string) => string
+    readonly everyNHours: (n: string) => string
+    readonly everyNHoursAt: (n: string, minute: string) => string
+    readonly daily: (time: string) => string
+    readonly weekly: (day: string, time: string) => string
+    readonly weekdays: (time: string) => string
+    readonly oneShot: (time: string) => string
+    readonly days: readonly string[]
+  }
 }

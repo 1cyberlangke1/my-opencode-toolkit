@@ -6,11 +6,12 @@ import { localeOf, resolveMessages, type Messages } from "../i18n/index.ts"
 import { formatTokens } from "./format.ts"
 import { SETTINGS_COMMAND_ID, SETTINGS_SLASH_NAME, TUI_PLUGIN_ID } from "../shared/identity.ts"
 import { DEFAULT_SETTINGS, type Lang, type Settings } from "../shared/settings.ts"
-import { toolkitRpc, type PanelData, type PanelSubagent, type PanelSubagentDetail } from "../shared/rpc.ts"
+import { toolkitRpc, type PanelData, type PanelJob, type PanelSubagent, type PanelSubagentDetail } from "../shared/rpc.ts"
 import { countdownColor, dim, hitRateColor } from "./color.ts"
 import { configFileLayers } from "./config-layers.ts"
-import { formatAgo, formatCountdown, padRight, truncate } from "./format.ts"
+import { formatAgo, formatCountdown, formatDateTime, padRight, truncate } from "./format.ts"
 import { createPanelFeed, createPanelReader, panelRpcOptions as rpcOptions } from "./panel-cache.ts"
+import { formatCronHuman } from "../scheduling/cron.ts"
 
 /** 主菜单条目。 */
 type MenuChoice = "language" | "goal" | "scheduling" | "sidebar" | "contextStats" | "notifications"
@@ -191,6 +192,17 @@ export function Sidebar(props: {
     (panel()?.stats.tools ?? []).filter((tool) => tool.count > 0)
   const lastTool = (): string | null => panel()?.stats.lastTool ?? null
 
+  /**
+   * 输入：面板里的定时任务。
+   * 输出：第一行的时间描述。
+   * 预期：一次性任务显示具体日期时间；循环任务走本地化 cron 描述；认不出的表达式原样返回。
+   */
+  const jobSchedule = (job: PanelJob): string => {
+    const copy = props.copy()
+    if (job.recurring === false) return copy.cron.oneShot(formatDateTime(job.nextRunAt ?? now()))
+    return formatCronHuman(job.cron, copy.cron, copy.cron.days)
+  }
+
   /** 运行中的子代理数：outcome 缺失表示还没结束。 */
   const runningSubagents = (): number => subagents().filter((item) => item.outcome === undefined).length
   /** 完成的子代理数。 */
@@ -283,27 +295,31 @@ export function Sidebar(props: {
               <box paddingLeft={2} flexDirection="column" gap={0}>
                 <For each={panel()?.jobs ?? []}>
                   {(job) => (
-                    <text>
-                      <span style={{ fg: muted() }}>⏰ </span>
-                      <span style={{ fg: base() }}>{truncate(job.cron, 12)}</span>
-                      <span style={{ fg: muted() }}> · {truncate(job.prompt, 14)} · </span>
-                      <span style={{ fg: muted() }}>{props.copy().panel.next} </span>
-                      <span style={{ fg: countdownColor((job.nextRunAt ?? now()) - now()) }}>
-                        {formatCountdown((job.nextRunAt ?? now()) - now())}
-                      </span>
-                    </text>
+                    <box flexDirection="column" gap={0}>
+                      <text>
+                        <span style={{ fg: muted() }}>⏰ </span>
+                        <span style={{ fg: base() }}>{jobSchedule(job)}</span>
+                        <span style={{ fg: muted() }}> · {props.copy().panel.next} </span>
+                        <span style={{ fg: countdownColor((job.nextRunAt ?? now()) - now()) }}>
+                          {formatCountdown((job.nextRunAt ?? now()) - now())}
+                        </span>
+                      </text>
+                      <text fg={muted()}>{`  ${truncate(job.prompt, 18)}`}</text>
+                    </box>
                   )}
                 </For>
                 <For each={panel()?.loops ?? []}>
                   {(loop) => (
-                    <text>
-                      <span style={{ fg: muted() }}>🔁 </span>
-                      <span style={{ fg: base() }}>{truncate(loop.prompt, 12)}</span>
-                      <span style={{ fg: muted() }}> · {props.copy().panel.next} </span>
-                      <span style={{ fg: countdownColor((loop.nextFireAt ?? now()) - now()) }}>
-                        {formatCountdown((loop.nextFireAt ?? now()) - now())}
-                      </span>
-                    </text>
+                    <box flexDirection="column" gap={0}>
+                      <text>
+                        <span style={{ fg: muted() }}>🔁 </span>
+                        <span style={{ fg: muted() }}>{props.copy().panel.next} </span>
+                        <span style={{ fg: countdownColor((loop.nextFireAt ?? now()) - now()) }}>
+                          {formatCountdown((loop.nextFireAt ?? now()) - now())}
+                        </span>
+                      </text>
+                      <text fg={muted()}>{`  ${truncate(loop.prompt, 18)}`}</text>
+                    </box>
                   )}
                 </For>
               </box>

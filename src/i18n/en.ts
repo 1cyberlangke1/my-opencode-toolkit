@@ -79,4 +79,17 @@ export const en: Messages = {
     user: "User",
     assistant: "Assistant",
   },
+  cron: {
+    everyMinute: "Every minute",
+    everyNMinutes: (n) => `Every ${n} minutes`,
+    everyHour: "Every hour",
+    everyHourAt: (minute) => `Every hour at :${minute}`,
+    everyNHours: (n) => `Every ${n} hours`,
+    everyNHoursAt: (n, minute) => `Every ${n} hours at :${minute}`,
+    daily: (time) => `Every day at ${time}`,
+    weekly: (day, time) => `Every ${day} at ${time}`,
+    weekdays: (time) => `Weekdays at ${time}`,
+    oneShot: (time) => `Once at ${time}`,
+    days: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+  },
 }

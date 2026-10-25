@@ -76,6 +76,13 @@ function coarseDuration(ms: number): string {
   return rest === 0 ? `${hours.toString()}h` : `${hours.toString()}h${rest.toString()}m`
 }
 
+/** 输入：毫秒时间戳；输出：`MM-DD HH:MM`（本地时区）。预期：一次性任务显示用。 */
+export function formatDateTime(ms: number): string {
+  const at = new Date(ms)
+  const pad = (value: number): string => value.toString().padStart(2, "0")
+  return `${pad(at.getMonth() + 1)}-${pad(at.getDate())} ${pad(at.getHours())}:${pad(at.getMinutes())}`
+}
+
 /** 输入：过去的时间戳 + 当前时间；输出：`2m` / `3h` 这类相对时间。 */
 export function formatAgo(timestamp: number, now: number): string {
   return coarseDuration(Math.max(0, now - timestamp))

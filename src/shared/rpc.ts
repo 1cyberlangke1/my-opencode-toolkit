@@ -147,6 +147,7 @@ const PanelJobJson = {
     id: { type: "string" },
     cron: { type: "string" },
     prompt: { type: "string" },
+    recurring: { type: "boolean" },
     nextRunAt: { type: "number" },
   },
   required: ["id", "cron", "prompt"],
@@ -283,6 +284,8 @@ export type PanelJob = {
   readonly id: string
   readonly cron: string
   readonly prompt: string
+  /** true = 循环任务；false/缺失 = 一次性任务。 */
+  readonly recurring?: boolean
   readonly nextRunAt?: number
 }
 
