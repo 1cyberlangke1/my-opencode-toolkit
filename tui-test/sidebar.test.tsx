@@ -167,6 +167,32 @@ describe("sidebar panel", () => {
     await app.dispose()
   })
 
+  test("没有运行中/失败的子代理时标题退回灰色总数，不出现空括号", async () => {
+    const panel: PanelData = {
+      ...PANEL,
+      subagents: [
+        {
+          id: "done1",
+          title: "finished",
+          outcome: "succeeded",
+          updatedAt: Date.now(),
+          input: 1,
+          output: 1,
+          cached: 0,
+        },
+      ],
+    }
+    const app = await mount("en", panel)
+    const frame = await app.waitForFrame((text) => text.includes("finished"))
+
+    expect(frame).toContain("Subagents (1)")
+    expect(frame).not.toContain("Subagents ()")
+    // 完成的灯是主题 info 青。
+    expect(findSpanOnLine(app, "finished", "● ")?.fg.toInts()).toEqual([0, 170, 255, 255])
+
+    await app.dispose()
+  })
+
   test("最近调用的工具计数用成功绿，其余保持 muted", async () => {
     const app = await mount("en")
     await app.waitForFrame((text) => text.includes("[read](2)"))

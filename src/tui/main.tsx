@@ -337,19 +337,24 @@ export function Sidebar(props: {
               () => {
                 setSubagentsOpen(!subagentsOpen())
               },
-              <box flexDirection="row" gap={0}>
-                <text fg={muted()}>(</text>
-                <Show when={runningSubagents() > 0}>
-                  <text fg={lampColor(success(), true)}>●</text>
-                  <text fg={muted()}>{` ${String(runningSubagents())}`}</text>
-                </Show>
-                <Show when={failedSubagents() > 0}>
-                  <text fg={muted()}>{runningSubagents() > 0 ? " " : ""}</text>
-                  <text fg={error()}>●</text>
-                  <text fg={muted()}>{` ${String(failedSubagents())}`}</text>
-                </Show>
-                <text fg={muted()}>)</text>
-              </box>,
+              <Show
+                when={runningSubagents() > 0 || failedSubagents() > 0}
+                fallback={<text fg={muted()}>{`(${String(subagents().length)})`}</text>}
+              >
+                <box flexDirection="row" gap={0}>
+                  <text fg={muted()}>(</text>
+                  <Show when={runningSubagents() > 0}>
+                    <text fg={lampColor(success(), true)}>●</text>
+                    <text fg={muted()}>{` ${String(runningSubagents())}`}</text>
+                  </Show>
+                  <Show when={failedSubagents() > 0}>
+                    <text fg={muted()}>{runningSubagents() > 0 ? " " : ""}</text>
+                    <text fg={error()}>●</text>
+                    <text fg={muted()}>{` ${String(failedSubagents())}`}</text>
+                  </Show>
+                  <text fg={muted()}>)</text>
+                </box>
+              </Show>,
             )}
             <Show when={subagentsOpen()}>
               <box paddingLeft={2} flexDirection="column" gap={0}>
