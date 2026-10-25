@@ -307,5 +307,8 @@ export function oneShotJitteredNextCronRunMs(
   if (first === null) return null
   if (new Date(first).getMinutes() % cfg.oneShotMinuteMod !== 0) return first
   const lead = cfg.oneShotFloorMs + jitterFrac(taskId) * (cfg.oneShotMaxMs - cfg.oneShotFloorMs)
-  return Math.max(first - lead, fromMs)
+  const jittered = first - lead
+  // 剩余时间不够时宁可准点触发：把触发时刻压到「现在」会让任务一创建就该触发，
+  // 重启载入时还会被当成已过期直接丢掉。
+  return jittered > fromMs ? jittered : first
 }

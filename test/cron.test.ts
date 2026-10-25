@@ -89,7 +89,15 @@ describe("jitter", () => {
     const result = oneShotJitteredNextCronRunMs("0 * * * *", from, "abcdef12")
     expect(result).not.toBeNull()
     if (result === null) return
-    expect(result).toBeGreaterThanOrEqual(from)
+    expect(result).toBeGreaterThan(from)
+  })
+
+  it("剩余时间不够提前量时准点触发，不会落在起点", () => {
+    // 13:30 命中 oneShotMinuteMod，提前量最多 90s；起点只差 1ms 时提前量吃掉全部剩余时间，
+    // 必须回落到 13:30:00，而不是把触发时刻压成「现在」。
+    const from = new Date(2026, 0, 1, 13, 29, 59, 999).getTime()
+    const result = oneShotJitteredNextCronRunMs("* * * * *", from, "abcdef12")
+    expect(result).toBe(from + 1)
   })
 
   it("非法表达式返回 null", () => {
