@@ -167,7 +167,7 @@ describe("sidebar panel", () => {
     await app.dispose()
   })
 
-  test("没有运行中/失败的子代理时标题退回灰色总数，不出现空括号", async () => {
+  test("完成的子代理单独一盏青灯，不出现空括号", async () => {
     const panel: PanelData = {
       ...PANEL,
       subagents: [
@@ -185,7 +185,7 @@ describe("sidebar panel", () => {
     const app = await mount("en", panel)
     const frame = await app.waitForFrame((text) => text.includes("finished"))
 
-    expect(frame).toContain("Subagents (1)")
+    expect(frame).toContain("Subagents (● 1)")
     expect(frame).not.toContain("Subagents ()")
     // 完成的灯是主题 info 青。
     expect(findSpanOnLine(app, "finished", "● ")?.fg.toInts()).toEqual([0, 170, 255, 255])

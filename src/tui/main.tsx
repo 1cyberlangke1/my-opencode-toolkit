@@ -193,8 +193,29 @@ export function Sidebar(props: {
 
   /** 运行中的子代理数：outcome 缺失表示还没结束。 */
   const runningSubagents = (): number => subagents().filter((item) => item.outcome === undefined).length
+  /** 完成的子代理数。 */
+  const succeededSubagents = (): number => subagents().filter((item) => item.outcome === "succeeded").length
   /** 失败的子代理数。 */
   const failedSubagents = (): number => subagents().filter((item) => item.outcome === "failed").length
+  /** 被中断的子代理数。 */
+  const interruptedSubagents = (): number =>
+    subagents().filter((item) => item.outcome === "interrupted").length
+
+  /**
+   * 输入：当前子代理列表。
+   * 输出：标题里要画的灯组（颜色 + 是否呼吸 + 数量）。
+   * 预期：运行中/完成/失败/中断各一盏，数量为 0 的不出现；
+   *       分区只在有子代理时渲染，所以括号里至少有一盏灯。
+   */
+  const subagentLamps = () => {
+    const lamps: { readonly color: ReturnType<typeof success>; readonly breathing: boolean; readonly count: number }[] = []
+    if (runningSubagents() > 0) lamps.push({ color: success(), breathing: true, count: runningSubagents() })
+    if (succeededSubagents() > 0) lamps.push({ color: info(), breathing: false, count: succeededSubagents() })
+    if (failedSubagents() > 0) lamps.push({ color: error(), breathing: false, count: failedSubagents() })
+    if (interruptedSubagents() > 0)
+      lamps.push({ color: warning(), breathing: false, count: interruptedSubagents() })
+    return lamps
+  }
 
   let pulseTimer: ReturnType<typeof setInterval> | undefined
 
@@ -337,24 +358,21 @@ export function Sidebar(props: {
               () => {
                 setSubagentsOpen(!subagentsOpen())
               },
-              <Show
-                when={runningSubagents() > 0 || failedSubagents() > 0}
-                fallback={<text fg={muted()}>{`(${String(subagents().length)})`}</text>}
-              >
-                <box flexDirection="row" gap={0}>
-                  <text fg={muted()}>(</text>
-                  <Show when={runningSubagents() > 0}>
-                    <text fg={lampColor(success(), true)}>●</text>
-                    <text fg={muted()}>{` ${String(runningSubagents())}`}</text>
-                  </Show>
-                  <Show when={failedSubagents() > 0}>
-                    <text fg={muted()}>{runningSubagents() > 0 ? " " : ""}</text>
-                    <text fg={error()}>●</text>
-                    <text fg={muted()}>{` ${String(failedSubagents())}`}</text>
-                  </Show>
-                  <text fg={muted()}>)</text>
-                </box>
-              </Show>,
+              <box flexDirection="row" gap={0}>
+                <text fg={muted()}>(</text>
+                <For each={subagentLamps()}>
+                  {(lamp, index) => (
+                    <box flexDirection="row" gap={0}>
+                      <Show when={index() > 0}>
+                        <text fg={muted()}> </text>
+                      </Show>
+                      <text fg={lampColor(lamp.color, lamp.breathing)}>●</text>
+                      <text fg={muted()}>{` ${String(lamp.count)}`}</text>
+                    </box>
+                  )}
+                </For>
+                <text fg={muted()}>)</text>
+              </box>,
             )}
             <Show when={subagentsOpen()}>
               <box paddingLeft={2} flexDirection="column" gap={0}>
