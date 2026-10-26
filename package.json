@@ -58,10 +58,12 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
+    "sync:version": "bun scripts/sync-version.mjs",
+    "version": "bun run sync:version",
     "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm test:tui && pnpm check:package",
     "check:package": "node scripts/check-package.mjs",
     "build:tui": "bun scripts/build-tui.mjs",
-    "prepack": "bun run build:tui",
+    "prepack": "bun run sync:version && bun run build:tui",
     "test": "vitest run",
     "test:tui": "cd tui-test && bun test",
     "test:e2e": "bun scripts/e2e-load.mjs && bun scripts/e2e-tool-visibility.mjs && bun scripts/e2e-synthetic.mjs && bun scripts/e2e-synthetic.mjs --compact && bun scripts/e2e-update.mjs",

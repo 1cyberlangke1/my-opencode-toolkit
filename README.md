@@ -135,6 +135,8 @@ pnpm test:e2e   # 端到端自动化集成测试
 pnpm test:e2e:update  # 真实 TUI 更新入口（本地 registry + 假更新命令）
 ```
 
+发版在 GitHub Actions 手动运行 `publish` workflow，并选择 `patch`、`minor` 或 `major`；workflow 会同步版本文件、跑完整检查、提交、更新 `master`、打 tag 并发布 npm。
+
 ## 许可证
 
 [MIT](LICENSE)
