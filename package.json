@@ -69,7 +69,7 @@
     "test:e2e:compact": "bun scripts/e2e-synthetic.mjs --compact",
     "test:e2e:tui": "bun scripts/e2e-tui.mjs",
     "test:e2e:tool-visibility": "bun scripts/e2e-tool-visibility.mjs",
-    "test:e2e:update": "bun scripts/e2e-update.mjs",
+    "test:e2e:update": "bun scripts/build-tui.mjs && bun scripts/e2e-update.mjs",
     "test:watch": "vitest"
   },
   "devDependencies": {

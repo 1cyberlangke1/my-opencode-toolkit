@@ -49,8 +49,9 @@ export const en: Messages = {
     updateNow: "Update now",
     checkAgain: "Check again",
     close: "Close",
-    started: "Update started. Restart OpenCode to apply it.",
-    startFailed: "Failed to start the update. Run manually:",
+    running: "Updating, please wait...",
+    succeeded: "Update complete. Restart OpenCode.",
+    runFailed: "Update failed. Run manually:",
   },
   panel: {
     goal: "Goal",

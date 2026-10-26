@@ -1,14 +1,14 @@
 import { describe, expect, test } from "bun:test"
-import type { Context } from "@opencode/plugin/tui/context"
+import type { Context, DialogAlertOptions } from "@opencode/plugin/tui/context"
 
 import { resolveMessages } from "../src/i18n/index.ts"
 import { DEFAULT_SETTINGS, type Settings } from "../src/shared/settings.ts"
 import { PLUGIN_PACKAGE, PLUGIN_VERSION } from "../src/shared/version.ts"
 import {
   updateCommandLine,
-  type SpawnLike,
-  type SpawnedProcess,
   type UpdateCheckResult,
+  type UpdateProgress,
+  type UpdateStartResult,
 } from "../src/shared/update.ts"
 import plugin, { createUpdateMenu, type UpdateDeps } from "../src/tui/main.tsx"
 
@@ -27,8 +27,10 @@ type SelectCall = {
 }
 
 type ToastCall = {
+  readonly title?: string
   readonly message: string
   readonly variant?: string
+  readonly duration?: number
 }
 
 type RegisteredLayer = {
@@ -38,30 +40,24 @@ type RegisteredLayer = {
   }[]
 }
 
-/** 一次 spawn 调用；options 必须原样记录，确保生产参数不会被悄悄改掉。 */
-type SpawnCall = {
-  readonly command: string
-  readonly args: readonly string[]
-  readonly options: {
-    readonly stdio: "ignore"
-    readonly detached: boolean
-    readonly shell: boolean
-    readonly windowsHide: boolean
-  }
-}
-
 /** 输入：色值与选项；输出：只实现菜单测试依赖的假 TUI 上下文。 */
 function menuContext(picks: readonly (string | undefined)[]): {
   readonly context: Context
   readonly selects: SelectCall[]
   readonly toasts: ToastCall[]
+  readonly alerts: DialogAlertOptions[]
 } {
   const selects: SelectCall[] = []
   const toasts: ToastCall[] = []
+  const alerts: DialogAlertOptions[] = []
   let index = 0
   const context = {
     ui: {
       dialog: {
+        alert: (call: DialogAlertOptions) => {
+          alerts.push(call)
+          return Promise.resolve()
+        },
         select: (call: SelectCall) => {
           selects.push(call)
           return Promise.resolve(picks[index++])
@@ -74,7 +70,7 @@ function menuContext(picks: readonly (string | undefined)[]): {
       },
     },
   } as unknown as Context
-  return { context, selects, toasts }
+  return { context, selects, toasts, alerts }
 }
 
 /** 输入：菜单选择序列与语言；输出：setup 依赖的假上下文与注册项。 */
@@ -129,34 +125,14 @@ function setupContext(options: {
   return { context, layers, selects }
 }
 
-/** 输入：spawn 事件类型；输出：记录命令与 options 并触发该事件的假 spawn。 */
-function fakeSpawn(event: "spawn" | "error"): {
-  readonly spawnFn: SpawnLike
-  readonly calls: SpawnCall[]
-} {
-  const calls: SpawnCall[] = []
-  const spawnFn = ((command: string, args: readonly string[], options: SpawnCall["options"]) => {
-    calls.push({ command, args: [...args], options })
-    const child: SpawnedProcess = {
-      once(name, listener) {
-        if (name === event) queueMicrotask(listener)
-        return child
-      },
-      unref: () => undefined,
-    }
-    return child
-  }) as SpawnLike
-  return { spawnFn, calls }
-}
-
-/** 输入：检查结果与真实启动函数；输出：菜单依赖。 */
+/** 输入：检查结果与真实运行函数；输出：菜单依赖。 */
 function depsFor(
   check: UpdateCheckResult | (() => Promise<UpdateCheckResult>),
-  start: UpdateDeps["start"] = () => Promise.resolve({ ok: true, command: updateCommandLine() }),
+  run: UpdateDeps["run"] = () => Promise.resolve({ ok: true, command: updateCommandLine() }),
 ): UpdateDeps {
   return {
     check: typeof check === "function" ? check : () => Promise.resolve(check),
-    start,
+    run,
   }
 }
 
@@ -360,42 +336,66 @@ describe("更新入口菜单", () => {
     expect(selects.map((call) => call.title)).toEqual([text.update.title, text.update.title])
   })
 
-  test("立即更新调用固定命令、传递 spawn options 并提示重启", async () => {
+  test("更新期间显示真实进度，完成后再提示重启", async () => {
     const text = resolveMessages("en")
-    const fake = fakeSpawn("spawn")
-    const { context, toasts } = menuContext(["update"])
-    const deps = depsFor(NEW_VERSION, () =>
-      import("../src/shared/update.ts").then((module) => module.startUpdate({ spawn: fake.spawnFn })),
+    let report: UpdateProgress | undefined
+    let finish: ((result: UpdateStartResult) => void) | undefined
+    let started: (() => void) | undefined
+    const runStarted = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    const { context, toasts, alerts } = menuContext(["update"])
+    const deps = depsFor(
+      NEW_VERSION,
+      (onProgress) =>
+        new Promise((resolve) => {
+          report = onProgress
+          finish = resolve
+          started?.()
+        }),
     )
 
-    await createUpdateMenu(context, () => resolveMessages("en"), deps)()
+    const running = createUpdateMenu(context, () => resolveMessages("en"), deps)()
+    await runStarted
 
-    expect(fake.calls).toEqual([
+    expect(toasts[0]).toMatchObject({
+      title: text.update.title,
+      message: text.update.running,
+      variant: "info",
+    })
+    expect(toasts[0]?.duration).toBeGreaterThan(5_000)
+
+    report?.("Downloading my-opencode-toolkit")
+    expect(toasts[1]).toMatchObject({
+      title: text.update.title,
+      message: "Downloading my-opencode-toolkit",
+      variant: "info",
+    })
+    expect(toasts[1]?.duration).toBeGreaterThan(5_000)
+
+    finish?.({ ok: true, command: updateCommandLine() })
+    await running
+
+    expect(alerts).toEqual([
       {
-        command: "opencode",
-        args: ["plugin", "update", PLUGIN_PACKAGE],
-        options: {
-          stdio: "ignore",
-          detached: true,
-          shell: process.platform === "win32",
-          windowsHide: true,
-        },
+        title: text.update.title,
+        message: text.update.succeeded,
       },
     ])
-    expect(toasts).toEqual([{ message: text.update.started, variant: "info" }])
   })
 
-  test("更新启动失败时提示失败并给出可执行命令", async () => {
+  test("更新失败时提示失败并给出可执行命令", async () => {
     const text = resolveMessages("en")
-    const fake = fakeSpawn("error")
-    const { context, toasts } = menuContext(["update"])
-    const deps = depsFor(NEW_VERSION, () =>
-      import("../src/shared/update.ts").then((module) => module.startUpdate({ spawn: fake.spawnFn })),
-    )
+    const { context, toasts, alerts } = menuContext(["update"])
+    const deps = depsFor(NEW_VERSION, async (onProgress) => {
+      onProgress("npm exited with code 1")
+      return { ok: false, command: updateCommandLine() }
+    })
 
     await createUpdateMenu(context, () => resolveMessages("en"), deps)()
 
-    expect(toasts[0]?.variant).toBe("error")
-    expect(toasts[0]?.message).toBe(`${text.update.startFailed} ${updateCommandLine()}`)
+    expect(toasts[1]?.message).toBe("npm exited with code 1")
+    expect(alerts[0]?.title).toBe(text.update.title)
+    expect(alerts[0]?.message).toBe(`${text.update.runFailed} ${updateCommandLine()}`)
   })
 })
