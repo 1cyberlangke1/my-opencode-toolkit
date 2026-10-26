@@ -1,5 +1,5 @@
 import { Plugin } from "@opencode/plugin/tui"
-import type { Context, DialogSelectOption } from "@opencode/plugin/tui/context"
+import type { Context } from "@opencode/plugin/tui/context"
 import { createEffect, createSignal, For, onCleanup, onMount, Show, type JSX } from "solid-js"
 
 import { localeOf, resolveMessages, type Messages } from "../i18n/index.ts"
@@ -12,15 +12,12 @@ import { configFileLayers } from "./config-layers.ts"
 import { formatAgo, formatCountdown, formatDateTime, padRight, truncate } from "./format.ts"
 import { createPanelFeed, createPanelReader, panelRpcOptions as rpcOptions } from "./panel-cache.ts"
 import { formatCronHuman } from "../scheduling/cron.ts"
-import {
-  checkLatestVersion,
-  startUpdate,
-  updateCommandLine,
-  type UpdateCheckResult,
-  type UpdateProgress,
-  type UpdateStartResult,
-} from "../shared/update.ts"
-import { PLUGIN_VERSION } from "../shared/version.ts"
+import type { UpdateCheckResult } from "../shared/update.ts"
+import { updateEntryState } from "./update-entry.ts"
+import { createUpdateMenu } from "./update-menu.tsx"
+
+export { createUpdateMenu } from "./update-menu.tsx"
+export type { UpdateDeps } from "./update-menu.tsx"
 
 /** 主菜单条目。 */
 type MenuChoice =
@@ -31,24 +28,6 @@ type MenuChoice =
   | "contextStats"
   | "notifications"
   | "update"
-
-/** 更新菜单条目。 */
-type UpdateChoice = "current" | "latest" | "status" | "update" | "again" | "close"
-
-/** 更新菜单依赖；测试可注入，生产走默认实现。 */
-export type UpdateDeps = {
-  readonly check: () => Promise<UpdateCheckResult>
-  readonly run: (onProgress: UpdateProgress) => Promise<UpdateStartResult>
-}
-
-/** 生产默认依赖：真实 registry 查询 + 固定命令执行。 */
-const DEFAULT_UPDATE_DEPS: UpdateDeps = {
-  check: () => checkLatestVersion(),
-  run: (onProgress) => startUpdate({ onProgress }),
-}
-
-/** 更新 toast 在进程结束前保持可见，避免长安装被默认 5 秒超时吞掉。 */
-const UPDATE_TOAST_DURATION_MS = 24 * 60 * 60 * 1_000
 
 /** 侧栏子菜单条目：目标/定时任务的侧栏开关也归到这里。 */
 type SidebarChoice = "goal" | "scheduling" | "showTools" | "showSubagents"
@@ -559,91 +538,6 @@ export function ContextStats(props: {
 }
 
 /**
- * 输入：TUI 上下文、文案访问器、可注入依赖。
- * 输出：打开更新菜单的异步函数。
- * 预期：每次检查只查一次 registry；当前/最新版本是纯展示项，状态与动作跟随检查结果；
- *       立即更新执行固定命令，运行中显示真实输出行，不修改设置或持久化“最新版”状态。
- */
-export function createUpdateMenu(
-  context: Context,
-  copy: () => Messages,
-  deps: UpdateDeps = DEFAULT_UPDATE_DEPS,
-): () => Promise<void> {
-  return async () => {
-    menu: for (;;) {
-      const text = copy()
-      const result = await deps.check().catch(
-        (): UpdateCheckResult => ({ kind: "failed", reason: "network" }),
-      )
-      const latest = result.kind === "failed" ? undefined : result.latestVersion
-      const status =
-        result.kind === "failed"
-          ? text.update.failed
-          : result.kind === "up-to-date"
-            ? text.update.upToDate
-            : text.update.available
-
-      const options: DialogSelectOption<UpdateChoice>[] = [
-        {
-          title: text.update.current,
-          value: "current",
-          footer: `v${PLUGIN_VERSION}`,
-        },
-        {
-          title: text.update.latest,
-          value: "latest",
-          footer: latest === undefined ? "—" : `v${latest}`,
-        },
-        { title: status, value: "status" },
-      ]
-      if (result.kind === "update-available") {
-        options.push({ title: text.update.updateNow, value: "update" })
-      }
-      options.push(
-        { title: text.update.checkAgain, value: "again" },
-        { title: text.update.close, value: "close" },
-      )
-
-      for (;;) {
-        const choice = await context.ui.dialog.select<UpdateChoice>({
-          title: text.update.title,
-          options,
-          current: result.kind === "update-available" ? "update" : "again",
-        })
-        if (choice === undefined || choice === "close") return
-        if (choice === "again") continue menu
-        if (choice === "current" || choice === "latest" || choice === "status") continue
-
-        const showProgress = (message: string): void => {
-          context.ui.toast.show({
-            title: text.update.title,
-            message,
-            variant: "info",
-            duration: UPDATE_TOAST_DURATION_MS,
-          })
-        }
-        showProgress(text.update.running)
-        const finished = await deps.run(showProgress).catch(
-          (): UpdateStartResult => ({ ok: false, command: updateCommandLine() }),
-        )
-        if (finished.ok) {
-          await context.ui.dialog.alert({
-            title: text.update.title,
-            message: text.update.succeeded,
-          })
-        } else {
-          await context.ui.dialog.alert({
-            title: text.update.title,
-            message: `${text.update.runFailed} ${finished.command}`,
-          })
-        }
-        return
-      }
-    }
-  }
-}
-
-/**
  * 输入：TUI 插件上下文（含插件 options）。
  * 输出：侧栏面板 + `/my-opencode-toolkit` 设置命令。
  * 预期：设置以服务端存储为准，启动时通过 RPC 读取；写入失败时回滚本地值。
@@ -659,6 +553,7 @@ export default Plugin.define({
     const layers = await configFileLayers(context)
     const initial = await rpc.settingsGet({ layers }, callOptions()).catch((): Settings => DEFAULT_SETTINGS)
     const [settings, setSettings] = createSignal<Settings>(initial)
+    const [updateResult, setUpdateResult] = createSignal<UpdateCheckResult | undefined>(undefined)
 
     /** 输入：新设置；输出：无；预期：先乐观更新，失败回滚。 */
     const update = async (next: Settings): Promise<void> => {
@@ -807,7 +702,7 @@ export default Plugin.define({
       }
     }
 
-    const chooseUpdates = createUpdateMenu(context, copy)
+    const chooseUpdates = createUpdateMenu(context, copy, { onResult: setUpdateResult })
 
     /** 主菜单：进入分类子菜单。 */
     const openMenu = async (): Promise<void> => {
@@ -823,7 +718,13 @@ export default Plugin.define({
             { title: text.menu.sidebar, value: "sidebar" },
             { title: text.menu.contextStats, value: "contextStats", footer: onOff(current.contextStats.enabled) },
             { title: text.menu.notifications, value: "notifications", footer: onOff(current.notification.enabled) },
-            { title: text.menu.checkUpdates, value: "update", footer: `v${PLUGIN_VERSION}` },
+            {
+              value: "update",
+              ...updateEntryState(text, updateResult(), {
+                warning: context.theme.text.feedback.warning.base,
+                error: context.theme.text.feedback.error.base,
+              }),
+            },
           ],
         })
         if (choice === undefined) return
@@ -836,7 +737,7 @@ export default Plugin.define({
         else if (choice === "sidebar") await chooseSidebar()
         else if (choice === "contextStats") await chooseContextStats()
         else if (choice === "notifications") await chooseNotifications()
-        else await chooseUpdates()
+        else if (await chooseUpdates()) return
       }
     }
 

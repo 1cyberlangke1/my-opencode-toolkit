@@ -54,6 +54,16 @@ function fakeContext(options: {
   let pickIndex = 0
 
   const context = {
+    theme: {
+      text: {
+        base: "#ffffff",
+        muted: "#888888",
+        feedback: {
+          warning: { base: "#ffcc00" },
+          error: { base: "#ff0000" },
+        },
+      },
+    },
     client: {
       rpc: () => ({
         settingsGet: () => Promise.resolve({ ...DEFAULT_SETTINGS }),

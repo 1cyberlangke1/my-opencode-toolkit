@@ -2,7 +2,7 @@
 /**
  * 输入：本机 opencode 2.x + bun。
  * 输出：在隔离 HOME/DB/config/PATH 里启动真实 TUI，用本地假 registry 驱动更新检查。
- * 预期：中文成功场景展示更新结果并执行固定命令；英文失败场景展示失败态且不崩。
+ * 预期：中文成功场景先确认再原地展示进度并执行固定命令；英文失败场景直接展示失败提示。
  *       假 opencode 只记录参数，不会真的安装或修改本机插件。
  *
  * 用法：bun scripts/e2e-update.mjs
@@ -15,6 +15,7 @@ import { delimiter, join } from "node:path"
 import { Terminal } from "@xterm/headless"
 
 import { resolveMessages } from "../src/i18n/index.ts"
+import { PLUGIN_VERSION } from "../src/shared/version.ts"
 
 const repo = process.cwd()
 const realOpencode =
@@ -42,40 +43,6 @@ const registry = Bun.serve({
 /** 输入：终端文本 + 期望文案；输出：忽略换行/空格后是否包含。 */
 function hasText(text, expected) {
   return text.replace(/\s+/g, "").includes(expected.replace(/\s+/g, ""))
-}
-
-/**
- * 输入：终端文案；输出：文案首个单元格的样式。
- * 预期：按终端列扫描，兼容中英文宽字符；找不到时返回 undefined。
- */
-function rowStyle(terminal, label) {
-  for (let row = 0; row < terminal.rows; row += 1) {
-    const line = terminal.buffer.active.getLine(row)
-    if (line === undefined) continue
-    for (let column = 0; column < line.length; column += 1) {
-      if (!line.translateToString(false, column).startsWith(label)) continue
-      const cell = line.getCell(column)
-      if (cell === undefined) continue
-      return {
-        background: cell.getBgColor(),
-        foreground: cell.getFgColor(),
-        bold: cell.isBold(),
-      }
-    }
-  }
-  return undefined
-}
-
-/** 输入：终端、目标文案与参照文案；输出：目标行是否处于选中样式。 */
-function isActiveRow(terminal, expected, reference) {
-  const selected = rowStyle(terminal, expected)
-  const inactive = rowStyle(terminal, reference)
-  if (selected === undefined || inactive === undefined) return false
-  return (
-    selected.background !== inactive.background ||
-    selected.foreground !== inactive.foreground ||
-    selected.bold !== inactive.bold
-  )
 }
 
 /** 输入：判定函数、当前文本访问器与超时；输出：是否在超时前满足。 */
@@ -249,6 +216,13 @@ async function runScenario({ locale, version, status, updateAvailable }) {
       await waitFor((text) => hasText(text, copy.menu.checkUpdates), plain, 25_000),
       "settings menu did not show update entry",
     )
+    assert.ok(
+      await waitFor(
+        (text) => hasText(text, `${copy.menu.checkUpdates} v${PLUGIN_VERSION}`),
+        plain,
+      ),
+      "update entry did not show current version",
+    )
     // 菜单自带搜索框；输入唯一的入口文案并等渲染后再提交，避免按键批次竞态。
     proc.terminal?.write(copy.menu.checkUpdates)
     assert.ok(
@@ -256,24 +230,15 @@ async function runScenario({ locale, version, status, updateAvailable }) {
       "update entry filter did not settle",
     )
     proc.terminal?.write("\r")
-    const opened = await waitFor((text) => hasText(text, copy.update.current), plain, 12_000)
-    if (!opened) {
-      console.log("=== screen tail ===")
-      console.log(plain().slice(-3000))
-      throw new Error("update result menu did not open")
-    }
-    const screen = plain()
-    assert.ok(hasText(screen, copy.update.current), "current version label missing")
-    assert.ok(hasText(screen, copy.update.latest), "latest version label missing")
-    const expectedStatus = updateAvailable ? copy.update.available : copy.update.failed
-    assert.ok(hasText(screen, expectedStatus), `missing update status: ${expectedStatus}`)
 
     if (updateAvailable) {
-      assert.ok(hasText(screen, copy.update.updateNow), "update action missing")
-      assert.ok(hasText(screen, "v9.9.9"), "latest version footer missing")
       assert.ok(
-        await waitFor(() => isActiveRow(terminalScreen, copy.update.updateNow, copy.update.current), plain),
-        "update action did not receive keyboard focus",
+        await waitFor(
+          (text) => hasText(text, copy.update.confirm(PLUGIN_VERSION, "9.9.9")),
+          plain,
+          12_000,
+        ),
+        "update confirmation did not open",
       )
       proc.terminal?.write("\r")
       assert.ok(
@@ -305,8 +270,10 @@ async function runScenario({ locale, version, status, updateAvailable }) {
       assert.match(commandLine, /plugin update my-opencode-toolkit/)
       console.log("update command:", commandLine)
     } else {
-      assert.ok(!hasText(screen, copy.update.updateNow), "failed check must not offer update")
-      assert.ok(hasText(screen, copy.update.checkAgain), "check again action missing")
+      assert.ok(
+        await waitFor((text) => hasText(text, copy.update.failed), plain, 12_000),
+        "failed update check alert did not open",
+      )
     }
 
     assert.deepEqual(registryRequests.at(-1), "/my-opencode-toolkit/latest")
