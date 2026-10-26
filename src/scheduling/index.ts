@@ -37,13 +37,19 @@ export async function registerScheduling(
   shouldDefer: (sessionID: string) => Promise<boolean>,
   notifySkipped?: (kind: "cron" | "loop", sessionID: string) => void,
 ): Promise<SchedulingHandle> {
-  // durable 任务记录创建时的目录；读取时按目录过滤，避免多 location 各武装一套 timer。
+  // durable 任务记录创建时的 location；读取时按目录 + workspaceID 过滤，
+  // 并在会话 move 后以会话当前位置为准修正旧存档。
   const jobs = createSchedulingStore(store, {
     directory: ctx.location.directory,
-    sessionDirectory: async (sessionID) => {
+    ...(ctx.location.workspaceID === undefined ? {} : { workspaceID: ctx.location.workspaceID }),
+    sessionLocation: async (sessionID) => {
       const located = await locateSession(ctx, sessionID)
-      if (located.kind === "found") return located.directory
-      return located.kind === "missing" ? null : undefined
+      if (located.kind === "missing") return null
+      if (located.kind === "unknown") return undefined
+      return {
+        directory: located.directory,
+        ...(located.workspaceID === undefined ? {} : { workspaceID: located.workspaceID }),
+      }
     },
   })
   await jobs.load()
@@ -60,6 +66,7 @@ export async function registerScheduling(
     shouldDefer,
     ...(notifySkipped === undefined ? {} : { notifySkipped }),
     enabled: isEnabled,
+    locateSession: (sessionID) => locateSession(ctx, sessionID),
   })
   const continuation = createSchedulingContinuation({
     ctx,

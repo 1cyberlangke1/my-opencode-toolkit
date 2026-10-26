@@ -4,6 +4,7 @@ import { asRecord, type ScannableStore } from "../shared/json.ts"
 import { SCHEDULE_PREFIX, scheduleKey } from "../shared/keys.ts"
 import { forEachScannedEntry } from "../shared/scan.ts"
 import { globalSerialRegistry, runSerial } from "../shared/serial.ts"
+import { sameLocation, type SessionIdentity } from "../shared/session.ts"
 import {
   DEFAULT_CRON_JITTER_CONFIG,
   jitteredNextCronRunMs,
@@ -39,6 +40,8 @@ type StoredJob = {
   readonly permanent?: boolean
   /** 创建任务时的 location 目录；旧数据没有这个字段。 */
   readonly directory?: string
+  /** 创建任务时的 workspaceID；旧数据没有这个字段。 */
+  readonly workspaceID?: string
 }
 
 type StoredFile = {
@@ -77,6 +80,12 @@ export type SchedulingStore = {
   markAttempted(id: string, at: number): Promise<void>
   /** 输入：任务 id + 顺延时刻；输出：无。预期：落盘 retryAt，重启后仍按这个时间重试。 */
   postpone(id: string, at: number): Promise<void>
+  /**
+   * 输入：会话 ID + 新 location；输出：无。
+   * 预期：把该会话 durable 任务的位置字段改到新 location，并载入本实例内存；旧存档照常可读。
+   *       调用方必须先确认本实例是新 location 的归属者。
+   */
+  relocate(sessionID: string, location: SessionIdentity): Promise<void>
   /** 输入：任务 id 列表；输出：无。预期：只丢内存副本，不碰存储（任务属于别的 location）。 */
   forget(ids: readonly string[]): void
   /** 输入：无；输出：内存中任务总数。 */
@@ -87,8 +96,10 @@ export type SchedulingStore = {
 export type SchedulingStoreOptions = {
   /** 本实例 location；写入任务时记录目录，读取时丢弃别的目录的任务。 */
   readonly directory?: string
-  /** 输入：会话 ID；输出：会话所在目录、`null`（会话已不存在）或 `undefined`（查询失败）。 */
-  readonly sessionDirectory?: (sessionID: string) => Promise<string | null | undefined>
+  /** 本实例 workspaceID；缺省表示旧版按目录归属。 */
+  readonly workspaceID?: string
+  /** 输入：会话 ID；输出：会话当前 location、`null`（已不存在）或 `undefined`（查询失败）。 */
+  readonly sessionLocation?: (sessionID: string) => Promise<SessionIdentity | null | undefined>
 }
 
 /**
@@ -103,7 +114,11 @@ export function createSchedulingStore(
 ): SchedulingStore {
   const jobs = new Map<string, ScheduledJob>()
   const directory = options.directory
-  const sessionDirectory = options.sessionDirectory
+  const sessionLocation = options.sessionLocation
+  const instanceLocation: SessionIdentity | undefined =
+    directory === undefined
+      ? undefined
+      : { directory, ...(options.workspaceID === undefined ? {} : { workspaceID: options.workspaceID }) }
 
   /** 输入：任务；输出：下一次触发毫秒。预期：recurring 带正向抖动，one-shot 带提前量。 */
   const computeNext = (job: ScheduledJob, fromMs: number): number | null =>
@@ -126,6 +141,7 @@ export function createSchedulingStore(
     ...(job.recurring === true ? { recurring: true } : {}),
     ...(job.permanent === true ? { permanent: true } : {}),
     ...(directory === undefined ? {} : { directory }),
+    ...(options.workspaceID === undefined ? {} : { workspaceID: options.workspaceID }),
   })
 
   /**
@@ -171,6 +187,7 @@ export function createSchedulingStore(
     const requestedAt = record["requestedAt"]
     const lastAttemptAt = record["lastAttemptAt"]
     const directory = record["directory"]
+    const workspaceID = record["workspaceID"]
     return {
       id,
       sessionID,
@@ -185,7 +202,45 @@ export function createSchedulingStore(
       ...(record["recurring"] === true ? { recurring: true } : {}),
       ...(record["permanent"] === true ? { permanent: true } : {}),
       ...(typeof directory === "string" && directory.length > 0 ? { directory } : {}),
+      ...(typeof workspaceID === "string" && workspaceID.length > 0 ? { workspaceID } : {}),
     }
+  }
+
+  /** 输入：持久化任务 + 目标 location；输出：位置字段已改写的副本。预期：不丢其它字段。 */
+  const relocateStored = (stored: StoredJob, location: SessionIdentity): StoredJob => ({
+    id: stored.id,
+    sessionID: stored.sessionID,
+    cron: stored.cron,
+    prompt: stored.prompt,
+    createdAt: stored.createdAt,
+    ...(stored.lastFiredAt === undefined ? {} : { lastFiredAt: stored.lastFiredAt }),
+    ...(stored.fireAt === undefined ? {} : { fireAt: stored.fireAt }),
+    ...(stored.retryAt === undefined ? {} : { retryAt: stored.retryAt }),
+    ...(stored.requestedAt === undefined ? {} : { requestedAt: stored.requestedAt }),
+    ...(stored.lastAttemptAt === undefined ? {} : { lastAttemptAt: stored.lastAttemptAt }),
+    ...(stored.recurring === true ? { recurring: true } : {}),
+    ...(stored.permanent === true ? { permanent: true } : {}),
+    directory: location.directory,
+    ...(location.workspaceID === undefined ? {} : { workspaceID: location.workspaceID }),
+  })
+
+  /**
+   * 输入：持久化任务。
+   * 输出：运行时任务；算不出下次触发或已过点的一次性任务返回 `null`。
+   * 预期：`keepPast` 用于会话 move 恢复——已到点的一次性任务应立即补跑，而不是静默丢弃。
+   */
+  const toRuntime = (stored: StoredJob, keepPast: boolean): ScheduledJob | null => {
+    const job: ScheduledJob = { ...stored, durable: true }
+    const next =
+      stored.retryAt ??
+      (job.recurring === true
+        ? computeNext(job, Math.max(job.lastFiredAt ?? job.createdAt, job.lastAttemptAt ?? 0))
+        : (stored.fireAt ?? computeNext(job, job.createdAt)))
+    if (next === null) return null
+    if (!keepPast && job.recurring !== true && next <= Date.now()) return null
+    if (job.recurring !== true) job.fireAt = next
+    job.nextRunAt = next
+    return job
   }
 
   return {
@@ -194,16 +249,21 @@ export function createSchedulingStore(
         const sessionID = entry.key.slice(SCHEDULE_PREFIX.length)
         if (sessionID.length === 0) return
 
-        // location 归属：会话属于别的目录时不加载，避免 N 个实例各武装一套 timer 重复注入。
-        if (sessionDirectory !== undefined) {
-          const located = await sessionDirectory(sessionID).catch(() => undefined)
+        // 会话当前位置是权威来源：别的 location 的会话不加载、不改写；
+        // 本实例的会话则允许存档里的旧位置（session.moved 前写入）被就地更新。
+        let authoritative: SessionIdentity | undefined
+        if (sessionLocation !== undefined) {
+          const located = await sessionLocation(sessionID).catch(() => undefined)
           // null = 结构化确认会话已不存在：清掉孤儿 key，否则每个实例都会永远重试。
           if (located === null) {
             await store.remove(entry.key)
             return
           }
-          // undefined = 查询失败：保留数据和内存任务，下个 tick 再说。
-          if (typeof located === "string" && directory !== undefined && located !== directory) return
+          if (located !== undefined) {
+            if (instanceLocation === undefined || !sameLocation(located, instanceLocation)) return
+            authoritative = located
+          }
+          // undefined = 查询失败：保留数据，按存档位置继续过滤，下个 tick 再说。
         }
 
         const record = asRecord(entry.value)
@@ -212,26 +272,51 @@ export function createSchedulingStore(
         if (!Array.isArray(rawJobs)) return
 
         const kept: StoredJob[] = []
+        let changed = false
         for (const raw of rawJobs) {
-          const stored = parseStored(raw)
+          let stored = parseStored(raw)
           if (stored === null) continue
-          // 旧数据没有 directory：照常加载；新数据按本实例目录过滤。
-          if (directory !== undefined && stored.directory !== undefined && stored.directory !== directory) continue
-          const job: ScheduledJob = { ...stored, durable: true }
-          const next =
-            stored.retryAt ??
-            (job.recurring === true
-              ? computeNext(job, Math.max(job.lastFiredAt ?? job.createdAt, job.lastAttemptAt ?? 0))
-              : (stored.fireAt ?? computeNext(job, job.createdAt)))
+          if (authoritative !== undefined) {
+            // 位置字段与会话当前位置不一致 = move 后残留的旧值；直接改写，旧存档也能读。
+            if (
+              stored.directory !== authoritative.directory ||
+              stored.workspaceID !== authoritative.workspaceID
+            ) {
+              stored = relocateStored(stored, authoritative)
+              changed = true
+            }
+          } else if (instanceLocation !== undefined) {
+            // 没有权威位置时按存档过滤；旧数据缺字段时放行，保证旧存档可读。
+            if (stored.directory !== undefined && stored.directory !== instanceLocation.directory) continue
+            if (stored.workspaceID !== undefined && stored.workspaceID !== instanceLocation.workspaceID) continue
+          }
           // 算不出下一次的任务不会再触发；one-shot 过点也不补跑，避免重启后把同一次触发算成下一次。
-          if (next === null || (job.recurring !== true && next <= Date.now())) continue
-          if (job.recurring !== true) job.fireAt = next
-          job.nextRunAt = next
+          const job = toRuntime(stored, false)
+          if (job === null) continue
           jobs.set(job.id, job)
           kept.push(stored)
         }
-        // 过期/损坏的条目必须从存储里清掉：否则 key 只增不减，用户也看不到、删不掉。
-        if (kept.length !== rawJobs.length) await writeStored(sessionID, kept)
+        // 过期/损坏/位置变化的条目必须写回：否则 key 只增不减，move 后仍绑定旧位置。
+        if (changed || kept.length !== rawJobs.length) await writeStored(sessionID, kept)
+      })
+    },
+
+    async relocate(sessionID, location) {
+      await runSerial(writeChains, scheduleKey(sessionID), async () => {
+        const stored = await readStored(sessionID)
+        if (stored.length === 0) return
+        const state = { changed: false }
+        const next = stored.map((item) => {
+          if (item.directory === location.directory && item.workspaceID === location.workspaceID) return item
+          state.changed = true
+          return relocateStored(item, location)
+        })
+        if (state.changed) await writeStored(sessionID, next)
+        // 本实例是新归属者：把恢复的任务放进内存，armTimers 才能重新武装。
+        for (const item of next) {
+          const job = toRuntime(item, true)
+          if (job !== null) jobs.set(job.id, job)
+        }
       })
     },
 

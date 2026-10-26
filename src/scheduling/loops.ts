@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto"
 import type { Plugin } from "@opencode/plugin"
 
 import { isIdleEvent, readEventSessionID } from "../shared/events.ts"
+import { sameLocation, type SessionLocation } from "../shared/session.ts"
 import { capTimerDelay, MAX_TIMER_DELAY_MS } from "../shared/timer.ts"
 import { DEFAULT_MAX_AGE_DAYS, type Loop } from "./types.ts"
 import { createSyntheticInjector } from "./inject.ts"
@@ -62,8 +63,10 @@ export function createLoopScheduler(args: {
   readonly notifySkipped?: (kind: "cron" | "loop", sessionID: string) => void
   /** 输入：无；输出：scheduling 是否启用。缺省视为启用（测试与旧调用兼容）。 */
   readonly enabled?: () => Promise<boolean>
+  /** 输入：会话 ID；输出：会话位置。预期：别的 location 的循环只清本实例副本，查询失败保留重试。 */
+  readonly locateSession?: (sessionID: string) => Promise<SessionLocation>
 }): LoopScheduler {
-  const { ctx, roles, shouldDefer, notifySkipped } = args
+  const { ctx, roles, shouldDefer, notifySkipped, locateSession } = args
   const isEnabled = args.enabled ?? ((): Promise<boolean> => Promise.resolve(true))
   const loops = new Map<string, Loop>()
   const timers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -87,6 +90,15 @@ export function createLoopScheduler(args: {
     if (Date.now() >= loop.expiresAt) {
       stopLoop(loop.sessionID, loop.id)
       return true
+    }
+    // location 归属：别的实例的会话只清掉本实例的循环；查询失败保留循环稍后重试。
+    if (locateSession !== undefined) {
+      const located = await locateSession(loop.sessionID)
+      if (located.kind === "unknown") return false
+      if (located.kind === "missing" || !sameLocation(located, ctx.location)) {
+        clearSession(loop.sessionID)
+        return true
+      }
     }
     // 功能关闭时循环暂停，但不销毁；重新开启后下一个 timer 继续。
     if (!(await isEnabled().catch(() => false))) return false

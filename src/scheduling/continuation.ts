@@ -1,8 +1,9 @@
 import type { Plugin } from "@opencode/plugin"
 
-import { isIdleEvent, readEventSessionID } from "../shared/events.ts"
+import { isIdleEvent, readEventData, readEventSessionID } from "../shared/events.ts"
+import { asRecord } from "../shared/json.ts"
 import { scheduleKey } from "../shared/keys.ts"
-import type { SessionLocation } from "../shared/session.ts"
+import { sameLocation, type SessionIdentity, type SessionLocation } from "../shared/session.ts"
 import { capTimerDelay } from "../shared/timer.ts"
 import type { SessionRoles } from "../goal/session-role.ts"
 import { claimCronMessage, releaseCronMessage, releaseSessionClaims } from "./fire-lock.ts"
@@ -23,6 +24,9 @@ const DEFERRED_RETRY_MS = 5 * 60_000
 
 /** 注入失败（会话忙或末条是用户输入）后的重试间隔。 */
 const DELIVERY_RETRY_MS = 60_000
+
+/** 同一次触发已被别的实例认领后的退避间隔。 */
+const CLAIM_LOST_RETRY_MS = 60_000
 
 /** 定时任务触发控制器。 */
 export type SchedulingContinuation = {
@@ -49,6 +53,19 @@ function formatFireTime(date: Date): string {
 /** 输入：任务 + 触发时间；输出：注入文本。 */
 function buildFirePrompt(job: ScheduledJob, at: Date): string {
   return `Running scheduled task (${formatFireTime(at)})\n\n${job.prompt}`
+}
+
+/**
+ * 输入：`session.moved` 事件。
+ * 输出：新 location；字段缺失时为 `undefined`。
+ * 预期：不信任事件之外的来源，只按结构化字段读取。
+ */
+function readMovedLocation(event: { readonly type: string; readonly data: unknown }): SessionIdentity | undefined {
+  const raw = asRecord(readEventData(event)?.["location"])
+  const directory = raw?.["directory"]
+  if (typeof directory !== "string" || directory.length === 0) return undefined
+  const workspaceID = raw?.["workspaceID"]
+  return typeof workspaceID === "string" && workspaceID.length > 0 ? { directory, workspaceID } : { directory }
 }
 
 /**
@@ -93,6 +110,32 @@ export function createSchedulingContinuation(args: {
   const messageIDFor = (job: ScheduledJob, at: number): string =>
     `msg_cron_${job.id}_${String(job.nextRunAt ?? at)}`
 
+  /**
+   * 输入：任务 + 延迟毫秒。
+   * 输出：无。
+   * 预期：只给该任务武装 timer，不改 nextRunAt；已有 timer 时先替换。
+   *       回调发现任务已被顺延到未来时回到全局武装，而不是提前触发。
+   */
+  const armJob = (job: ScheduledJob, delayMs: number): void => {
+    if (isDisposed()) return
+    const existing = timers.get(job.id)
+    if (existing !== undefined) clearTimeout(existing)
+    const handle = setTimeout(() => {
+      timers.delete(job.id)
+      const fresh = store.getJob(job.id)
+      if (fresh === undefined) return
+      // 分段等待提前醒来时还没到点，继续武装剩余时间。
+      if (fresh.nextRunAt !== undefined && fresh.nextRunAt > now()) {
+        armTimers()
+        return
+      }
+      // timer 回调里必须吞掉异常，否则未处理的 rejection 会打断整个进程。
+      void handleCronFire(fresh).catch(() => undefined)
+    }, capTimerDelay(delayMs))
+    handle.unref()
+    timers.set(job.id, handle)
+  }
+
   /** 输入：无；输出：无。预期：每个未来任务一个 timer，已有 timer 的不重复武装。 */
   const armTimers = (): void => {
     if (isDisposed()) return
@@ -101,22 +144,36 @@ export function createSchedulingContinuation(args: {
       if (job.nextRunAt === undefined || timers.has(job.id)) continue
       // 已过点的任务也要武装：0 延迟让它在当前 tick 后补跑，而不是干等下一次 idle。
       // 超过 24 小时的延迟分段等待，避免 32 位溢出导致立即触发。
-      const delay = capTimerDelay(job.nextRunAt - at)
-      const handle = setTimeout(() => {
-        timers.delete(job.id)
-        const fresh = store.getJob(job.id)
-        if (fresh === undefined) return
-        // 分段等待提前醒来时还没到点，继续武装剩余时间。
-        if (fresh.nextRunAt !== undefined && fresh.nextRunAt > now()) {
-          armTimers()
-          return
-        }
-        // timer 回调里必须吞掉异常，否则未处理的 rejection 会打断整个进程。
-        void handleCronFire(fresh).catch(() => undefined)
-      }, delay)
-      handle.unref()
-      timers.set(job.id, handle)
+      armJob(job, job.nextRunAt - at)
     }
+  }
+
+  /**
+   * 输入：会话 ID。
+   * 输出：归属状态。
+   * 预期：查询失败返回 unknown（不能清理或改写），别的 location 返回 foreign，只有本实例返回 owner。
+   */
+  const ownershipOf = async (sessionID: string): Promise<"owner" | "unknown" | "foreign"> => {
+    if (locateSession === undefined) return "owner"
+    const located = await locateSession(sessionID)
+    if (located.kind === "unknown") return "unknown"
+    if (located.kind === "missing" || !sameLocation(located, ctx.location)) return "foreign"
+    return "owner"
+  }
+
+  /** 输入：会话 ID；输出：无。预期：只清本实例的内存任务与 timer，绝不写共享存储。 */
+  const forgetSession = (sessionID: string): void => {
+    const ids = store.listJobs(sessionID).map((job) => job.id)
+    for (const id of ids) {
+      const timer = timers.get(id)
+      if (timer !== undefined) {
+        clearTimeout(timer)
+        timers.delete(id)
+      }
+    }
+    store.forget(ids)
+    inFlight.delete(sessionID)
+    pending.delete(sessionID)
   }
 
   /** 输入：任务 + 延迟；输出：无。预期：顺延并把新时刻落盘（one-shot 重启后仍会重试），再重新武装。 */
@@ -135,6 +192,20 @@ export function createSchedulingContinuation(args: {
     const aged = isRecurringTaskAged(job, at)
     const recurring = job.recurring === true && !aged
 
+    // 归属检查必须抢在任何共享 store 写入之前：否则非归属实例会先 postpone，
+    // 把属于别的 location 的任务改写掉（缺归属实例反而看不到最新 nextRunAt）。
+    const ownership = await ownershipOf(job.sessionID)
+    if (isDisposed()) return
+    if (ownership === "unknown") {
+      // 查询失败不能落盘顺延；只在内存里退避重试，避免污染共享任务。
+      armJob(job, DELIVERY_RETRY_MS)
+      return
+    }
+    if (ownership === "foreign") {
+      forgetSession(job.sessionID)
+      return
+    }
+
     // 关闭或让路时先不消费任务：否则 one-shot 会在用户重新开启前被静默丢掉。
     const on = await enabled().catch(() => false)
     if (!on) {
@@ -147,19 +218,6 @@ export function createSchedulingContinuation(args: {
       return
     }
     if (isDisposed()) return
-
-    // location 归属：别的实例的会话只丢本实例的内存副本；查询失败顺延，绝不消费任务。
-    if (locateSession !== undefined) {
-      const located = await locateSession(job.sessionID)
-      if (located.kind === "unknown") {
-        await postpone(job, DELIVERY_RETRY_MS)
-        return
-      }
-      if (located.kind === "missing" || located.directory !== ctx.location.directory) {
-        store.forget([job.id])
-        return
-      }
-    }
 
     if (await isPlanSession(ctx, job.sessionID)) {
       if (isDisposed()) return
@@ -177,9 +235,10 @@ export function createSchedulingContinuation(args: {
     await store.markAttempted(job.id, at).catch(() => undefined)
     const outcome = await inject(job.sessionID, buildFirePrompt(job, new Date(at)), messageIDFor(job, at))
     if (isDisposed()) return
-    // 没抢到锁 = 另一个实例已经在投递同一次触发；这里再顺延只会让 ID 变掉、60 秒后二次注入。
+    // 没抢到锁 = 另一个实例已经在投递同一次触发；不能顺延（会改 nextRunAt、生成新消息 ID 后二次注入），
+    // 也不能按过去的 nextRunAt 重新武装（0ms 热循环）。按明确退避等对方完成或声明过期。
     if (outcome === "claim-lost") {
-      armTimers()
+      armJob(job, CLAIM_LOST_RETRY_MS)
       return
     }
     if (outcome === "skipped") {
@@ -196,14 +255,11 @@ export function createSchedulingContinuation(args: {
   /** 输入：会话 ID；输出：无。预期：处理该会话已到点的任务，否则补武装 timer。 */
   const handleIdle = async (sessionID: string): Promise<void> => {
     // 事件会广播到所有实例；不是自己的会话就丢掉本实例的内存任务，避免重复注入。
-    if (locateSession !== undefined) {
-      const located = await locateSession(sessionID)
-      if (located.kind === "unknown") return
-      if (located.kind === "missing" || located.directory !== ctx.location.directory) {
-        store.forget(store.listJobs(sessionID).map((job) => job.id))
-        pending.delete(sessionID)
-        return
-      }
+    const ownership = await ownershipOf(sessionID)
+    if (ownership === "unknown") return
+    if (ownership === "foreign") {
+      forgetSession(sessionID)
+      return
     }
     if (!(await enabled())) return
     const at = now()
@@ -228,6 +284,19 @@ export function createSchedulingContinuation(args: {
         // idle 表示上一轮已经结束；清掉 pending 让本轮可以继续注入。
         pending.delete(sessionID)
         await handleIdle(sessionID)
+        return
+      }
+      if (event.type === "session.moved") {
+        const location = readMovedLocation(event)
+        if (location === undefined) return
+        // 只有新 location 的实例能改写共享任务；其余实例只丢本实例副本。
+        if (!sameLocation(location, ctx.location)) {
+          forgetSession(sessionID)
+          return
+        }
+        await store.relocate(sessionID, location)
+        if (isDisposed()) return
+        armTimers()
         return
       }
       if (event.type === "session.deleted") {

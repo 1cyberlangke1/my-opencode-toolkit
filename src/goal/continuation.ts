@@ -169,6 +169,8 @@ export function createGoalContinuation(args: {
     // 这一轮已经失败，清掉待确认注入，下一次 idle 才能重试。
     pending.delete(sessionID)
     if (!(await enabled())) return
+    // 共享目标可能由别的 workspace 实例写入；非归属实例不能暂停它。
+    if (!(await ownsSession(ctx, sessionID))) return
 
     const state = stateOf(sessionID)
     const kind = classifyGoalFailure(error)
@@ -188,6 +190,8 @@ export function createGoalContinuation(args: {
     pending.delete(sessionID)
     if (reason !== "user") return
     if (!(await enabled())) return
+    // 同上：只有会话归属实例才能因为用户打断暂停共享目标。
+    if (!(await ownsSession(ctx, sessionID))) return
     const state = stateOf(sessionID)
     state.wasCancelled = true
     await controller.pauseGoal(sessionID)

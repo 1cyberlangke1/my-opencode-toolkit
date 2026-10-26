@@ -157,6 +157,53 @@ describe("goal controller", () => {
     expect(done?.blockedStreak).toBeUndefined()
   })
 
+  it("pause 后 markBlocked 不改状态、不写阻塞计数", async () => {
+    const store = new MemoryStore()
+    const c = controller(store)
+    await c.setGoal(SESSION, "x")
+    await c.pauseGoal(SESSION)
+    const before = await c.getGoal(SESSION)
+
+    const after = await c.markBlocked(SESSION, "no network")
+
+    expect(after?.status).toBe("paused")
+    expect(after?.lastBlockedReason).toBeUndefined()
+    expect(after?.blockedStreak).toBeUndefined()
+    expect(after?.updatedAt).toBe(before?.updatedAt)
+  })
+
+  it("complete 与 budget_limited 后 markBlocked 均不改状态", async () => {
+    const store = new MemoryStore()
+    const c = controller(store)
+
+    await c.setGoal(SESSION, "x")
+    await c.markComplete(SESSION)
+    expect((await c.markBlocked(SESSION, "done"))?.status).toBe("complete")
+
+    await c.setGoal(SESSION, "second", 10)
+    await c.accountUsage(SESSION, { tokens: 20, elapsedSeconds: 1 })
+    const limited = await c.markBlocked(SESSION, "budget")
+    expect(limited?.status).toBe("budget_limited")
+    expect(limited?.lastBlockedReason).toBeUndefined()
+    expect(limited?.blockedStreak).toBeUndefined()
+  })
+
+  it("已经 blocked 后 markBlocked 不再改计数", async () => {
+    const store = new MemoryStore()
+    const c = controller(store)
+    await c.setGoal(SESSION, "x")
+    await c.markBlocked(SESSION, "a")
+    await c.markBlocked(SESSION, "a")
+    const blocked = await c.markBlocked(SESSION, "a")
+    expect(blocked?.status).toBe("blocked")
+
+    const after = await c.markBlocked(SESSION, "b")
+    expect(after?.status).toBe("blocked")
+    expect(after?.blockedStreak).toBe(3)
+    expect(after?.lastBlockedReason).toBe("a")
+    expect(after?.updatedAt).toBe(blocked?.updatedAt)
+  })
+
   it("只给 active 目标记账", async () => {
     const store = new MemoryStore()
     const c = controller(store)

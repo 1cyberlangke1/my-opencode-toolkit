@@ -8,9 +8,28 @@ import type { Plugin } from "@opencode/plugin"
  * 预期：调用方必须区分「不存在」和「查不到」——前者可以清理数据，后者只能稍后重试。
  */
 export type SessionLocation =
-  | { readonly kind: "found"; readonly directory: string }
+  | {
+      readonly kind: "found"
+      readonly directory: string
+      readonly workspaceID?: string | undefined
+    }
   | { readonly kind: "missing" }
   | { readonly kind: "unknown" }
+
+/** 一个 location 的身份：目录 + 可选工作区。 */
+export type SessionIdentity = {
+  readonly directory: string
+  readonly workspaceID?: string | undefined
+}
+
+/**
+ * 输入：两个 location。
+ * 输出：是否严格同一 location。
+ * 预期：目录和 workspaceID 都要一致；两者都缺省 workspaceID 才算相同。
+ */
+export function sameLocation(a: SessionIdentity, b: SessionIdentity): boolean {
+  return a.directory === b.directory && a.workspaceID === b.workspaceID
+}
 
 /** 输入：任意异常；输出：是否是结构化的会话不存在。预期：不靠错误文案匹配。 */
 export function isSessionMissingError(error: unknown): boolean {
@@ -32,7 +51,9 @@ export async function locateSession(
 ): Promise<SessionLocation> {
   try {
     const session = await ctx.session.get({ sessionID })
-    return { kind: "found", directory: session.location.directory }
+    // 公开类型只声明 directory；运行时 Session 位置可能带 workspaceID，按结构读取。
+    const location: SessionIdentity = session.location
+    return { kind: "found", directory: location.directory, workspaceID: location.workspaceID }
   } catch (error) {
     return isSessionMissingError(error) ? { kind: "missing" } : { kind: "unknown" }
   }
@@ -45,5 +66,5 @@ export async function locateSession(
  */
 export async function ownsSession(ctx: Plugin.Context, sessionID: string): Promise<boolean> {
   const located = await locateSession(ctx, sessionID)
-  return located.kind === "found" && located.directory === ctx.location.directory
+  return located.kind === "found" && sameLocation(located, ctx.location)
 }

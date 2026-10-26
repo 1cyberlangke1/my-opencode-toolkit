@@ -97,13 +97,16 @@ export async function listSubagents(
 /**
  * 输入：插件上下文 + 子会话 ID。
  * 输出：子会话的 token/tool 详情。
- * 预期：复用 buildStats；读取失败由调用方处理。
+ * 预期：复用 buildStats；读取失败时返回空详情，不影响面板其他区域。
  */
 export async function buildSubagentDetail(
   ctx: Plugin.Context,
   sessionID: string,
 ): Promise<PanelSubagentDetail> {
   const stats = await buildStats(ctx, sessionID)
+  if (stats === undefined) {
+    return { steps: 0, input: 0, output: 0, cached: 0, hitRate: 0, tools: [] }
+  }
   return {
     steps: stats.steps,
     input: stats.input,
@@ -118,16 +121,21 @@ export async function buildSubagentDetail(
 
 /**
  * 输入：插件上下文 + 会话 ID。
- * 输出：从 OpenCode 已存消息重建的统计。
+ * 输出：从 OpenCode 已存消息重建的统计；读取失败时返回 undefined。
  * 预期：只统计 assistant 消息的 tokens 与 tool 片段。
- *       读取失败按空统计处理，不抛异常。
+ *       读取失败与真实空历史必须区分，避免首次重建用空值覆盖已有存档。
  */
-export async function buildStats(ctx: Plugin.Context, sessionID: string): Promise<SessionStats> {
-  const messages = await ctx.session.context({ sessionID }).catch(() => [])
+export async function buildStats(
+  ctx: Plugin.Context,
+  sessionID: string,
+): Promise<SessionStats | undefined> {
+  const messages = await ctx.session.context({ sessionID }).catch(() => undefined)
+  if (messages === undefined) return undefined
   let steps = 0
   let input = 0
   let output = 0
   let cached = 0
+  let lastTool: string | undefined
   const tools: Record<string, number> = {}
 
   for (const message of messages) {
@@ -143,10 +151,18 @@ export async function buildStats(ctx: Plugin.Context, sessionID: string): Promis
     for (const part of message.content) {
       if (part.type !== "tool") continue
       tools[part.name] = (tools[part.name] ?? 0) + 1
+      lastTool = part.name
     }
   }
 
-  return { steps, input, output, cached, tools }
+  return {
+    steps,
+    input,
+    output,
+    cached,
+    ...(lastTool === undefined ? {} : { lastTool }),
+    tools,
+  }
 }
 
 /**

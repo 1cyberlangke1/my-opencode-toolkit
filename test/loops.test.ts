@@ -10,9 +10,14 @@ const roles = {
   forget: () => undefined,
 }
 
-/** 输入：日志数组 + 当前 agent；输出：只实现 setup 依赖的假上下文。 */
-function fakeCtx(log: string[], agent = "build"): Plugin.Context {
+/** 输入：日志数组 + 当前 agent + 本实例位置；输出：只实现 setup 依赖的假上下文。 */
+function fakeCtx(
+  log: string[],
+  agent = "build",
+  location: { readonly directory: string; readonly workspaceID?: string } = { directory: "/work" },
+): Plugin.Context {
   return {
+    location,
     session: {
       get: () => Promise.resolve({ agent }),
       prompt: (input: { text: string }) => {
@@ -94,6 +99,24 @@ describe("loop scheduler", () => {
 
     const result = scheduler.scheduleWakeup(SESSION, "check", 60, "x")
     expect(result.ok).toBe(false)
+    scheduler.dispose()
+  })
+
+  it("同目录不同 workspaceID 时不注入并清掉本实例的循环", async () => {
+    const log: string[] = []
+    const scheduler = createLoopScheduler({
+      ctx: fakeCtx(log, "build", { directory: "/work", workspaceID: "ws_a" }),
+      roles,
+      shouldDefer: () => Promise.resolve(false),
+      locateSession: () =>
+        Promise.resolve({ kind: "found", directory: "/work", workspaceID: "ws_b" } as const),
+    })
+
+    scheduler.startLoop(SESSION, "check", 5)
+    await flush()
+
+    expect(log).toHaveLength(0)
+    expect(scheduler.listLoops(SESSION)).toHaveLength(0)
     scheduler.dispose()
   })
 

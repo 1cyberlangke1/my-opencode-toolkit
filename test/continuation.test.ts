@@ -51,6 +51,17 @@ function fakeCtx(log: PromptLog, messages: unknown[] = []): Plugin.Context {
   } as unknown as Plugin.Context
 }
 
+/** 输入：本实例 location + 目标会话 location；输出：最小插件上下文。 */
+function ctxAt(
+  owner: { readonly directory: string; readonly workspaceID?: string },
+  session: { readonly directory: string; readonly workspaceID?: string },
+): Plugin.Context {
+  return {
+    location: owner,
+    session: { get: () => Promise.resolve({ location: session }) },
+  } as unknown as Plugin.Context
+}
+
 /** 输入：无；输出：空存储。预期：设置由参数注入，不再从 storage 读。 */
 function newStore(): MemoryStore {
   return new MemoryStore()
@@ -249,6 +260,27 @@ describe("goal continuation", () => {
     expect((await controller.getGoal(SESSION))?.status).toBe("paused")
     await continuation.handle({ type: "session.idle", data: { sessionID: SESSION } })
     expect(log).toHaveLength(0)
+  })
+
+  it("非归属实例的失败与打断不暂停共享目标", async () => {
+    const store = newStore()
+    const controller = createGoalController(store)
+    await controller.setGoal(SESSION, "x")
+    // 同目录但 workspace 不同：本实例不是这个会话的归属者，不能动共享目标状态。
+    const ctx = ctxAt({ directory: "/", workspaceID: "ws_a" }, { directory: "/", workspaceID: "ws_b" })
+    const continuation = createGoalContinuation({ ctx, settings: DEFAULT_SETTINGS, controller, roles })
+
+    await continuation.handle({
+      type: "session.execution.failed",
+      data: { sessionID: SESSION, error: { type: "quota", message: "quota exceeded", status: 402 } },
+    })
+    expect((await controller.getGoal(SESSION))?.status).toBe("active")
+
+    await continuation.handle({
+      type: "session.execution.interrupted",
+      data: { sessionID: SESSION, reason: "user" },
+    })
+    expect((await controller.getGoal(SESSION))?.status).toBe("active")
   })
 
   it("shutdown 打断不暂停", async () => {

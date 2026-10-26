@@ -77,6 +77,8 @@ export function createGoalController(store: JsonStore): GoalController {
     async markBlocked(sessionID, reason) {
       const existing = await readGoal(store, sessionID)
       if (existing === null) return null
+      // 只有 active 目标能被标记阻塞；paused/complete/blocked/budget_limited 原样返回，不写计数。
+      if (existing.status !== "active") return existing
 
       const sameReason = existing.lastBlockedReason === reason
       const streak = sameReason ? (existing.blockedStreak ?? 1) + 1 : 1

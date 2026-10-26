@@ -1,5 +1,59 @@
 import type { JsonValue, ScannableStore } from "../src/shared/json.ts"
 
+/** 可手动触发并记录延迟的假 timer。 */
+export type FakeTimer = {
+  readonly delay: number
+  unref(): void
+  run(): void
+}
+
+/**
+ * 输入：无。
+ * 输出：假 timer 表 + 恢复函数。
+ * 预期：只替换全局 setTimeout/clearTimeout，便于断言退避延迟与手动触发。
+ */
+export function captureTimers(): { timers: FakeTimer[]; restore(): void } {
+  const timers: FakeTimer[] = []
+  const originalSetTimeout = globalThis.setTimeout
+  const originalClearTimeout = globalThis.clearTimeout
+
+  const fakeSetTimeout = (callback: (...args: unknown[]) => void, ms?: number, ...args: unknown[]) => {
+    const timer: FakeTimer = {
+      delay: ms ?? 0,
+      unref: () => undefined,
+      run: () => {
+        callback(...args)
+      },
+    }
+    timers.push(timer)
+    return timer as unknown as ReturnType<typeof setTimeout>
+  }
+  const fakeClearTimeout = (timer?: ReturnType<typeof setTimeout>) => {
+    const index = timers.indexOf(timer as unknown as FakeTimer)
+    if (index >= 0) timers.splice(index, 1)
+  }
+
+  globalThis.setTimeout = fakeSetTimeout as unknown as typeof globalThis.setTimeout
+  globalThis.clearTimeout = fakeClearTimeout as unknown as typeof globalThis.clearTimeout
+
+  return {
+    timers,
+    restore() {
+      globalThis.setTimeout = originalSetTimeout
+      globalThis.clearTimeout = originalClearTimeout
+    },
+  }
+}
+
+/**
+ * 输入：无。
+ * 输出：无。
+ * 预期：让已排队的微任务链（存储读写、串行队列）跑完；不依赖真实定时器。
+ */
+export async function flushMicrotasks(): Promise<void> {
+  for (let index = 0; index < 32; index += 1) await Promise.resolve()
+}
+
 /** 内存存储：模拟 ctx.storage 的读写与分页扫描。 */
 export class MemoryStore implements ScannableStore {
   readonly values = new Map<string, JsonValue>()

@@ -67,6 +67,20 @@ export default Plugin.define({
     const goalController = createGoalController(ctx.storage)
 
     /**
+     * 本实例已完成首次完整历史重建的会话。
+     * 输入：会话 ID；输出：是否已重建。
+     * 预期：首次 panelGet 从完整历史重建一次并落盘，之后直接读增量存档；会话删除时清掉标记。
+     */
+    const statsRebuilt = new Set<string>()
+
+    /**
+     * 本实例已删除的会话墓碑。
+     * 输入：会话 ID；输出：是否已删除。
+     * 预期：删除与统计写入共用串行链，删除后迟到的工具/step 写入不得把统计复活。
+     */
+    const statsDeleted = new Set<string>()
+
+    /**
      * 输入：会话 ID。
      * 输出：该会话存档；没有就是 `null`。
      * 预期：每次记账前直接读存档——无内存缓存、无重建，存档是唯一账本。
@@ -125,17 +139,36 @@ export default Plugin.define({
         // RPC 可能被任意实例接收；不属于本实例的会话读不到数据，直接返回空面板。
         if (sessionID.length > 0 && !(await owns(sessionID))) return emptyPanel()
 
-        // 存档缺失/损坏时从消息历史重建一次：否则旧会话在启用插件后永远显示 0，
-        // 而子代理详情走的是 buildStats，两处口径会不一致。
+        // 首次 panelGet 从完整消息历史重建：存档可能只是部分增量，不能直接当全量；
+        // 否则旧会话在启用插件后永远显示残缺数据，与子代理详情的 buildStats 口径也不一致。
         let stats: SessionStats = emptyStats()
         if (sessionID.length > 0) {
-          const stored = await load(sessionID)
-          if (stored !== null) {
-            stats = stored
-          } else {
-            stats = await buildStats(ctx, sessionID).catch(() => emptyStats())
-            await saveStats(ctx.storage, sessionID, stats).catch(() => undefined)
-          }
+          // 首次重复完整历史必须与 step/tool 增量、删除同链，避免并发读写互相覆盖。
+          stats = await runSerial(STATS_CHAINS, sessionID, async () => {
+            // 删除可能已排在链上；串行链内复查，迟到的重建不能复活统计。
+            if (statsDeleted.has(sessionID)) return emptyStats()
+            if (!(await owns(sessionID))) return emptyStats()
+            const stored = await load(sessionID).catch(() => null)
+            if (statsRebuilt.has(sessionID)) {
+              if (stored !== null) return stored
+              statsRebuilt.delete(sessionID)
+            }
+            const rebuilt = await buildStats(ctx, sessionID)
+            if (rebuilt === undefined) return stored ?? emptyStats()
+            const merged: SessionStats = {
+              ...rebuilt,
+              ...(rebuilt.lastTool === undefined && stored?.lastTool !== undefined
+                ? { lastTool: stored.lastTool }
+                : {}),
+            }
+            try {
+              await saveStats(ctx.storage, sessionID, merged)
+              statsRebuilt.add(sessionID)
+            } catch {
+              // 保存失败时保留已存值并允许下次重试，不能把内存标记当成已落盘。
+            }
+            return merged
+          })
         }
         const tools = Object.entries(stats.tools)
           .map(([name, count]) => ({ name, count }))
@@ -230,9 +263,11 @@ export default Plugin.define({
       return Promise.resolve()
     })
     const toolAfter = await ctx.tool.hook("execute.after", async (input) => {
-      if (!(await owns(input.sessionID))) return
-      // 与 token 记账共用同一条会话串行链：并发工具调用不会互相覆盖计数与 lastTool。
+      // 与 token 记账、首次重建共用同一条会话串行链：并发工具调用不会互相覆盖计数与 lastTool。
       await runSerial(STATS_CHAINS, input.sessionID, async () => {
+        // 归属与删除都在链内复查：会话可能在这条写入排队期间被删掉。
+        if (statsDeleted.has(input.sessionID)) return
+        if (!(await owns(input.sessionID))) return
         const stats = (await load(input.sessionID)) ?? emptyStats()
         stats.tools[input.tool] = (stats.tools[input.tool] ?? 0) + 1
         stats.lastTool = input.tool
@@ -271,6 +306,8 @@ export default Plugin.define({
             return Promise.resolve()
           }
           return runSerial(STATS_CHAINS, sessionID, async () => {
+            // 已经删除的会话不再累计；迟到事件不能复活统计。
+            if (statsDeleted.has(sessionID)) return
             if (!(await owns(sessionID))) return
             const stats = (await load(sessionID)) ?? emptyStats()
             stats.steps += 1
@@ -283,7 +320,12 @@ export default Plugin.define({
         if (event.type === "session.deleted") {
           const sessionID = readEventSessionID(event)
           if (sessionID === undefined) return Promise.resolve()
-          return removeStats(ctx.storage, sessionID).catch(() => undefined)
+          // 与重建/增量同链：删除排在它们之后，先落墓碑再清存档，迟到保存会被墓碑挡住。
+          return runSerial(STATS_CHAINS, sessionID, async () => {
+            statsDeleted.add(sessionID)
+            statsRebuilt.delete(sessionID)
+            await removeStats(ctx.storage, sessionID).catch(() => undefined)
+          })
         }
         return Promise.resolve()
       },

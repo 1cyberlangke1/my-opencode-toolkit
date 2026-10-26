@@ -1,6 +1,6 @@
 {
   "name": "my-opencode-toolkit",
-  "version": "0.2.28",
+  "version": "0.2.29",
   "description": "OpenCode 插件：系统通知、持久目标、定时任务与 TUI 面板",
   "type": "module",
   "license": "MIT",
@@ -64,11 +64,12 @@
     "prepack": "bun run build:tui",
     "test": "vitest run",
     "test:tui": "cd tui-test && bun test",
-    "test:e2e": "bun scripts/e2e-load.mjs && bun scripts/e2e-tool-visibility.mjs && bun scripts/e2e-synthetic.mjs && bun scripts/e2e-synthetic.mjs --compact",
+    "test:e2e": "bun scripts/e2e-load.mjs && bun scripts/e2e-tool-visibility.mjs && bun scripts/e2e-synthetic.mjs && bun scripts/e2e-synthetic.mjs --compact && bun scripts/e2e-update.mjs",
     "test:e2e:synthetic": "bun scripts/e2e-synthetic.mjs",
     "test:e2e:compact": "bun scripts/e2e-synthetic.mjs --compact",
     "test:e2e:tui": "bun scripts/e2e-tui.mjs",
     "test:e2e:tool-visibility": "bun scripts/e2e-tool-visibility.mjs",
+    "test:e2e:update": "bun scripts/e2e-update.mjs",
     "test:watch": "vitest"
   },
   "devDependencies": {
@@ -78,6 +79,7 @@
     "@opentui/core": "0.6.6",
     "@opentui/solid": "0.6.6",
     "@types/node": "^26.6.5",
+    "@xterm/headless": "^6.0.0",
     "eslint": "^10.13.0",
     "solid-js": "1.9.15",
     "typescript": "^6.0.3",

@@ -195,8 +195,11 @@ describe("scheduling store", () => {
 })
 
 describe("location 归属与并发写入", () => {
-  /** 输入：目录等字段；输出：一条可持久化的 recurring 任务。 */
-  function storedJob(directory?: string): {
+  /** 输入：目录/工作区；输出：一条可持久化的 recurring 任务。 */
+  function storedJob(
+    directory?: string,
+    workspaceID?: string,
+  ): {
     id: string
     sessionID: string
     cron: string
@@ -204,6 +207,7 @@ describe("location 归属与并发写入", () => {
     createdAt: number
     recurring: true
     directory?: string
+    workspaceID?: string
   } {
     return {
       id: "a0000001",
@@ -213,7 +217,16 @@ describe("location 归属与并发写入", () => {
       createdAt: Date.now(),
       recurring: true,
       ...(directory === undefined ? {} : { directory }),
+      ...(workspaceID === undefined ? {} : { workspaceID }),
     }
+  }
+
+  /** 输入：内存存储；输出：存档里第一条任务的位置字段。 */
+  function savedLocation(memory: MemoryStore): { directory?: string; workspaceID?: string } | undefined {
+    const file = memory.values.get(scheduleKey(SESSION)) as
+      | { jobs?: { directory?: string; workspaceID?: string }[] }
+      | undefined
+    return file?.jobs?.[0]
   }
 
   it("不加载别的 location 写入的任务", async () => {
@@ -234,10 +247,84 @@ describe("location 归属与并发写入", () => {
     expect(store.listJobs(SESSION)).toHaveLength(1)
   })
 
+  it("会话 move 后按新位置恢复旧 durable 任务并改写存档位置", async () => {
+    const memory = new MemoryStore()
+    memory.values.set(scheduleKey(SESSION), { version: 1, jobs: [storedJob("/old", "ws_a")] })
+    const store = createSchedulingStore(memory, {
+      directory: "/new",
+      workspaceID: "ws_b",
+      sessionLocation: () => Promise.resolve({ directory: "/new", workspaceID: "ws_b" }),
+    })
+
+    await store.load()
+
+    expect(store.listJobs(SESSION)).toHaveLength(1)
+    expect(savedLocation(memory)).toMatchObject({ directory: "/new", workspaceID: "ws_b" })
+  })
+
+  it("非归属实例不加载也不改写 move 走的任务", async () => {
+    const memory = new MemoryStore()
+    memory.values.set(scheduleKey(SESSION), { version: 1, jobs: [storedJob("/old", "ws_a")] })
+    const store = createSchedulingStore(memory, {
+      directory: "/old",
+      workspaceID: "ws_a",
+      sessionLocation: () => Promise.resolve({ directory: "/new", workspaceID: "ws_b" }),
+    })
+
+    await store.load()
+
+    expect(store.listJobs(SESSION)).toHaveLength(0)
+    expect(savedLocation(memory)).toMatchObject({ directory: "/old", workspaceID: "ws_a" })
+  })
+
+  it("同目录 workspaceID 变化时新实例接管并改写工作区", async () => {
+    const memory = new MemoryStore()
+    memory.values.set(scheduleKey(SESSION), { version: 1, jobs: [storedJob("/work", "ws_a")] })
+    const store = createSchedulingStore(memory, {
+      directory: "/work",
+      workspaceID: "ws_b",
+      sessionLocation: () => Promise.resolve({ directory: "/work", workspaceID: "ws_b" }),
+    })
+
+    await store.load()
+
+    expect(store.listJobs(SESSION)).toHaveLength(1)
+    expect(savedLocation(memory)).toMatchObject({ directory: "/work", workspaceID: "ws_b" })
+  })
+
+  it("同目录旧工作区实例不加载也不改写已换工作区的任务", async () => {
+    const memory = new MemoryStore()
+    memory.values.set(scheduleKey(SESSION), { version: 1, jobs: [storedJob("/work", "ws_a")] })
+    const store = createSchedulingStore(memory, {
+      directory: "/work",
+      workspaceID: "ws_a",
+      sessionLocation: () => Promise.resolve({ directory: "/work", workspaceID: "ws_b" }),
+    })
+
+    await store.load()
+
+    expect(store.listJobs(SESSION)).toHaveLength(0)
+    expect(savedLocation(memory)).toMatchObject({ directory: "/work", workspaceID: "ws_a" })
+  })
+
+  it("旧存档没有 workspaceID 时仍按目录加载", async () => {
+    const memory = new MemoryStore()
+    memory.values.set(scheduleKey(SESSION), { version: 1, jobs: [storedJob("/work")] })
+    const store = createSchedulingStore(memory, {
+      directory: "/work",
+      workspaceID: "ws_b",
+      sessionLocation: () => Promise.resolve({ directory: "/work", workspaceID: "ws_b" }),
+    })
+
+    await store.load()
+
+    expect(store.listJobs(SESSION)).toHaveLength(1)
+  })
+
   it("会话已不存在时清掉孤儿 key", async () => {
     const { memory, store } = makeStore({
       directory: "/mine",
-      sessionDirectory: () => Promise.resolve(null),
+      sessionLocation: () => Promise.resolve(null),
     })
     memory.values.set(scheduleKey("ses_gone"), { version: 1, jobs: [storedJob("/mine")] })
 
@@ -249,7 +336,7 @@ describe("location 归属与并发写入", () => {
   it("会话查询失败时不删数据", async () => {
     const { memory, store } = makeStore({
       directory: "/mine",
-      sessionDirectory: () => Promise.resolve(undefined),
+      sessionLocation: () => Promise.resolve(undefined),
     })
     memory.values.set(scheduleKey(SESSION), { version: 1, jobs: [storedJob("/mine")] })
 

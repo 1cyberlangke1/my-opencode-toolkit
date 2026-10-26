@@ -38,6 +38,22 @@ export type Messages = {
     readonly showCache: string
     readonly showTools: string
     readonly showSubagents: string
+    /** 主菜单最后一项：打开更新检查。 */
+    readonly checkUpdates: string
+  }
+  /** 更新检查与启动更新的文案。 */
+  readonly update: {
+    readonly title: string
+    readonly current: string
+    readonly latest: string
+    readonly upToDate: string
+    readonly available: string
+    readonly failed: string
+    readonly updateNow: string
+    readonly checkAgain: string
+    readonly close: string
+    readonly started: string
+    readonly startFailed: string
   }
   readonly panel: {
     readonly goal: string

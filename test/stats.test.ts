@@ -80,19 +80,19 @@ describe("buildStats", () => {
       input: 132,
       output: 25,
       cached: 30,
+      lastTool: "read",
       tools: { read: 1 },
     })
   })
 
-  it("读取失败按空统计处理", async () => {
+  it("读取失败返回 undefined，调用方不得当成空历史", async () => {
     const ctx = {
       session: {
         context: () => Promise.reject(new Error("boom")),
         list: () => Promise.reject(new Error("boom")),
       },
     } as unknown as Plugin.Context
-    const stats = await buildStats(ctx, SESSION)
-    expect(stats).toEqual({ steps: 0, input: 0, output: 0, cached: 0, tools: {} })
+    await expect(buildStats(ctx, SESSION)).resolves.toBeUndefined()
   })
 })
 
