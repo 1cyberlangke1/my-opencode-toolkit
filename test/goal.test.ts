@@ -124,27 +124,26 @@ describe("goal controller", () => {
     expect(resumed?.status).toBe("active")
   })
 
-  it("同一阻塞原因连续三次才 blocked", async () => {
+  it("markBlocked 一次就进入 blocked 并保留原因", async () => {
     const store = new MemoryStore()
     const c = controller(store)
     await c.setGoal(SESSION, "x")
 
-    expect((await c.markBlocked(SESSION, "no network"))?.status).toBe("active")
-    expect((await c.markBlocked(SESSION, "no network"))?.status).toBe("active")
-    const third = await c.markBlocked(SESSION, "no network")
-    expect(third?.status).toBe("blocked")
-    expect(third?.blockedStreak).toBe(3)
+    // 模型调用 update_goal status="blocked" 是显式决定：一次就静默，不再要求连续三次。
+    const blocked = await c.markBlocked(SESSION, "no network")
+    expect(blocked?.status).toBe("blocked")
+    expect(blocked?.lastBlockedReason).toBe("no network")
   })
 
-  it("不同阻塞原因重置计数", async () => {
+  it("不同原因时更新最近一次原因", async () => {
     const store = new MemoryStore()
     const c = controller(store)
     await c.setGoal(SESSION, "x")
     await c.markBlocked(SESSION, "a")
-    await c.markBlocked(SESSION, "a")
+    // 已 blocked 的目标不再被改写：保持首次原因，状态不变。
     const other = await c.markBlocked(SESSION, "b")
-    expect(other?.status).toBe("active")
-    expect(other?.blockedStreak).toBe(1)
+    expect(other?.status).toBe("blocked")
+    expect(other?.lastBlockedReason).toBe("a")
   })
 
   it("完成后清掉阻塞记录", async () => {
@@ -188,20 +187,15 @@ describe("goal controller", () => {
     expect(limited?.blockedStreak).toBeUndefined()
   })
 
-  it("已经 blocked 后 markBlocked 不再改计数", async () => {
+  it("已经 blocked 后 markBlocked 保留首次原因", async () => {
     const store = new MemoryStore()
     const c = controller(store)
     await c.setGoal(SESSION, "x")
     await c.markBlocked(SESSION, "a")
-    await c.markBlocked(SESSION, "a")
-    const blocked = await c.markBlocked(SESSION, "a")
-    expect(blocked?.status).toBe("blocked")
 
     const after = await c.markBlocked(SESSION, "b")
     expect(after?.status).toBe("blocked")
-    expect(after?.blockedStreak).toBe(3)
     expect(after?.lastBlockedReason).toBe("a")
-    expect(after?.updatedAt).toBe(blocked?.updatedAt)
   })
 
   it("只给 active 目标记账", async () => {

@@ -77,7 +77,7 @@ export const DEFAULT_SETTINGS: Settings = {
   goal: { enabled: true, showInSidebar: true },
   scheduling: { enabled: true, showInSidebar: true },
   sidebar: {
-    showTools: true,
+    showTools: false,
     showSubagents: true,
   },
   contextStats: {

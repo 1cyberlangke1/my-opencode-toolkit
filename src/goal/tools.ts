@@ -21,7 +21,8 @@ const DESCRIPTION_UPDATE =
   "Update the status of the current session's goal. " +
   'Use "paused" to pause an active goal, "active" to resume a paused/completed goal, ' +
   '"cleared" to delete it, "complete" when it is achieved, or "blocked" when the same blocking ' +
-  "condition has repeated for at least three consecutive goal turns. " +
+  "condition has repeated for at least three consecutive goal turns (a single call immediately " +
+  "stops continuations until resumed). " +
   'When you believe the goal has been achieved, first perform a completion audit against the actual ' +
   'current state (files, tests, command output), then call update_goal with status "complete".'
 

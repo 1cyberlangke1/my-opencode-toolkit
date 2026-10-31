@@ -2,9 +2,6 @@ import type { JsonStore } from "../shared/json.ts"
 import { clearGoal, createGoal, nowSeconds, readGoal, setGoalStatus, withGoalLock, writeGoal } from "./store.ts"
 import type { Goal } from "./types.ts"
 
-/** 同一阻塞原因连续出现多少次才判定为 blocked。 */
-export const BLOCKED_STREAK_REQUIRED = 3
-
 /** 一次记账的增量。 */
 export type GoalUsage = {
   readonly tokens: number
@@ -77,17 +74,15 @@ export function createGoalController(store: JsonStore): GoalController {
     async markBlocked(sessionID, reason) {
       const existing = await readGoal(store, sessionID)
       if (existing === null) return null
-      // 只有 active 目标能被标记阻塞；paused/complete/blocked/budget_limited 原样返回，不写计数。
+      // 只有 active 目标能被标记阻塞；paused/complete/blocked/budget_limited 原样返回。
+      // 模型调 update_goal status="blocked" 是显式决定，一次就静默；
+      // 什么时候该报 blocked 由提示词里的规则约束（同一阻塞重复出现时），控制器不做二次判定。
       if (existing.status !== "active") return existing
 
-      const sameReason = existing.lastBlockedReason === reason
-      const streak = sameReason ? (existing.blockedStreak ?? 1) + 1 : 1
-      const status = streak >= BLOCKED_STREAK_REQUIRED ? "blocked" : existing.status
       const updated: Goal = {
         ...existing,
-        status,
+        status: "blocked",
         lastBlockedReason: reason,
-        blockedStreak: streak,
         updatedAt: nowSeconds(),
       }
       await writeGoal(store, updated)

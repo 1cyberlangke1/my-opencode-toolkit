@@ -76,7 +76,12 @@ function fakeContext(panel: PanelData = PANEL): Context {
 
 /** 输入：语言 + 面板；输出：挂载好的侧栏。 */
 async function mount(lang: "zh" | "en", panel: PanelData = PANEL) {
-  const [settings] = createSignal<Settings>({ ...DEFAULT_SETTINGS, lang })
+  const [settings] = createSignal<Settings>({
+    ...DEFAULT_SETTINGS,
+    lang,
+    // 多数用例断言工具分区内容；默认关闭的行为由 showTools 默认值用例单独验证。
+    sidebar: { ...DEFAULT_SETTINGS.sidebar, showTools: true },
+  })
   return testRender(
     () => (
       <box gap={1}>
@@ -221,6 +226,37 @@ describe("sidebar panel", () => {
     expect(frame).not.toContain("none")
 
     await app.dispose()
+  })
+
+  test("showTools 默认关闭：不显式开启时工具分区不渲染", async () => {
+    // DEFAULT_SETTINGS.sidebar.showTools=false；mount() 显式开了 true，这里用默认值验证。
+    const [settings] = createSignal<Settings>({ ...DEFAULT_SETTINGS, lang: "en" })
+    const app = await testRender(
+      () => (
+        <box gap={1}>
+          <For each={SECTIONS}>
+            {(section) => (
+              <Sidebar
+                context={fakeContext(PANEL)}
+                sessionID="ses_test"
+                settings={settings}
+                copy={() => resolveMessages("en")}
+                section={section}
+              />
+            )}
+          </For>
+        </box>
+      ),
+      { width: 80, height: 20 },
+    )
+    try {
+      const frame = await app.waitForFrame((text) => text.includes("Goal"))
+      expect(frame).toContain("Goal")
+      expect(frame).not.toContain("Tools (2)")
+      expect(frame).not.toContain("[read](2)")
+    } finally {
+      await app.dispose()
+    }
   })
 
   test("中文设置渲染中文标签", async () => {
