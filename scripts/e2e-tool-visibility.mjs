@@ -20,6 +20,12 @@ const root = await mkdtemp(join(tmpdir(), "opencode-e2e-tools-"))
 for (const dir of ["config", "data", "state", "cache", "xdg-config"]) {
   await mkdir(join(root, dir), { recursive: true })
 }
+// 默认 goal 已关闭；用例第一段要验证「开启时父会话可见」，先显式打开，第二段再写回关闭。
+await writeFile(
+  join(root, "config", "my-opencode-toolkit.json"),
+  `${JSON.stringify({ goal: { enabled: true }, scheduling: { enabled: true } }, null, 2)}\n`,
+  "utf8",
+)
 
 const password = randomBytes(24).toString("base64url")
 const basic = `Basic ${Buffer.from(`opencode:${password}`).toString("base64")}`

@@ -126,9 +126,12 @@ export default Plugin.define({
         const next = normalizeSettings(input)
         await saveSettings(ctx, next, layers)
         // 命令描述在注册时生成；语言变了必须重注册，否则 /goal /cron /loop 一直显示旧语言。
-        await Promise.all([goal.refreshCommands(next.lang), scheduling.refreshCommands(next.lang)]).catch(
-          () => undefined,
-        )
+        // goal 开关变化要动态注册/注销命令与工具：关 = 命令面板、工具表、续作全部消失。
+        await Promise.all([
+          goal.setEnabled(next.goal.enabled),
+          goal.refreshCommands(next.lang),
+          scheduling.refreshCommands(next.lang),
+        ]).catch(() => undefined)
         return loadSettings(ctx, layers)
       },
       panelGet: async (input) => {

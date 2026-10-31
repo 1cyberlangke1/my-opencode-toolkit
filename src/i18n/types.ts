@@ -19,6 +19,8 @@ export type Messages = {
     readonly goal: string
     readonly scheduling: string
     readonly sidebar: string
+    /** 标记弃用功能的后缀（如 goal）。 */
+    readonly deprecatedSuffix: string
     readonly contextStats: string
     readonly function: string
     readonly showLine: string

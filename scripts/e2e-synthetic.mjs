@@ -9,7 +9,7 @@
  */
 
 import { strict as assert } from "node:assert"
-import { mkdtemp, mkdir, rm } from "node:fs/promises"
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { randomBytes } from "node:crypto"
@@ -55,6 +55,12 @@ const dataDir = join(root, "data")
 for (const dir of [configDir, dataDir, join(root, "xdg-config"), join(root, "state"), join(root, "cache")]) {
   await mkdir(dir, { recursive: true })
 }
+// goal 现在默认关闭；e2e 验证的就是 goal 续作，显式打开。
+await writeFile(
+  join(configDir, "my-opencode-toolkit.json"),
+  `${JSON.stringify({ goal: { enabled: true } }, null, 2)}\n`,
+  "utf8",
+)
 
 const password = randomBytes(24).toString("base64url")
 const basic = `Basic ${Buffer.from(`opencode:${password}`).toString("base64")}`

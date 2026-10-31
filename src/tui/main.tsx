@@ -29,8 +29,8 @@ type MenuChoice =
   | "notifications"
   | "update"
 
-/** 侧栏子菜单条目：目标/定时任务的侧栏开关也归到这里。 */
-type SidebarChoice = "goal" | "scheduling" | "showTools" | "showSubagents"
+/** 侧栏子菜单条目：工具/子代理显示开关；目标/定时的显示开关在各自选项卡里。 */
+type SidebarChoice = "showTools" | "showSubagents"
 
 /** 上下文统计子菜单条目。 */
 type ContextStatsChoice = "enabled" | "showInput" | "showOutput" | "showCache" | "showHitRate"
@@ -276,11 +276,17 @@ export function Sidebar(props: {
           }
         >
           <box flexDirection="column" gap={0}>
-            {sectionHeader(props.copy().panel.goal, goalOpen(), () => {
-              setGoalOpen(!goalOpen())
-            }, (
-              <text fg={lampColor(goalStatusColor(goal()?.status ?? ""), goal()?.status === "active")}>●</text>
-            ))}
+            {sectionHeader(
+              // 官方已内置 /goal，本插件的目标功能已弃用；标题标记提示用户迁移。
+              `${props.copy().panel.goal}${props.copy().menu.deprecatedSuffix}`,
+              goalOpen(),
+              () => {
+                setGoalOpen(!goalOpen())
+              },
+              (
+                <text fg={lampColor(goalStatusColor(goal()?.status ?? ""), goal()?.status === "active")}>●</text>
+              ),
+            )}
             <Show when={goalOpen()}>
               <box paddingLeft={2} flexDirection="column" gap={0}>
                 {labelRow(props.copy().panel.goal, truncate(goal()?.objective ?? "", 22))}
@@ -601,28 +607,34 @@ export default Plugin.define({
       for (;;) {
         const current = settings()
         const text = copy()
-        const choice = await context.ui.dialog.select<"enabled">({
-          title: key === "goal" ? text.menu.goal : text.menu.scheduling,
+        const choice = await context.ui.dialog.select<"enabled" | "showInSidebar">({
+          title:
+            key === "goal" ? `${text.menu.goal}${text.menu.deprecatedSuffix}` : text.menu.scheduling,
           options: [
             { title: text.menu.function, value: "enabled", footer: onOff(current[key].enabled) },
+            { title: text.menu.sidebar, value: "showInSidebar", footer: onOff(current[key].showInSidebar) },
           ],
         })
         if (choice === undefined) return
         await update(
-          key === "goal"
-            ? { ...current, goal: { ...current.goal, enabled: !current.goal.enabled } }
-            : { ...current, scheduling: { ...current.scheduling, enabled: !current.scheduling.enabled } },
+          choice === "enabled"
+            ? key === "goal"
+              ? { ...current, goal: { ...current.goal, enabled: !current.goal.enabled } }
+              : { ...current, scheduling: { ...current.scheduling, enabled: !current.scheduling.enabled } }
+            : key === "goal"
+              ? { ...current, goal: { ...current.goal, showInSidebar: !current.goal.showInSidebar } }
+              : { ...current, scheduling: { ...current.scheduling, showInSidebar: !current.scheduling.showInSidebar } },
         )
       }
     }
 
-    /** 目标子菜单：只有功能开关；侧栏显示在侧栏子菜单。 */
+    /** 目标子菜单：功能与侧栏显示都在这里。 */
     const chooseGoal = (): Promise<void> => chooseFeature("goal")
 
-    /** 定时任务子菜单：功能与侧栏显示独立。 */
+    /** 定时任务子菜单：功能与侧栏显示都在这里。 */
     const chooseScheduling = (): Promise<void> => chooseFeature("scheduling")
 
-    /** 侧栏显示子菜单。 */
+    /** 侧栏显示子菜单：目标/定时任务的显示开关已移入各自选项卡。 */
     const chooseSidebar = async (): Promise<void> => {
       for (;;) {
         const current = settings()
@@ -630,24 +642,11 @@ export default Plugin.define({
         const choice = await context.ui.dialog.select<SidebarChoice>({
           title: text.menu.sidebar,
           options: [
-            { title: text.menu.goal, value: "goal", footer: onOff(current.goal.showInSidebar) },
-            { title: text.menu.scheduling, value: "scheduling", footer: onOff(current.scheduling.showInSidebar) },
             { title: text.menu.showTools, value: "showTools", footer: onOff(current.sidebar.showTools) },
             { title: text.menu.showSubagents, value: "showSubagents", footer: onOff(current.sidebar.showSubagents) },
           ],
         })
         if (choice === undefined) return
-        if (choice === "goal") {
-          await update({ ...current, goal: { ...current.goal, showInSidebar: !current.goal.showInSidebar } })
-          continue
-        }
-        if (choice === "scheduling") {
-          await update({
-            ...current,
-            scheduling: { ...current.scheduling, showInSidebar: !current.scheduling.showInSidebar },
-          })
-          continue
-        }
         await update({ ...current, sidebar: { ...current.sidebar, [choice]: !current.sidebar[choice] } })
       }
     }

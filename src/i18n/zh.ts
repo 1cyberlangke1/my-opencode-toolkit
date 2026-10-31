@@ -18,6 +18,7 @@ export const zh: Messages = {
     goal: "目标",
     scheduling: "定时任务",
     sidebar: "侧栏",
+  deprecatedSuffix: "（已弃用）",
     contextStats: "上下文统计",
     function: "功能开关",
     showLine: "显示这一行",

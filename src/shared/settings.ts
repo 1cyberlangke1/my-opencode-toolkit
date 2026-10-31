@@ -61,7 +61,7 @@ export type Settings = {
 /**
  * 默认设置。
  *
- * 预期：通知默认开、Goal 默认开、定时默认开、侧栏默认开；
+ * 预期：通知默认开、Goal 默认关（官方 /goal 已内置，本功能弃用）、定时默认开、侧栏默认开；
  *       语言跟随系统；侧栏默认展开。
  */
 export const DEFAULT_SETTINGS: Settings = {
@@ -74,7 +74,7 @@ export const DEFAULT_SETTINGS: Settings = {
     onPermission: true,
     onlyMainSession: true,
   },
-  goal: { enabled: true, showInSidebar: true },
+  goal: { enabled: false, showInSidebar: true },
   scheduling: { enabled: true, showInSidebar: true },
   sidebar: {
     showTools: false,

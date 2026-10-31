@@ -81,6 +81,8 @@ async function mount(lang: "zh" | "en", panel: PanelData = PANEL) {
     lang,
     // 多数用例断言工具分区内容；默认关闭的行为由 showTools 默认值用例单独验证。
     sidebar: { ...DEFAULT_SETTINGS.sidebar, showTools: true },
+    // goal 默认关闭（官方 /goal 已内置）；渲染用例显式开启，验证的是侧栏渲染本身。
+    goal: { ...DEFAULT_SETTINGS.goal, enabled: true },
   })
   return testRender(
     () => (
@@ -133,7 +135,8 @@ describe("sidebar panel", () => {
     expect(frame).toContain("one shot")
     expect(frame).toContain("loop prompt")
     expect(frame).toContain("job prompt")
-    expect(frame).toContain("Goal ●")
+    // goal 分区标题带弃用后缀。
+    expect(frame).toContain("Goal (deprecated) ●")
     expect(frame).toContain("Subagents (● 1)")
     expect(frame).toContain("review")
     expect(frame).toContain("Tools (2)")
@@ -250,8 +253,9 @@ describe("sidebar panel", () => {
       { width: 80, height: 20 },
     )
     try {
-      const frame = await app.waitForFrame((text) => text.includes("Goal"))
-      expect(frame).toContain("Goal")
+      // goal 默认关闭不渲染，等子代理分区出现即可。
+      const frame = await app.waitForFrame((text) => text.includes("Subagents"))
+      expect(frame).not.toContain("Goal")
       expect(frame).not.toContain("Tools (2)")
       expect(frame).not.toContain("[read](2)")
     } finally {

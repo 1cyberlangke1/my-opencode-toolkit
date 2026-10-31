@@ -18,6 +18,7 @@ export const en: Messages = {
     goal: "Goal",
     scheduling: "Scheduling",
     sidebar: "Sidebar",
+  deprecatedSuffix: " (deprecated)",
     contextStats: "Context stats",
     function: "Feature",
     showLine: "Show this line",

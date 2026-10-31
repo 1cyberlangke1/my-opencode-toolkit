@@ -156,7 +156,7 @@ describe("tui plugin setup", () => {
     await cleanup?.()
   })
 
-  test("侧栏子菜单没有全局开关", async () => {
+  test("侧栏子菜单只有工具/子代理显示开关", async () => {
     const { context, layers, selects } = fakeContext({ picks: ["sidebar", undefined, undefined] })
     const cleanup = await plugin.setup(context)
 
@@ -165,12 +165,8 @@ describe("tui plugin setup", () => {
 
     expect(footerOf(selects[0], "sidebar")).toBeUndefined()
     expect(selects[1]?.title).toMatch(/Sidebar|侧栏/)
-    expect(selects[1]?.options.map((option) => option.value)).toEqual([
-      "goal",
-      "scheduling",
-      "showTools",
-      "showSubagents",
-    ])
+    // 目标/定时的侧栏开关已移入各自选项卡，侧栏子菜单只剩工具/子代理。
+    expect(selects[1]?.options.map((option) => option.value)).toEqual(["showTools", "showSubagents"])
 
     await cleanup?.()
   })
@@ -193,7 +189,8 @@ describe("tui plugin setup", () => {
     await Bun.sleep(20)
 
     expect(saved).toHaveLength(1)
-    expect(saved[0]?.goal.enabled).toBe(false)
+    // 默认 goal.enabled=false，切换后变 true。
+    expect(saved[0]?.goal.enabled).toBe(true)
     expect(saved[0]?.enabled).toBe(true)
 
     await cleanup?.()
@@ -209,7 +206,7 @@ describe("tui plugin setup", () => {
     layers[0]?.commands?.[0]?.run()
     await Bun.sleep(20)
 
-    // 菜单重开后 goal 的 footer 仍是默认的“开”，说明失败后回滚了乐观更新。
+    // 菜单重开后 goal 的 footer 仍是默认的“关”，说明失败后回滚了乐观更新。
     expect(selects).toHaveLength(4)
     expect(footerOf(selects.at(-1), "goal")).toBe(footerOf(selects[0], "goal"))
 
