@@ -46,6 +46,17 @@ export type ContextStatsSettings = {
   readonly showHitRate: boolean
 }
 
+/** 时间感知：每隔 N 步向会话注入一次当前时间。 */
+export type TimeSettings = {
+  readonly enabled: boolean
+  /** 每隔多少步注入一次；最小 1。 */
+  readonly intervalSteps: number
+  /** 时间格式模板；token：YYYY MM DD HH mm ss。 */
+  readonly format: string
+  /** IANA 时区；空 = 宿主时区；非法值回落宿主。 */
+  readonly timezone: string
+}
+
 /** 插件全部设置。 */
 export type Settings = {
   readonly lang: Lang
@@ -56,6 +67,7 @@ export type Settings = {
   readonly scheduling: SchedulingSettings
   readonly sidebar: SidebarSettings
   readonly contextStats: ContextStatsSettings
+  readonly time: TimeSettings
 }
 
 /**
@@ -87,6 +99,12 @@ export const DEFAULT_SETTINGS: Settings = {
     showCache: true,
     showHitRate: true,
   },
+  time: {
+    enabled: true,
+    intervalSteps: 3,
+    format: "YYYY-MM-DD HH:mm:ss",
+    timezone: "",
+  },
 }
 
 /**
@@ -101,6 +119,7 @@ export function normalizeSettings(raw: unknown): Settings {
   const scheduling = asRecord(record["scheduling"]) ?? {}
   const sidebar = asRecord(record["sidebar"]) ?? {}
   const contextStats = asRecord(record["contextStats"]) ?? {}
+  const time = asRecord(record["time"]) ?? {}
   const legacyShowCache = typeof sidebar["showCache"] === "boolean" ? sidebar["showCache"] : undefined
 
   return {
@@ -138,6 +157,12 @@ export function normalizeSettings(raw: unknown): Settings {
       showCache: readBoolean(contextStats["showCache"], DEFAULT_SETTINGS.contextStats.showCache),
       showHitRate: readBoolean(contextStats["showHitRate"], DEFAULT_SETTINGS.contextStats.showHitRate),
     },
+    time: {
+      enabled: readBoolean(time["enabled"], DEFAULT_SETTINGS.time.enabled),
+      intervalSteps: readIntervalSteps(time["intervalSteps"], DEFAULT_SETTINGS.time.intervalSteps),
+      format: readString(time["format"], DEFAULT_SETTINGS.time.format),
+      timezone: readString(time["timezone"], DEFAULT_SETTINGS.time.timezone),
+    },
   }
 }
 
@@ -156,4 +181,23 @@ function readBoolean(value: unknown, fallback: boolean): boolean {
  */
 function readLang(value: unknown, fallback: Lang): Lang {
   return value === "auto" || value === "zh" || value === "en" ? value : fallback
+}
+
+/**
+ * 输入：任意值 + 默认步数。
+ * 输出：正整数，向下取整；0、负数、NaN、非数字回退默认值。
+ */
+function readIntervalSteps(value: unknown, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback
+  const rounded = Math.floor(value)
+  return rounded >= 1 ? rounded : fallback
+}
+
+/**
+ * 输入：任意值 + 默认字符串。
+ * 输出：非空字符串原样返回；其余回退默认值。
+ * 预期：时间格式与时区都是自由文本，不做语义校验（非法时区在渲染时回落宿主）。
+ */
+function readString(value: unknown, fallback: string): string {
+  return typeof value === "string" ? value : fallback
 }

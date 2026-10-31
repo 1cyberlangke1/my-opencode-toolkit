@@ -19,6 +19,7 @@ import { normalizeSettings } from "./shared/settings.ts"
 import { buildStats, buildSubagentDetail, hitRatePercent, listSubagents, tokenParts } from "./stats.ts"
 import type { SessionStats } from "./stats.ts"
 import { loadStats, removeStats, saveStats } from "./stats-store.ts"
+import { createTimePulse } from "./time/index.ts"
 
 /** 输入：RPC 参数；输出：配置层路径。 */
 function readLayers(input: unknown): readonly string[] | undefined {
@@ -258,6 +259,13 @@ export default Plugin.define({
 
     const notifier = createNotifier({ ctx, roles })
 
+    // 时间感知：step.ended 计数，满 N 步注入一条当前时间（resume:false 不触发新轮）。
+    const timePulse = createTimePulse(ctx, roles, async () => {
+      const settings = await loadSettings(ctx)
+      if (!settings.enabled) return { enabled: false, intervalSteps: 1, format: "", timezone: "" }
+      return settings.time
+    })
+
     // 系统通知可能跑十几秒（PowerShell 探测）；必须在后台发，不能阻塞工具执行与事件分发。
     const toolBefore = await ctx.tool.hook("execute.before", (input) => {
       void notifier
@@ -287,6 +295,7 @@ export default Plugin.define({
         return Promise.resolve()
       },
       (event) => goal.handle(event),
+      (event) => timePulse.handle(event),
       (event) => {
         // goal 记账发生在 step.ended；记账后再刷新，避免 TUI 读到旧 tokensUsed。
         if (event.type === "session.step.ended" || event.type === "session.step.failed") {
@@ -324,6 +333,8 @@ export default Plugin.define({
           const sessionID = readEventSessionID(event)
           if (sessionID === undefined) return Promise.resolve()
           // 与重建/增量同链：删除排在它们之后，先落墓碑再清存档，迟到保存会被墓碑挡住。
+          timePulse.forget(sessionID)
+          roles.forget(sessionID)
           return runSerial(STATS_CHAINS, sessionID, async () => {
             statsDeleted.add(sessionID)
             statsRebuilt.delete(sessionID)
@@ -350,6 +361,7 @@ export default Plugin.define({
 
     return async () => {
       events.abort()
+      timePulse.dispose()
       notifier.dispose()
       await toolAfter.dispose()
       await toolBefore.dispose()

@@ -49,6 +49,12 @@ OpenCode v2 插件，提供系统桌面通知、持久目标追踪（Goal）、�
 - 支持循环任务（固定时间间隔或由模型动态决策下一次唤醒时机）。
 - 仅在会话空闲时触发，会话繁忙或有待处理的用户输入时自动顺延，避免打断交互。
 
+### 时间感知（Time）
+- 每隔 N 步（`time.intervalSteps`，默认 3）向会话注入一条当前时间的合成消息，模型随时知道现在几点。
+- 注入文本是纯格式化时间串（无语言前缀），格式模板与时区可在设置菜单自定义。
+- 注入不触发新一轮对话（`resume: false`），只在会话活跃的 step 边界搭车送达。
+- 子代理会话不注入；Plan 模式照常注入。
+
 ### TUI 状态面板
 - 在侧栏展示当前持久目标、生效中的定时任务、工具调用频次与子代理运行状态。
 - 在底部状态栏实时显示累计 Token 输入、输出、缓存及命中率。
@@ -99,6 +105,10 @@ OpenCode v2 插件，提供系统桌面通知、持久目标追踪（Goal）、�
 | `sidebar.showTools` | `true` | 是否在侧栏展示工具调用计数 |
 | `sidebar.showSubagents` | `true` | 是否在侧栏展示子代理详情 |
 | `contextStats.enabled` | `true` | 是否在底部状态栏展示 Token 统计 |
+| `time.enabled` | `true` | 是否启用时间感知注入 |
+| `time.intervalSteps` | `3` | 每隔多少步向会话注入一次当前时间 |
+| `time.format` | `YYYY-MM-DD HH:mm:ss` | 时间格式模板（token：`YYYY MM DD HH mm ss`） |
+| `time.timezone` | （空） | IANA 时区名；空 = 宿主时区，非法值回落宿主 |
 
 ## 数据与隐私
 

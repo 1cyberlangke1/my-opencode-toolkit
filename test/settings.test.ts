@@ -37,7 +37,7 @@ describe("normalizeSettings", () => {
   it("丢弃未知字段", () => {
     const got = normalizeSettings({ unknown: true, notification: { nope: 1 } })
     expect(Object.keys(got).sort()).toEqual(
-      ["contextStats", "enabled", "goal", "lang", "notification", "scheduling", "sidebar"].sort(),
+      ["contextStats", "enabled", "goal", "lang", "notification", "scheduling", "sidebar", "time"].sort(),
     )
     expect(Object.keys(got.notification).sort()).toEqual(
       ["enabled", "onComplete", "onPermission", "onQuestion", "onlyMainSession"].sort(),

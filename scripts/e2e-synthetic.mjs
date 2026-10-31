@@ -56,9 +56,10 @@ for (const dir of [configDir, dataDir, join(root, "xdg-config"), join(root, "sta
   await mkdir(dir, { recursive: true })
 }
 // goal 现在默认关闭；e2e 验证的就是 goal 续作，显式打开。
+// time 关掉：goal 续作 e2e 按请求数断言，time 的周期注入会当成多余请求——功能测试互不干扰。
 await writeFile(
   join(configDir, "my-opencode-toolkit.json"),
-  `${JSON.stringify({ goal: { enabled: true } }, null, 2)}\n`,
+  `${JSON.stringify({ goal: { enabled: true }, time: { enabled: false } }, null, 2)}\n`,
   "utf8",
 )
 

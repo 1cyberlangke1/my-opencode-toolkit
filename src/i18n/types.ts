@@ -42,6 +42,17 @@ export type Messages = {
     readonly showSubagents: string
     /** 主菜单最后一项：打开更新检查。 */
     readonly checkUpdates: string
+    /** 时间感知子菜单。 */
+    readonly time: string
+    readonly timeEnabled: string
+    readonly timeInterval: string
+    readonly timeFormat: string
+    readonly timeFormatPrompt: string
+    readonly timeTimezone: string
+    readonly timeTimezonePrompt: string
+    /** 时间设置非法时的提示（间隔步数非正整数 / 时区不是合法 IANA 名）。 */
+    readonly timeInvalidInterval: string
+    readonly timeInvalidTimezone: string
   }
   /** 更新检查与启动更新的文案。 */
   readonly update: {

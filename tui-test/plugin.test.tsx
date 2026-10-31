@@ -37,6 +37,7 @@ type ToastHandler = (event: {
  */
 function fakeContext(options: {
   readonly picks?: readonly (string | undefined)[]
+  readonly prompts?: readonly (string | undefined)[]
   readonly onSettingsSet?: (next: Settings) => Promise<Settings>
 }): {
   readonly context: Context
@@ -45,13 +46,16 @@ function fakeContext(options: {
   readonly selects: SelectCall[]
   readonly toasts: ToastCall[]
   readonly toastHandlers: ToastHandler[]
+  readonly promptCalls: { title: string; value?: string }[]
 } {
   const slots: string[] = []
   const layers: RegisteredLayer[] = []
   const selects: SelectCall[] = []
   const toasts: ToastCall[] = []
   const toastHandlers: ToastHandler[] = []
+  const promptCalls: { title: string; value?: string }[] = []
   let pickIndex = 0
+  let promptIndex = 0
 
   const context = {
     theme: {
@@ -90,6 +94,10 @@ function fakeContext(options: {
           selects.push(call)
           return Promise.resolve(options.picks?.[pickIndex++])
         },
+        prompt: (call: { title: string; value?: string }) => {
+          promptCalls.push(call)
+          return Promise.resolve(options.prompts?.[promptIndex++])
+        },
       },
       toast: {
         show: (call: ToastCall) => {
@@ -114,7 +122,7 @@ function fakeContext(options: {
     },
   } as unknown as Context
 
-  return { context, slots, layers, selects, toasts, toastHandlers }
+  return { context, slots, layers, selects, toasts, toastHandlers, promptCalls }
 }
 
 /** 输入：对话框调用 + 条目值；输出：该条目的 footer。 */
@@ -232,6 +240,78 @@ describe("tui plugin setup", () => {
     // 不是本 TUI 认识的会话：事件来自别的 location，不能弹。
     toastHandlers[0]?.({ data: { reason: "planSkipped", kind: "cron", sessionID: "ses_other" } })
     expect(toasts).toHaveLength(2)
+
+    await cleanup?.()
+  })
+
+  test("主菜单含时间感知项，子菜单四项齐全", async () => {
+    const { context, layers, selects } = fakeContext({ picks: ["time", undefined, undefined] })
+    const cleanup = await plugin.setup(context)
+
+    layers[0]?.commands?.[0]?.run()
+    await Bun.sleep(20)
+
+    const zh = resolveMessages("zh")
+    const en = resolveMessages("en")
+    expect([zh.menu.time, en.menu.time]).toContain(selects[0]?.options.find((o) => o.value === "time")?.title)
+    expect(selects[1]?.title).toMatch(/Time awareness|时间感知/)
+    expect(selects[1]?.options.map((option) => option.value)).toEqual([
+      "enabled",
+      "intervalSteps",
+      "format",
+      "timezone",
+    ])
+
+    await cleanup?.()
+  })
+
+  test("时间子菜单：切换开关写回；非法间隔弹 toast 不写回；合法间隔写回", async () => {
+    // 开 → 非法间隔 "abc" → 合法间隔 "5" → Esc 退出。
+    const saved: Settings[] = []
+    const { context, layers, toasts } = fakeContext({
+      picks: ["time", "enabled", "intervalSteps", "intervalSteps", undefined],
+      prompts: ["abc", "5"],
+      onSettingsSet: (next) => {
+        saved.push(next)
+        return Promise.resolve(next)
+      },
+    })
+    const cleanup = await plugin.setup(context)
+    layers[0]?.commands?.[0]?.run()
+    await Bun.sleep(20)
+
+    // 开关写回一次；非法值被拦；合法值再写一次。
+    expect(saved).toHaveLength(2)
+    expect(saved[0]?.time.enabled).toBe(false)
+    expect(saved[1]?.time.intervalSteps).toBe(5)
+    const zh = resolveMessages("zh")
+    const en = resolveMessages("en")
+    expect([zh.menu.timeInvalidInterval, en.menu.timeInvalidInterval]).toContain(toasts[0]?.message)
+
+    await cleanup?.()
+  })
+
+  test("时间子菜单：格式模板与时区写回；非法时区弹 toast", async () => {
+    const saved: Settings[] = []
+    const { context, layers, toasts } = fakeContext({
+      // 开 → 格式输入 → 时区先输非法 → 再输合法 → Esc。
+      picks: ["time", "format", "timezone", "timezone", undefined],
+      prompts: ["HH:mm:ss", "Not/AZone", "Asia/Shanghai"],
+      onSettingsSet: (next) => {
+        saved.push(next)
+        return Promise.resolve(next)
+      },
+    })
+    const cleanup = await plugin.setup(context)
+    layers[0]?.commands?.[0]?.run()
+    await Bun.sleep(20)
+
+    expect(saved).toHaveLength(2)
+    expect(saved[0]?.time.format).toBe("HH:mm:ss")
+    expect(saved[1]?.time.timezone).toBe("Asia/Shanghai")
+    const zh = resolveMessages("zh")
+    const en = resolveMessages("en")
+    expect([zh.menu.timeInvalidTimezone, en.menu.timeInvalidTimezone]).toContain(toasts[0]?.message)
 
     await cleanup?.()
   })

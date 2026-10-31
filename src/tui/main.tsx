@@ -27,7 +27,11 @@ type MenuChoice =
   | "sidebar"
   | "contextStats"
   | "notifications"
+  | "time"
   | "update"
+
+/** 时间感知子菜单条目。 */
+type TimeChoice = "enabled" | "intervalSteps" | "format" | "timezone"
 
 /** 侧栏子菜单条目：工具/子代理显示开关；目标/定时的显示开关在各自选项卡里。 */
 type SidebarChoice = "showTools" | "showSubagents"
@@ -703,6 +707,75 @@ export default Plugin.define({
 
     const chooseUpdates = createUpdateMenu(context, copy, { onResult: setUpdateResult })
 
+    /** 时间感知子菜单：开关 / 间隔步数 / 格式模板 / 时区。 */
+    const chooseTime = async (): Promise<void> => {
+      for (;;) {
+        const current = settings()
+        const text = copy()
+        const choice = await context.ui.dialog.select<TimeChoice>({
+          title: text.menu.time,
+          options: [
+            { title: text.menu.timeEnabled, value: "enabled", footer: onOff(current.time.enabled) },
+            { title: text.menu.timeInterval, value: "intervalSteps", footer: String(current.time.intervalSteps) },
+            { title: text.menu.timeFormat, value: "format", footer: current.time.format },
+            {
+              title: text.menu.timeTimezone,
+              value: "timezone",
+              footer: current.time.timezone.length > 0 ? current.time.timezone : text.menu.auto,
+            },
+          ],
+        })
+        if (choice === undefined) return
+        if (choice === "enabled") {
+          await update({
+            ...current,
+            time: { ...current.time, enabled: !current.time.enabled },
+          })
+          continue
+        }
+        if (choice === "intervalSteps") {
+          const raw = await context.ui.dialog.prompt({
+            title: text.menu.timeInterval,
+            value: String(current.time.intervalSteps),
+          })
+          if (raw === undefined) continue
+          const parsed = Number.parseInt(raw, 10)
+          if (!Number.isFinite(parsed) || parsed < 1 || String(parsed) !== raw.trim()) {
+            context.ui.toast.show({ message: text.menu.timeInvalidInterval, variant: "warning" })
+            continue
+          }
+          await update({ ...current, time: { ...current.time, intervalSteps: parsed } })
+          continue
+        }
+        if (choice === "format") {
+          const raw = await context.ui.dialog.prompt({
+            title: text.menu.timeFormatPrompt,
+            value: current.time.format,
+          })
+          if (raw === undefined || raw.trim().length === 0) continue
+          await update({ ...current, time: { ...current.time, format: raw.trim() } })
+          continue
+        }
+        const raw = await context.ui.dialog.prompt({
+          title: text.menu.timeTimezonePrompt,
+          value: current.time.timezone,
+        })
+        if (raw === undefined) continue
+        const trimmed = raw.trim()
+        if (trimmed.length === 0) {
+          await update({ ...current, time: { ...current.time, timezone: "" } })
+          continue
+        }
+        try {
+          new Intl.DateTimeFormat("en-US", { timeZone: trimmed })
+        } catch {
+          context.ui.toast.show({ message: text.menu.timeInvalidTimezone, variant: "warning" })
+          continue
+        }
+        await update({ ...current, time: { ...current.time, timezone: trimmed } })
+      }
+    }
+
     /** 主菜单：进入分类子菜单。 */
     const openMenu = async (): Promise<void> => {
       for (;;) {
@@ -717,6 +790,7 @@ export default Plugin.define({
             { title: text.menu.sidebar, value: "sidebar" },
             { title: text.menu.contextStats, value: "contextStats", footer: onOff(current.contextStats.enabled) },
             { title: text.menu.notifications, value: "notifications", footer: onOff(current.notification.enabled) },
+            { title: text.menu.time, value: "time", footer: onOff(current.time.enabled) },
             {
               value: "update",
               ...updateEntryState(text, updateResult(), {
@@ -736,6 +810,7 @@ export default Plugin.define({
         else if (choice === "sidebar") await chooseSidebar()
         else if (choice === "contextStats") await chooseContextStats()
         else if (choice === "notifications") await chooseNotifications()
+        else if (choice === "time") await chooseTime()
         else if (await chooseUpdates()) return
       }
     }
