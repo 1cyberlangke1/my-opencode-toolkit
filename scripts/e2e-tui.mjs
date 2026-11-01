@@ -138,11 +138,13 @@ try {
   await Bun.sleep(1_200)
   proc.terminal?.write("\r")
 
+  // 顶层是 功能 / 界面 / 更新 三项；功能与界面各自再进子菜单。
   const opened = await waitFor(
     (text) =>
       text.includes("my-opencode-toolkit") &&
-      (text.includes("通知") || text.includes("Notifications")) &&
-      (text.includes("侧栏") || text.includes("Sidebar")),
+      (text.includes("功能") || text.includes("Features")) &&
+      (text.includes("界面") || text.includes("Appearance")) &&
+      (text.includes("更新") || text.includes("Update")),
     12_000,
   )
   if (!opened) {
@@ -151,13 +153,36 @@ try {
     throw new Error("settings menu did not open")
   }
 
+  // 进「界面」子菜单：语言 / 侧栏 / 上下文统计。
+  proc.terminal?.write("\u001b[B")
+  await Bun.sleep(200)
+  proc.terminal?.write("\r")
+  const appearance = await waitFor(
+    (text) =>
+      (text.includes("语言") || text.includes("Language")) &&
+      (text.includes("侧栏") || text.includes("Sidebar")) &&
+      (text.includes("上下文统计") || text.includes("Context")),
+    8_000,
+  )
+  if (!appearance) {
+    console.log("=== screen tail ===")
+    console.log(plain().slice(-3000))
+    throw new Error("appearance submenu did not open")
+  }
+
+  // 顶层「功能」项的摘要行本身就列出四个功能开关，不再靠方向键进子菜单（宿主 select 的
+  // 选中位置会保留，方向键导航在不同版本里不稳定）。
   const text = plain()
   assert.ok(text.includes("my-opencode-toolkit"), "slash command name")
-  assert.ok(text.includes("设置") || text.includes("Settings"), "settings menu title")
-  assert.ok(text.includes("通知") || text.includes("Notifications"), "notification menu item")
-  assert.ok(text.includes("侧栏") || text.includes("Sidebar"), "sidebar menu item")
+  assert.ok(
+    (text.includes("目标") || text.includes("Goal")) &&
+      (text.includes("定时") || text.includes("Schedul")) &&
+      (text.includes("时间") || text.includes("Time")) &&
+      (text.includes("通知") || text.includes("Notifications")),
+    "features summary line",
+  )
 
-  console.log("case passed: real TUI loads plugin and opens settings menu")
+  console.log("case passed: real TUI loads plugin, top menu and appearance submenu")
 } finally {
   await cleanup()
 }

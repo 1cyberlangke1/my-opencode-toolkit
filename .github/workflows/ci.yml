@@ -68,3 +68,49 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # prepack 会跑 build:tui，产物口径与发布一致。
       - run: bun scripts/ci-plugin-load.mjs
+
+  # 真实 opencode + 假 provider 的端到端链路，外加真实 TUI（PTY）交互。
+  e2e:
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # 故意不锁版本：上游发新版就让 CI 红，提醒适配。
+      - id: opencode
+        run: echo "version=$(npm view @opencode/cli version)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v6
+        id: opencode-cache
+        with:
+          path: .ci/opencode
+          key: opencode-${{ runner.os }}-${{ steps.opencode.outputs.version }}
+
+      - if: steps.opencode-cache.outputs.cache-hit != 'true'
+        run: npm install --prefix .ci/opencode "@opencode/cli@${{ steps.opencode.outputs.version }}"
+
+      - run: echo "$PWD/.ci/opencode/node_modules/.bin" >> "$GITHUB_PATH"
+      - run: opencode --version
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:tui
+      - run: bun scripts/e2e-load.mjs
+      - run: bun scripts/e2e-tool-visibility.mjs
+      - run: bun scripts/e2e-synthetic.mjs
+      - run: bun scripts/e2e-synthetic.mjs --compact
+      - run: bun scripts/e2e-time.mjs
+      # 真实 TUI（PTY）：设置菜单必须能在实际客户端里打开并交互。
+      - run: bun scripts/e2e-tui.mjs
+      # 更新菜单：本地假 registry + 假 opencode，验证确认/进度/失败三条界面路径。
+      - run: bun scripts/e2e-update.mjs
