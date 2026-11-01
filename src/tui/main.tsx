@@ -23,10 +23,10 @@ export type { UpdateDeps } from "./update-menu.tsx"
 type MenuChoice = "features" | "appearance" | "update"
 
 /** 功能子菜单条目。 */
-type FeatureChoice = "goal" | "scheduling" | "time"
+type FeatureChoice = "goal" | "scheduling" | "time" | "notifications"
 
 /** 界面子菜单条目。 */
-type AppearanceChoice = "language" | "sidebar" | "contextStats" | "notifications"
+type AppearanceChoice = "language" | "sidebar" | "contextStats"
 
 /** 时间感知子菜单条目。 */
 type TimeChoice = "enabled" | "intervalSteps" | "format" | "timezone"
@@ -804,6 +804,7 @@ export default Plugin.define({
                 onOff(current.goal.enabled),
                 onOff(current.scheduling.enabled),
                 onOff(current.time.enabled),
+                onOff(current.notification.enabled),
               ),
             },
             { title: text.menu.appearance, value: "appearance" },
@@ -826,7 +827,7 @@ export default Plugin.define({
       }
     }
 
-    /** 功能子菜单：目标（弃用）/ 定时任务 / 时间感知。 */
+    /** 功能子菜单：目标（弃用）/ 定时任务 / 时间感知 / 通知。 */
     const chooseFeatures = async (): Promise<void> => {
       for (;;) {
         const current = settings()
@@ -841,16 +842,18 @@ export default Plugin.define({
             },
             { title: text.menu.scheduling, value: "scheduling", footer: onOff(current.scheduling.enabled) },
             { title: text.menu.time, value: "time", footer: onOff(current.time.enabled) },
+            { title: text.menu.notifications, value: "notifications", footer: onOff(current.notification.enabled) },
           ],
         })
         if (choice === undefined) return
         if (choice === "goal") await chooseGoal()
         else if (choice === "scheduling") await chooseScheduling()
-        else await chooseTime()
+        else if (choice === "time") await chooseTime()
+        else await chooseNotifications()
       }
     }
 
-    /** 界面子菜单：语言 / 侧栏 / 上下文统计 / 通知。 */
+    /** 界面子菜单：语言 / 侧栏 / 上下文统计。 */
     const chooseAppearance = async (): Promise<void> => {
       for (;;) {
         const current = settings()
@@ -861,14 +864,12 @@ export default Plugin.define({
             { title: text.menu.language, value: "language", footer: current.lang },
             { title: text.menu.sidebar, value: "sidebar" },
             { title: text.menu.contextStats, value: "contextStats", footer: onOff(current.contextStats.enabled) },
-            { title: text.menu.notifications, value: "notifications", footer: onOff(current.notification.enabled) },
           ],
         })
         if (choice === undefined) return
         if (choice === "language") await chooseLanguage()
         else if (choice === "sidebar") await chooseSidebar()
-        else if (choice === "contextStats") await chooseContextStats()
-        else await chooseNotifications()
+        else await chooseContextStats()
       }
     }
 

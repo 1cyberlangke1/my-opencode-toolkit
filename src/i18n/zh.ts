@@ -41,7 +41,8 @@ export const zh: Messages = {
     checkUpdates: "检查更新",
     features: "功能",
     appearance: "界面",
-    featuresSummary: (goal, scheduling, time) => `目标 ${goal} · 定时 ${scheduling} · 时间 ${time}`,
+    featuresSummary: (goal, scheduling, time, notification) =>
+      `目标 ${goal} · 定时 ${scheduling} · 时间 ${time} · 通知 ${notification}`,
     inactiveSuffix: "（功能已关闭，不生效）",
     time: "时间感知",
     timeEnabled: "功能开关",

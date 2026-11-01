@@ -159,17 +159,20 @@ describe("tui plugin setup", () => {
     expect(values).toEqual(["features", "appearance", "update"])
     const zh = resolveMessages("zh")
     const en = resolveMessages("en")
-    // 功能分类 footer 是三个开关状态摘要（文案从语言文件取）。
-    // 默认: goal 关 / scheduling 开 / time 开。
+    // 功能分类 footer 是四个开关状态摘要（文案从语言文件取）。
+    // 默认: goal 关 / scheduling 开 / time 开 / notification 开。
     const featuresFooter = footerOf(selects[0], "features") ?? ""
     expect(
-      [zh.menu.featuresSummary("关", "开", "开"), en.menu.featuresSummary("off", "on", "on")],
+      [
+        zh.menu.featuresSummary("关", "开", "开", "开"),
+        en.menu.featuresSummary("off", "on", "on", "on"),
+      ],
     ).toContain(featuresFooter)
 
     await cleanup?.()
   })
 
-  test("功能子菜单：目标带弃用标记，三项齐全", async () => {
+  test("功能子菜单：目标带弃用标记，四项齐全", async () => {
     const { context, layers, selects } = fakeContext({ picks: ["features", undefined, undefined] })
     const cleanup = await plugin.setup(context)
 
@@ -183,7 +186,12 @@ describe("tui plugin setup", () => {
     expect([`${zh.menu.goal}${zh.menu.deprecatedSuffix}`, `${en.menu.goal}${en.menu.deprecatedSuffix}`]).toContain(
       goalTitle,
     )
-    expect(selects[1]?.options.map((option) => option.value)).toEqual(["goal", "scheduling", "time"])
+    expect(selects[1]?.options.map((option) => option.value)).toEqual([
+      "goal",
+      "scheduling",
+      "time",
+      "notifications",
+    ])
 
     await cleanup?.()
   })
