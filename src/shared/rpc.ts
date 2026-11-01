@@ -62,6 +62,17 @@ const SettingsFields = {
     required: ["enabled", "showInput", "showOutput", "showCache", "showHitRate"],
     additionalProperties: false,
   },
+  time: {
+    type: "object",
+    properties: {
+      enabled: { type: "boolean" },
+      intervalSteps: { type: "number" },
+      format: { type: "string" },
+      timezone: { type: "string" },
+    },
+    required: ["enabled", "intervalSteps", "format", "timezone"],
+    additionalProperties: false,
+  },
 } as const
 
 const SettingsRequired = [
@@ -72,6 +83,7 @@ const SettingsRequired = [
   "scheduling",
   "sidebar",
   "contextStats",
+  "time",
 ] as const
 
 /** 设置写入的输入：完整设置 + 层路径。 */
