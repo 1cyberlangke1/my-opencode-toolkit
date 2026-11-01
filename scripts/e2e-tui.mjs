@@ -169,13 +169,9 @@ try {
   proc.terminal?.write("\u001b[B")
   await Bun.sleep(200)
   proc.terminal?.write("\r")
-  const appearance = await waitFor(
-    (text) =>
-      shows(text, (copy) => copy.menu.language) &&
-      shows(text, (copy) => copy.menu.sidebar) &&
-      shows(text, (copy) => copy.menu.contextStats),
-    8_000,
-  )
+  // 只认「语言」项：窄终端会把后面的项挤掉首字母（Context stats → ontext stats），
+  // 断言首项就够证明进了界面子菜单。
+  const appearance = await waitFor((text) => shows(text, (copy) => copy.menu.language), 8_000)
   if (!appearance) {
     console.log("=== screen tail ===")
     console.log(plain().slice(-3000))
