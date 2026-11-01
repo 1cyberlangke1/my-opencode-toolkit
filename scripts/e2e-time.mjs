@@ -36,6 +36,8 @@ const basic = `Basic ${Buffer.from(`opencode:${password}`).toString("base64")}`
 
 /** 已服务的请求数。 */
 let served = 0
+/** 捕获所有发给假大模型的真实 HTTP 请求体，用于严格验证模型是否真切感知到了时间。 */
+const capturedRequests = []
 
 /**
  * 输入：OpenAI chat 请求体。
@@ -46,6 +48,7 @@ function handle(body) {
   const stream = body?.stream === true
   const usage = { prompt_tokens: 100, completion_tokens: 1, total_tokens: 101 }
   served += 1
+  capturedRequests.push(body)
   const text = `reply ${served}`
   if (stream) {
     const chunk = (data, finish, u) =>
@@ -215,15 +218,51 @@ try {
 
   const synthetics = rows.map((row) => JSON.parse(String(row.data)))
   const pulses = synthetics.filter((message) => message?.metadata?.timePulse === true)
-  assert.ok(pulses.length >= 2, `expected at least 2 time pulses, got ${pulses.length}`)
+  assert.equal(pulses.length, 2, `expected exactly 2 time pulses in DB, got ${pulses.length}`)
   for (const pulse of pulses) {
     assert.equal(pulse.description, pulse.text, "time pulse description must equal text")
     // 纯时间串：YYYY-MM-DD HH:mm:ss 全数字与分隔符，无语言词。
     assert.match(pulse.text, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/, `unexpected time text: ${pulse.text}`)
   }
+
+  // 核心功能性断言：严格验证模型发出的每一次真实 HTTP 请求中，是否真切接收到了时间感知！
+  assert.equal(capturedRequests.length, 6, `expected exactly 6 LLM requests, got ${capturedRequests.length}`)
+
+  /** 提取一个请求体中所有的文本内容 */
+  const requestText = (req) => {
+    const messages = Array.isArray(req?.messages) ? req.messages : []
+    return messages
+      .map((m) => {
+        if (typeof m.content === "string") return m.content
+        if (Array.isArray(m.content)) return m.content.map((p) => p.text ?? "").join("\n")
+        return ""
+      })
+      .join("\n")
+  }
+
+  const timeRegex = /\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/g
+
+  // 第 1 轮与第 2 轮请求：尚未达到 intervalSteps=2，模型上下文绝对不得包含时间戳
+  assert.equal(requestText(capturedRequests[0]).match(timeRegex), null, "request 1 must not contain time pulse")
+  assert.equal(requestText(capturedRequests[1]).match(timeRegex), null, "request 2 must not contain time pulse")
+
+  // 第 3 轮请求：达到步数，轮次触发！模型上下文必须真真切切接收到了第 1 个时间戳
+  const req3Matches = requestText(capturedRequests[2]).match(timeRegex)
+  assert.ok(req3Matches && req3Matches.length === 1, `request 3 must contain exactly 1 time pulse, got ${req3Matches?.length}`)
+  assert.equal(req3Matches[0], pulses[0].text, "request 3 must contain the exact time pulse from DB")
+
+  // 第 4 轮与第 5 轮请求：包含历史里的第 1 个时间戳，但不得注入新的时间戳
+  assert.equal(requestText(capturedRequests[3]).match(timeRegex)?.length, 1, "request 4 must only contain pulse 1")
+  assert.equal(requestText(capturedRequests[4]).match(timeRegex)?.length, 1, "request 5 must only contain pulse 1")
+
+  // 第 6 轮请求：第二次达到步数，模型上下文必须接收到了第 2 个新鲜时间戳！
+  const req6Matches = requestText(capturedRequests[5]).match(timeRegex)
+  assert.ok(req6Matches && req6Matches.length === 2, `request 6 must contain 2 time pulses, got ${req6Matches?.length}`)
+  assert.equal(req6Matches[1], pulses[1].text, "request 6 must contain pulse 2")
+
   console.log("served:", served)
   console.log("time pulses:", pulses.length)
-  console.log("case passed: time pulse injects every N steps")
+  console.log("case passed: LLM requests received exact time pulses at correct turns with zero ghost calls")
 } catch (error) {
   await Bun.write(join(root, "stdout.log"), stdoutText).catch(() => undefined)
   await Bun.write(join(root, "stderr.log"), stderrText).catch(() => undefined)
