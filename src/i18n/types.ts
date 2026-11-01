@@ -42,6 +42,14 @@ export type Messages = {
     readonly showSubagents: string
     /** 主菜单最后一项：打开更新检查。 */
     readonly checkUpdates: string
+    /** 主菜单分类：功能开关与详细设置。 */
+    readonly features: string
+    /** 主菜单分类：界面偏好。 */
+    readonly appearance: string
+    /** 功能分类 footer：三个功能开关状态摘要。 */
+    readonly featuresSummary: (goal: string, scheduling: string, time: string) => string
+    /** 侧栏子菜单里目标/定时显示项在功能关闭时的提示后缀。 */
+    readonly inactiveSuffix: string
     /** 时间感知子菜单。 */
     readonly time: string
     readonly timeEnabled: string

@@ -20,21 +20,23 @@ export { createUpdateMenu } from "./update-menu.tsx"
 export type { UpdateDeps } from "./update-menu.tsx"
 
 /** 主菜单条目。 */
-type MenuChoice =
-  | "language"
-  | "goal"
-  | "scheduling"
-  | "sidebar"
-  | "contextStats"
-  | "notifications"
-  | "time"
-  | "update"
+type MenuChoice = "features" | "appearance" | "update"
+
+/** 功能子菜单条目。 */
+type FeatureChoice = "goal" | "scheduling" | "time"
+
+/** 界面子菜单条目。 */
+type AppearanceChoice = "language" | "sidebar" | "contextStats" | "notifications"
 
 /** 时间感知子菜单条目。 */
 type TimeChoice = "enabled" | "intervalSteps" | "format" | "timezone"
 
-/** 侧栏子菜单条目：工具/子代理显示开关；目标/定时的显示开关在各自选项卡里。 */
-type SidebarChoice = "showTools" | "showSubagents"
+/** 侧栏子菜单条目：全部侧栏配置集中在这里（目标/定时/工具/子代理显示开关）。 */
+type SidebarChoice =
+  | "goal.showInSidebar"
+  | "scheduling.showInSidebar"
+  | "showTools"
+  | "showSubagents"
 
 /** 上下文统计子菜单条目。 */
 type ContextStatsChoice = "enabled" | "showInput" | "showOutput" | "showCache" | "showHitRate"
@@ -605,40 +607,34 @@ export default Plugin.define({
 
     const onOff = (value: boolean): string => (value ? copy().menu.on : copy().menu.off)
 
-    /** 目标子菜单：功能与侧栏显示独立。 */
-    /** 输入：`goal` 或 `scheduling`；输出：无。预期：循环切换功能开关，取消则退出。 */
+    /** 目标子菜单：只留功能开关（侧栏显示在「界面 → 侧栏」）。 */
     const chooseFeature = async (key: "goal" | "scheduling"): Promise<void> => {
       for (;;) {
         const current = settings()
         const text = copy()
-        const choice = await context.ui.dialog.select<"enabled" | "showInSidebar">({
+        const choice = await context.ui.dialog.select<"enabled">({
           title:
             key === "goal" ? `${text.menu.goal}${text.menu.deprecatedSuffix}` : text.menu.scheduling,
           options: [
             { title: text.menu.function, value: "enabled", footer: onOff(current[key].enabled) },
-            { title: text.menu.sidebar, value: "showInSidebar", footer: onOff(current[key].showInSidebar) },
           ],
         })
         if (choice === undefined) return
         await update(
-          choice === "enabled"
-            ? key === "goal"
-              ? { ...current, goal: { ...current.goal, enabled: !current.goal.enabled } }
-              : { ...current, scheduling: { ...current.scheduling, enabled: !current.scheduling.enabled } }
-            : key === "goal"
-              ? { ...current, goal: { ...current.goal, showInSidebar: !current.goal.showInSidebar } }
-              : { ...current, scheduling: { ...current.scheduling, showInSidebar: !current.scheduling.showInSidebar } },
+          key === "goal"
+            ? { ...current, goal: { ...current.goal, enabled: !current.goal.enabled } }
+            : { ...current, scheduling: { ...current.scheduling, enabled: !current.scheduling.enabled } },
         )
       }
     }
 
-    /** 目标子菜单：功能与侧栏显示都在这里。 */
+    /** 目标子菜单：只留功能开关。 */
     const chooseGoal = (): Promise<void> => chooseFeature("goal")
 
-    /** 定时任务子菜单：功能与侧栏显示都在这里。 */
+    /** 定时任务子菜单：只留功能开关。 */
     const chooseScheduling = (): Promise<void> => chooseFeature("scheduling")
 
-    /** 侧栏显示子菜单：目标/定时任务的显示开关已移入各自选项卡。 */
+    /** 侧栏显示子菜单：目标/定时/工具/子代理全部侧栏配置集中这里。 */
     const chooseSidebar = async (): Promise<void> => {
       for (;;) {
         const current = settings()
@@ -646,12 +642,29 @@ export default Plugin.define({
         const choice = await context.ui.dialog.select<SidebarChoice>({
           title: text.menu.sidebar,
           options: [
+            {
+              title: text.menu.goal,
+              value: "goal.showInSidebar",
+              footer: `${onOff(current.goal.showInSidebar)}${current.goal.enabled ? "" : text.menu.inactiveSuffix}`,
+            },
+            {
+              title: text.menu.scheduling,
+              value: "scheduling.showInSidebar",
+              footer: `${onOff(current.scheduling.showInSidebar)}${current.scheduling.enabled ? "" : text.menu.inactiveSuffix}`,
+            },
             { title: text.menu.showTools, value: "showTools", footer: onOff(current.sidebar.showTools) },
             { title: text.menu.showSubagents, value: "showSubagents", footer: onOff(current.sidebar.showSubagents) },
           ],
         })
         if (choice === undefined) return
-        await update({ ...current, sidebar: { ...current.sidebar, [choice]: !current.sidebar[choice] } })
+        // 功能关闭时配置仍可见可改可保存，只是渲染不生效（inactiveSuffix 提示）。
+        await update(
+          choice === "goal.showInSidebar"
+            ? { ...current, goal: { ...current.goal, showInSidebar: !current.goal.showInSidebar } }
+            : choice === "scheduling.showInSidebar"
+              ? { ...current, scheduling: { ...current.scheduling, showInSidebar: !current.scheduling.showInSidebar } }
+              : { ...current, sidebar: { ...current.sidebar, [choice]: !current.sidebar[choice] } },
+        )
       }
     }
 
@@ -776,7 +789,7 @@ export default Plugin.define({
       }
     }
 
-    /** 主菜单：进入分类子菜单。 */
+    /** 主菜单：功能 / 界面 / 检查更新 三分类。 */
     const openMenu = async (): Promise<void> => {
       for (;;) {
         const current = settings()
@@ -784,13 +797,16 @@ export default Plugin.define({
         const choice = await context.ui.dialog.select<MenuChoice>({
           title: text.menu.title,
           options: [
-            { title: text.menu.language, value: "language", footer: current.lang },
-            { title: text.menu.goal, value: "goal", footer: onOff(current.goal.enabled) },
-            { title: text.menu.scheduling, value: "scheduling", footer: onOff(current.scheduling.enabled) },
-            { title: text.menu.sidebar, value: "sidebar" },
-            { title: text.menu.contextStats, value: "contextStats", footer: onOff(current.contextStats.enabled) },
-            { title: text.menu.notifications, value: "notifications", footer: onOff(current.notification.enabled) },
-            { title: text.menu.time, value: "time", footer: onOff(current.time.enabled) },
+            {
+              title: text.menu.features,
+              value: "features",
+              footer: text.menu.featuresSummary(
+                onOff(current.goal.enabled),
+                onOff(current.scheduling.enabled),
+                onOff(current.time.enabled),
+              ),
+            },
+            { title: text.menu.appearance, value: "appearance" },
             {
               value: "update",
               ...updateEntryState(text, updateResult(), {
@@ -801,17 +817,58 @@ export default Plugin.define({
           ],
         })
         if (choice === undefined) return
-        if (choice === "language") {
-          await chooseLanguage()
+        if (choice === "features") {
+          await chooseFeatures()
           continue
         }
+        if (choice === "appearance") await chooseAppearance()
+        else if (await chooseUpdates()) return
+      }
+    }
+
+    /** 功能子菜单：目标（弃用）/ 定时任务 / 时间感知。 */
+    const chooseFeatures = async (): Promise<void> => {
+      for (;;) {
+        const current = settings()
+        const text = copy()
+        const choice = await context.ui.dialog.select<FeatureChoice>({
+          title: text.menu.features,
+          options: [
+            {
+              title: `${text.menu.goal}${text.menu.deprecatedSuffix}`,
+              value: "goal",
+              footer: onOff(current.goal.enabled),
+            },
+            { title: text.menu.scheduling, value: "scheduling", footer: onOff(current.scheduling.enabled) },
+            { title: text.menu.time, value: "time", footer: onOff(current.time.enabled) },
+          ],
+        })
+        if (choice === undefined) return
         if (choice === "goal") await chooseGoal()
         else if (choice === "scheduling") await chooseScheduling()
+        else await chooseTime()
+      }
+    }
+
+    /** 界面子菜单：语言 / 侧栏 / 上下文统计 / 通知。 */
+    const chooseAppearance = async (): Promise<void> => {
+      for (;;) {
+        const current = settings()
+        const text = copy()
+        const choice = await context.ui.dialog.select<AppearanceChoice>({
+          title: text.menu.appearance,
+          options: [
+            { title: text.menu.language, value: "language", footer: current.lang },
+            { title: text.menu.sidebar, value: "sidebar" },
+            { title: text.menu.contextStats, value: "contextStats", footer: onOff(current.contextStats.enabled) },
+            { title: text.menu.notifications, value: "notifications", footer: onOff(current.notification.enabled) },
+          ],
+        })
+        if (choice === undefined) return
+        if (choice === "language") await chooseLanguage()
         else if (choice === "sidebar") await chooseSidebar()
         else if (choice === "contextStats") await chooseContextStats()
-        else if (choice === "notifications") await chooseNotifications()
-        else if (choice === "time") await chooseTime()
-        else if (await chooseUpdates()) return
+        else await chooseNotifications()
       }
     }
 

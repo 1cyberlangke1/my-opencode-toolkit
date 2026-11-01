@@ -148,33 +148,86 @@ describe("tui plugin setup", () => {
     await cleanup?.()
   })
 
-  test("主菜单没有通用总开关，语言直接在第一项", async () => {
+  test("主菜单三分类：功能/界面/检查更新，无平铺条目", async () => {
     const { context, layers, selects } = fakeContext({ picks: [undefined] })
     const cleanup = await plugin.setup(context)
 
     layers[0]?.commands?.[0]?.run()
     await Bun.sleep(20)
 
-    const titles = selects[0]?.options.map((option) => option.title) ?? []
-    expect(titles[0]).toMatch(/Language|语言/)
-    expect(titles).not.toContain("General")
-    expect(titles).not.toContain("通用")
-    expect(titles).not.toContain("Enabled")
+    const values = selects[0]?.options.map((option) => option.value) ?? []
+    expect(values).toEqual(["features", "appearance", "update"])
+    const zh = resolveMessages("zh")
+    const en = resolveMessages("en")
+    // 功能分类 footer 是三个开关状态摘要（文案从语言文件取）。
+    // 默认: goal 关 / scheduling 开 / time 开。
+    const featuresFooter = footerOf(selects[0], "features") ?? ""
+    expect(
+      [zh.menu.featuresSummary("关", "开", "开"), en.menu.featuresSummary("off", "on", "on")],
+    ).toContain(featuresFooter)
 
     await cleanup?.()
   })
 
-  test("侧栏子菜单只有工具/子代理显示开关", async () => {
-    const { context, layers, selects } = fakeContext({ picks: ["sidebar", undefined, undefined] })
+  test("功能子菜单：目标带弃用标记，三项齐全", async () => {
+    const { context, layers, selects } = fakeContext({ picks: ["features", undefined, undefined] })
     const cleanup = await plugin.setup(context)
 
     layers[0]?.commands?.[0]?.run()
     await Bun.sleep(20)
 
-    expect(footerOf(selects[0], "sidebar")).toBeUndefined()
-    expect(selects[1]?.title).toMatch(/Sidebar|侧栏/)
-    // 目标/定时的侧栏开关已移入各自选项卡，侧栏子菜单只剩工具/子代理。
-    expect(selects[1]?.options.map((option) => option.value)).toEqual(["showTools", "showSubagents"])
+    const zh = resolveMessages("zh")
+    const en = resolveMessages("en")
+    expect(selects[1]?.title).toMatch(/Features|功能/)
+    const goalTitle = selects[1]?.options.find((option) => option.value === "goal")?.title ?? ""
+    expect([`${zh.menu.goal}${zh.menu.deprecatedSuffix}`, `${en.menu.goal}${en.menu.deprecatedSuffix}`]).toContain(
+      goalTitle,
+    )
+    expect(selects[1]?.options.map((option) => option.value)).toEqual(["goal", "scheduling", "time"])
+
+    await cleanup?.()
+  })
+
+  test("侧栏子菜单四项：目标/定时显示 + 工具/子代理", async () => {
+    const { context, layers, selects } = fakeContext({ picks: ["appearance", "sidebar", undefined, undefined, undefined] })
+    const cleanup = await plugin.setup(context)
+
+    layers[0]?.commands?.[0]?.run()
+    await Bun.sleep(20)
+
+    expect(selects[1]?.title).toMatch(/Appearance|界面/)
+    expect(selects[2]?.title).toMatch(/Sidebar|侧栏/)
+    // 目标/定时的侧栏显示开关集中在这里。
+    expect(selects[2]?.options.map((option) => option.value)).toEqual([
+      "goal.showInSidebar",
+      "scheduling.showInSidebar",
+      "showTools",
+      "showSubagents",
+    ])
+
+    await cleanup?.()
+  })
+
+  test("功能关闭时侧栏显示项仍可改：写入保存且 footer 带不生效提示", async () => {
+    const saved: Settings[] = []
+    const { context, layers, selects } = fakeContext({
+      picks: ["appearance", "sidebar", "goal.showInSidebar", undefined, undefined],
+      onSettingsSet: (next) => {
+        saved.push(next)
+        return Promise.resolve(next)
+      },
+    })
+    const cleanup = await plugin.setup(context)
+    layers[0]?.commands?.[0]?.run()
+    await Bun.sleep(20)
+
+    // 默认 goal.enabled=false：footer 带不生效后缀，但切换仍写回。
+    const zh = resolveMessages("zh")
+    const en = resolveMessages("en")
+    const footer = footerOf(selects[2], "goal.showInSidebar") ?? ""
+    expect(footer).toContain(zh.menu.inactiveSuffix.slice(0, 2) || en.menu.inactiveSuffix.slice(0, 2))
+    expect(saved).toHaveLength(1)
+    expect(saved[0]?.goal.showInSidebar).toBe(false)
 
     await cleanup?.()
   })
@@ -182,8 +235,8 @@ describe("tui plugin setup", () => {
   test("设置菜单切换 goal 并通过 RPC 写回", async () => {
     const saved: Settings[] = []
     const { context, layers } = fakeContext({
-      // 第一次选 goal 分类，第二次点功能开关，第三次 Esc 退出子菜单/主菜单。
-      picks: ["goal", "enabled", undefined],
+      // 第一次进功能分类选 goal，第二次点功能开关，第三次 Esc 退出子菜单/主菜单。
+      picks: ["features", "goal", "enabled", undefined, undefined],
       onSettingsSet: (next) => {
         saved.push(next)
         return Promise.resolve(next)
@@ -206,7 +259,7 @@ describe("tui plugin setup", () => {
 
   test("写回失败时回滚本地设置", async () => {
     const { context, layers, selects } = fakeContext({
-      picks: ["goal", "enabled", undefined],
+      picks: ["features", "goal", "enabled", undefined, undefined],
       onSettingsSet: () => Promise.reject(new Error("storage down")),
     })
 
@@ -215,8 +268,11 @@ describe("tui plugin setup", () => {
     await Bun.sleep(20)
 
     // 菜单重开后 goal 的 footer 仍是默认的“关”，说明失败后回滚了乐观更新。
-    expect(selects).toHaveLength(4)
-    expect(footerOf(selects.at(-1), "goal")).toBe(footerOf(selects[0], "goal"))
+    // selects: 主菜单 → 功能 → goal → 切换失败重开 goal → Esc → 功能重开 → 主菜单。
+    expect(selects).toHaveLength(6)
+    const first = selects[2]?.options.find((option) => option.value === "enabled")?.footer
+    const last = selects[3]?.options.find((option) => option.value === "enabled")?.footer
+    expect(last).toBe(first)
 
     await cleanup?.()
   })
@@ -244,8 +300,8 @@ describe("tui plugin setup", () => {
     await cleanup?.()
   })
 
-  test("主菜单含时间感知项，子菜单四项齐全", async () => {
-    const { context, layers, selects } = fakeContext({ picks: ["time", undefined, undefined] })
+  test("主菜单功能分类含时间感知项，子菜单四项齐全", async () => {
+    const { context, layers, selects } = fakeContext({ picks: ["features", "time", undefined, undefined] })
     const cleanup = await plugin.setup(context)
 
     layers[0]?.commands?.[0]?.run()
@@ -253,9 +309,9 @@ describe("tui plugin setup", () => {
 
     const zh = resolveMessages("zh")
     const en = resolveMessages("en")
-    expect([zh.menu.time, en.menu.time]).toContain(selects[0]?.options.find((o) => o.value === "time")?.title)
-    expect(selects[1]?.title).toMatch(/Time awareness|时间感知/)
-    expect(selects[1]?.options.map((option) => option.value)).toEqual([
+    expect([zh.menu.time, en.menu.time]).toContain(selects[1]?.options.find((o) => o.value === "time")?.title)
+    expect(selects[2]?.title).toMatch(/Time awareness|时间感知/)
+    expect(selects[2]?.options.map((option) => option.value)).toEqual([
       "enabled",
       "intervalSteps",
       "format",
@@ -266,10 +322,10 @@ describe("tui plugin setup", () => {
   })
 
   test("时间子菜单：切换开关写回；非法间隔弹 toast 不写回；合法间隔写回", async () => {
-    // 开 → 非法间隔 "abc" → 合法间隔 "5" → Esc 退出。
+    // 进功能分类 → time → 开 → 非法间隔 "abc" → 合法间隔 "5" → Esc 退出。
     const saved: Settings[] = []
     const { context, layers, toasts } = fakeContext({
-      picks: ["time", "enabled", "intervalSteps", "intervalSteps", undefined],
+      picks: ["features", "time", "enabled", "intervalSteps", "intervalSteps", undefined, undefined],
       prompts: ["abc", "5"],
       onSettingsSet: (next) => {
         saved.push(next)
@@ -294,8 +350,8 @@ describe("tui plugin setup", () => {
   test("时间子菜单：格式模板与时区写回；非法时区弹 toast", async () => {
     const saved: Settings[] = []
     const { context, layers, toasts } = fakeContext({
-      // 开 → 格式输入 → 时区先输非法 → 再输合法 → Esc。
-      picks: ["time", "format", "timezone", "timezone", undefined],
+      // 进功能分类 → time → 格式输入 → 时区先输非法 → 再输合法 → Esc。
+      picks: ["features", "time", "format", "timezone", "timezone", undefined, undefined],
       prompts: ["HH:mm:ss", "Not/AZone", "Asia/Shanghai"],
       onSettingsSet: (next) => {
         saved.push(next)
