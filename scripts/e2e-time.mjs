@@ -193,16 +193,18 @@ try {
   const sessionID = created.id ?? created.sessionID
   assert.ok(sessionID, "session id missing")
 
-  // 四条 user 消息：每条触发一轮 step；intervalSteps=2 → 第 2、4 步后各注入一次。
-  // resume:false 不主动唤醒，注入发生在下一轮 step 边界，所以发下一条前留出注入窗口。
-  for (let i = 1; i <= 4; i++) {
+  // 6 条 user 消息验证间隔 2 步触发：
+  // 规则：注入的那一轮本身不计入下一次步数。
+  // - msg 1: step 1 结束 (count=1)
+  // - msg 2: step 2 结束 (count=2)
+  // - msg 3: 触发注入 Pulse 1！step 3 本身不计数 (count=0)
+  // - msg 4: step 4 结束 (count=1)
+  // - msg 5: step 5 结束 (count=2)
+  // - msg 6: 触发注入 Pulse 2！
+  for (let i = 1; i <= 6; i++) {
     await api("POST", `/api/session/${sessionID}/prompt`, { text: `message ${i}` })
     await api("POST", `/api/experimental/session/${sessionID}/wait`)
   }
-
-  // 第 4 步后的注入发生在 wait 之后；再发一条把边界推过去。
-  await api("POST", `/api/session/${sessionID}/prompt`, { text: "message 5" })
-  await api("POST", `/api/experimental/session/${sessionID}/wait`)
   await Bun.sleep(500)
 
   const db = new Database(join(root, "opencode.db"), { readonly: true })

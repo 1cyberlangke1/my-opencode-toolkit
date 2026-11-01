@@ -74,14 +74,18 @@ describe("isValidTimezone", () => {
 })
 
 describe("createTimePulse", () => {
-  it("每满 intervalSteps 步注入一次并归零", async () => {
+  it("step.ended 仅累加步数，轮次触发时才注入，且注入的那一轮本身不算", async () => {
     const { ctx, synthetic } = fakeCtx()
     const pulse = createTimePulse(ctx, roles, () => Promise.resolve(DEFAULT_TIME))
     try {
+      // 走 3 步：step.ended 绝不直接调用 synthetic（绝不打扰模型休眠）
+      await pulse.handle(stepEvent("s1"))
       await pulse.handle(stepEvent("s1"))
       await pulse.handle(stepEvent("s1"))
       expect(synthetic).not.toHaveBeenCalled()
-      await pulse.handle(stepEvent("s1"))
+
+      // 新交互触发（如主人发了新 prompt 或 tool.after 续跑）：满 3 步，触发注入！
+      await pulse.trigger("s1")
       expect(synthetic).toHaveBeenCalledTimes(1)
       const firstCall = synthetic.mock.calls[0] as unknown as [
         { sessionID: string; delivery: string; resume: boolean; metadata: Record<string, unknown> },
@@ -92,11 +96,22 @@ describe("createTimePulse", () => {
         resume: false,
         metadata: { timePulse: true },
       })
-      // 注入后重新计数：再走 2 步不注入，第 3 步注入。
+
+      // 规则：注入的那一轮本身不算步数！
+      // 本轮执行完毕，step.ended 被消费并跳过计步
+      await pulse.handle(stepEvent("s1"))
+      // 此时立刻 trigger，步数依然是 0，绝不连续注入
+      await pulse.trigger("s1")
+      expect(synthetic).toHaveBeenCalledTimes(1)
+
+      // 重新走满 3 步正常业务交互
+      await pulse.handle(stepEvent("s1"))
       await pulse.handle(stepEvent("s1"))
       await pulse.handle(stepEvent("s1"))
       expect(synthetic).toHaveBeenCalledTimes(1)
-      await pulse.handle(stepEvent("s1"))
+
+      // 下一次触发，注入第二次时间！
+      await pulse.trigger("s1")
       expect(synthetic).toHaveBeenCalledTimes(2)
     } finally {
       pulse.dispose()
@@ -111,8 +126,9 @@ describe("createTimePulse", () => {
       await pulse.handle({ type: "session.idle", data: { sessionID: "s1" } })
       await pulse.handle(stepEvent("s1"))
       await pulse.handle(stepEvent("s1"))
-      await pulse.handle(stepEvent("s1"))
-      expect(synthetic).toHaveBeenCalledTimes(1)
+      await pulse.trigger("s1")
+      // 只有 2 步，未达到 3 步，不注入
+      expect(synthetic).not.toHaveBeenCalled()
     } finally {
       pulse.dispose()
     }
@@ -125,13 +141,14 @@ describe("createTimePulse", () => {
     )
     try {
       for (let i = 0; i < 5; i++) await pulse.handle(stepEvent("s1"))
+      await pulse.trigger("s1")
       expect(synthetic).not.toHaveBeenCalled()
     } finally {
       pulse.dispose()
     }
   })
 
-  it("子代理会话不注入", async () => {
+  it("子代理会话不计数且不注入", async () => {
     const { ctx, synthetic } = fakeCtx()
     // 子代理角色：parentID 非空。
     const subagentRoles = createSessionRoles({
@@ -144,18 +161,20 @@ describe("createTimePulse", () => {
     const pulse = createTimePulse(ctx, subagentRoles, () => Promise.resolve(DEFAULT_TIME))
     try {
       for (let i = 0; i < 5; i++) await pulse.handle(stepEvent("s1"))
+      await pulse.trigger("s1")
       expect(synthetic).not.toHaveBeenCalled()
     } finally {
       pulse.dispose()
     }
   })
 
-  it("异 location 会话拒绝计数（宁少勿重）", async () => {
+  it("异 location 会话拒绝计数与注入（宁少勿重）", async () => {
     // ctx.location 是 /work，但 session.get 返回 /other 的会话 → 不属于本实例。
     const { ctx, synthetic } = fakeCtx({ directory: "/work", sessionDirectory: "/other" })
     const pulse = createTimePulse(ctx, roles, () => Promise.resolve(DEFAULT_TIME))
     try {
       for (let i = 0; i < 5; i++) await pulse.handle(stepEvent("s1"))
+      await pulse.trigger("s1")
       expect(synthetic).not.toHaveBeenCalled()
       expect(await ownsSession(ctx, "s1")).toBe(false)
     } finally {
@@ -178,6 +197,7 @@ describe("createTimePulse", () => {
       await pulse.handle(stepEvent("s1"))
       await pulse.handle(stepEvent("s1"))
       await pulse.handle(stepEvent("s1"))
+      await pulse.trigger("s1")
       expect(synthetic).toHaveBeenCalledTimes(1)
     } finally {
       pulse.dispose()
@@ -192,15 +212,18 @@ describe("createTimePulse", () => {
       await pulse.handle(stepEvent("s1"))
       pulse.forget("s1")
       await pulse.handle(stepEvent("s1"))
+      await pulse.trigger("s1")
       expect(synthetic).not.toHaveBeenCalled()
-      // 再走满 3 步才注入，说明计数确实被清过。
+      // 再走 2 步满 3 步才注入，说明之前的 2 步确实被 forget 清除
       await pulse.handle(stepEvent("s1"))
       await pulse.handle(stepEvent("s1"))
+      await pulse.trigger("s1")
       expect(synthetic).toHaveBeenCalledTimes(1)
     } finally {
       pulse.dispose()
     }
     await pulse.handle(stepEvent("s1"))
+    await pulse.trigger("s1")
     expect(synthetic).toHaveBeenCalledTimes(1)
   })
 })

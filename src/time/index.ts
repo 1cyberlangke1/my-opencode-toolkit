@@ -64,8 +64,10 @@ export function isValidTimezone(timezone: string): boolean {
 
 /** 时间注入句柄。 */
 export type TimeHandle = {
-  /** 输入：插件事件；输出：无。预期：只在 step.ended 计数，满 N 步注入一次。 */
+  /** 输入：插件事件；输出：无。预期：只在 step.ended 累加步数，绝不在步骤结束时注入。 */
   handle(event: PluginEvent): Promise<void>
+  /** 输入：会话 ID；输出：无。预期：在轮次或步骤被触发启动时检查步数，达标则注入并清零。 */
+  trigger(sessionID: string): Promise<void>
   /** 输入：会话 ID；输出：无。预期：会话删除后清掉计数。 */
   forget(sessionID: string): void
   /** 输入：无；输出：无。预期：卸载时清空全部计数。 */
@@ -75,9 +77,9 @@ export type TimeHandle = {
 /**
  * 输入：插件上下文 + 会话角色 + 设置快照读取器。
  * 输出：时间注入句柄。
- * 预期：每会话计 step.ended 次数，满 intervalSteps 注入一条合成时间消息（resume:false
- *       不触发新轮）后归零。守卫按序：插件总开关 → time.enabled → 归属（宁少勿重）→
- *       子代理跳过；plan 会话照常注入。设置每次注入时现读，TUI 改完即时生效。
+ * 预期：每会话在 step.ended 累加步数；当有新交互触发（prompt 新提问或 tool.after 续跑）时，
+ *       若累计满 intervalSteps 则注入一条合成时间消息并清零。
+ *       不在步骤结束时硬塞时间，从物理机制上彻底杜绝幽灵空轮。
  */
 export function createTimePulse(
   ctx: Plugin.Context,
@@ -86,24 +88,40 @@ export function createTimePulse(
 ): TimeHandle {
   /** 输入：会话 ID；输出：当前计数。 */
   const counts = new Map<string, number>()
+  /** 刚刚完成时间注入的会话：注入带出的那一步本身不计入步数。 */
+  const skipNextStep = new Set<string>()
 
   const handle = async (event: PluginEvent): Promise<void> => {
     if (event.type !== "session.step.ended") return
     const sessionID = readEventSessionID(event)
     if (sessionID === undefined) return
 
-    const settings = await readSettings()
-    if (!settings.enabled) return
-    // 归属判定放最前：别的实例的会话不计数，避免多实例对同一事件重复累加。
+    // 别的实例的会话不计数，避免多实例对同一事件重复累加。
     if (!(await ownsSession(ctx, sessionID))) return
     if (await roles.isSubagent(sessionID)) return
 
-    const next = (counts.get(sessionID) ?? 0) + 1
-    if (next < settings.intervalSteps) {
-      counts.set(sessionID, next)
+    // 注入的那一轮/步本身不算步数
+    if (skipNextStep.has(sessionID)) {
+      skipNextStep.delete(sessionID)
       return
     }
+
+    counts.set(sessionID, (counts.get(sessionID) ?? 0) + 1)
+  }
+
+  const trigger = async (sessionID: string): Promise<void> => {
+    const currentCount = counts.get(sessionID) ?? 0
+    if (currentCount === 0) return
+
+    const settings = await readSettings()
+    if (!settings.enabled) return
+    if (currentCount < settings.intervalSteps) return
+    if (!(await ownsSession(ctx, sessionID))) return
+    if (await roles.isSubagent(sessionID)) return
+
     counts.delete(sessionID)
+    // 标记：本次注入所触发的那一轮执行本身不算下次步数
+    skipNextStep.add(sessionID)
     const text = formatTimeSafe(new Date(), settings.format, settings.timezone)
     await ctx.session.synthetic({
       sessionID,
@@ -117,11 +135,14 @@ export function createTimePulse(
 
   return {
     handle,
+    trigger,
     forget(sessionID) {
       counts.delete(sessionID)
+      skipNextStep.delete(sessionID)
     },
     dispose() {
       counts.clear()
+      skipNextStep.clear()
     },
   }
 }

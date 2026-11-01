@@ -284,8 +284,15 @@ export default Plugin.define({
         stats.lastTool = input.tool
         await saveStats(ctx.storage, input.sessionID, stats).catch(() => undefined)
       })
+      // 工具跑完、即将进入下一步处理工具结果时：触发时间检查（中途任务达标即注入）
+      await timePulse.trigger(input.sessionID)
       // 工具刚执行完就通知侧栏刷新；失败不影响工具结果。
       void rpc.events.emit("panelUpdated", { sessionID: input.sessionID }).catch(() => undefined)
+    })
+
+    // 新提问进来、即将启动新一轮时：触发时间检查（长聊天满步即在提问前注入）
+    const promptHook = await ctx.session.hook("prompt", async (event) => {
+      await timePulse.trigger(event.sessionID)
     })
 
     const handlers: EventHandler[] = [
@@ -362,6 +369,7 @@ export default Plugin.define({
     return async () => {
       events.abort()
       timePulse.dispose()
+      await promptHook.dispose()
       notifier.dispose()
       await toolAfter.dispose()
       await toolBefore.dispose()
