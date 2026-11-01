@@ -146,13 +146,12 @@ try {
   await Bun.sleep(1_200)
   proc.terminal?.write("\r")
 
-  // 顶层是 功能 / 界面 / 更新 三项。终端宽度不够时第三项可能被截断，
-  // 所以只断言「功能分类」与「界面分类」两项，文案全部取自语言文件。
+  // 顶层菜单：断言弹窗标题（menu.title）或「界面」项。第一项「功能」的标题会被开关
+  // 摘要行挤掉（英文 Features 显示成 Fea），不能拿它做断言。
   const opened = await waitFor(
     (text) =>
       text.includes("my-opencode-toolkit") &&
-      shows(text, (copy) => copy.menu.features) &&
-      shows(text, (copy) => copy.menu.appearance),
+      (shows(text, (copy) => copy.menu.title) || shows(text, (copy) => copy.menu.appearance)),
     12_000,
   )
   if (!opened) {
