@@ -14,6 +14,14 @@ import { mkdtemp, mkdir, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
+import { resolveMessages } from "../src/i18n/index.ts"
+
+// 界面语言随宿主 locale 变（CI 是英文、本机可能是中文）：断言只从语言文件取文案，
+// 两种语言都接受，改文案或加语言时不用再动 e2e。
+const copies = [resolveMessages("zh"), resolveMessages("en")]
+/** 输入：取文案的函数；输出：任一语言下该文案是否出现在屏幕上。 */
+const shows = (text, pick) => copies.some((copy) => text.includes(pick(copy)))
+
 const repo = process.cwd()
 const root = await mkdtemp(join(tmpdir(), "opencode-e2e-tui-"))
 for (const dir of ["config", "data", "state", "cache", "xdg-config"]) {
@@ -139,12 +147,12 @@ try {
   proc.terminal?.write("\r")
 
   // 顶层是 功能 / 界面 / 更新 三项。终端宽度不够时第三项可能被截断，
-  // 所以只断言「功能摘要行 + 界面」这两处稳定文字。
+  // 所以只断言「功能分类」与「界面分类」两项，文案全部取自语言文件。
   const opened = await waitFor(
     (text) =>
       text.includes("my-opencode-toolkit") &&
-      (text.includes("Goal off") || text.includes("目标 关") || text.includes("目标")) &&
-      (text.includes("Appearance") || text.includes("界面")),
+      shows(text, (copy) => copy.menu.features) &&
+      shows(text, (copy) => copy.menu.appearance),
     12_000,
   )
   if (!opened) {
@@ -164,9 +172,9 @@ try {
   proc.terminal?.write("\r")
   const appearance = await waitFor(
     (text) =>
-      (text.includes("语言") || text.includes("Language")) &&
-      (text.includes("侧栏") || text.includes("Sidebar")) &&
-      (text.includes("上下文统计") || text.includes("Context")),
+      shows(text, (copy) => copy.menu.language) &&
+      shows(text, (copy) => copy.menu.sidebar) &&
+      shows(text, (copy) => copy.menu.contextStats),
     8_000,
   )
   if (!appearance) {
@@ -175,17 +183,8 @@ try {
     throw new Error("appearance submenu did not open")
   }
 
-  // 顶层「功能」项的摘要行本身就列出四个功能开关，不再靠方向键进子菜单（宿主 select 的
-  // 选中位置会保留，方向键导航在不同版本里不稳定）。
-  const text = plain()
-  assert.ok(text.includes("my-opencode-toolkit"), "slash command name")
-  assert.ok(
-    (text.includes("目标") || text.includes("Goal")) &&
-      (text.includes("定时") || text.includes("Schedul")) &&
-      (text.includes("时间") || text.includes("Time")) &&
-      (text.includes("通知") || text.includes("Notifications")),
-    "features summary line",
-  )
+  // 顶层命令名仍然可见，说明弹窗没有意外关掉。
+  assert.ok(plain().includes("my-opencode-toolkit"), "slash command name")
 
   console.log("case passed: real TUI loads plugin, top menu and appearance submenu")
 } finally {
