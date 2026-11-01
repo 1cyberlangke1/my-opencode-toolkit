@@ -207,8 +207,13 @@ const env = {
   XDG_STATE_HOME: join(root, "state"),
 }
 
-const opencode = process.env.OPENCODE_BIN ?? "opencode.cmd"
-const server = Bun.spawn(["cmd.exe", "/d", "/s", "/c", `${opencode} serve --stdio --port 0 --print-logs`], {
+const opencode = process.env.OPENCODE_BIN ?? (process.platform === "win32" ? "opencode.cmd" : "opencode")
+// Windows 的 opencode 是 .cmd，必须经 cmd.exe 启动；其它平台直接 exec。
+const server = Bun.spawn(
+  process.platform === "win32"
+    ? ["cmd.exe", "/d", "/s", "/c", `${opencode} serve --stdio --port 0 --print-logs`]
+    : [opencode, "serve", "--stdio", "--port", "0", "--print-logs"],
+  {
   env,
   stdin: "pipe",
   stdout: "pipe",
