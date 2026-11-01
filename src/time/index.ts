@@ -122,11 +122,16 @@ export function createTimePulse(
     counts.delete(sessionID)
     // 标记：本次注入所触发的那一轮执行本身不算下次步数
     skipNextStep.add(sessionID)
-    const text = formatTimeSafe(new Date(), settings.format, settings.timezone)
+    const timeStr = formatTimeSafe(new Date(), settings.format, settings.timezone)
+    // 用方括号包裹时间串，形成不可误读的元数据锚点（与 [context-reminder] 同风格）。
+    // 注入给模型的文本末尾带换行符，避免与随后进入的用户提问粘连成无间隔字符串；
+    // TUI 的 description 同样带外壳，保持单行显示。
+    const wrapped = `[${timeStr}]`
+    const text = `${wrapped}\n`
     await ctx.session.synthetic({
       sessionID,
       text,
-      description: text,
+      description: wrapped,
       delivery: "steer",
       resume: false,
       metadata: { timePulse: true },

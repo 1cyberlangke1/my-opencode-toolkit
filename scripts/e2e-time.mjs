@@ -220,9 +220,9 @@ try {
   const pulses = synthetics.filter((message) => message?.metadata?.timePulse === true)
   assert.equal(pulses.length, 2, `expected exactly 2 time pulses in DB, got ${pulses.length}`)
   for (const pulse of pulses) {
-    assert.equal(pulse.description, pulse.text, "time pulse description must equal text")
-    // 纯时间串：YYYY-MM-DD HH:mm:ss 全数字与分隔符，无语言词。
-    assert.match(pulse.text, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/, `unexpected time text: ${pulse.text}`)
+    assert.equal(pulse.text, `${pulse.description}\n`, "time pulse text must end with newline and match description")
+    // 时间串带方括号外壳：[YYYY-MM-DD HH:mm:ss]，与 [context-reminder] 同风格的元数据锚点。
+    assert.match(pulse.description, /^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]$/, `unexpected time description: ${pulse.description}`)
   }
 
   // 核心功能性断言：严格验证模型发出的每一次真实 HTTP 请求中，是否真切接收到了时间感知！
@@ -240,7 +240,8 @@ try {
       .join("\n")
   }
 
-  const timeRegex = /\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/g
+  // 时间戳带方括号外壳，正则同样要求外壳，确保注入格式与 [context-reminder] 元数据风格一致。
+  const timeRegex = /\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]/g
 
   // 第 1 轮与第 2 轮请求：尚未达到 intervalSteps=2，模型上下文绝对不得包含时间戳
   assert.equal(requestText(capturedRequests[0]).match(timeRegex), null, "request 1 must not contain time pulse")
@@ -249,7 +250,8 @@ try {
   // 第 3 轮请求：达到步数，轮次触发！模型上下文必须真真切切接收到了第 1 个时间戳
   const req3Matches = requestText(capturedRequests[2]).match(timeRegex)
   assert.ok(req3Matches && req3Matches.length === 1, `request 3 must contain exactly 1 time pulse, got ${req3Matches?.length}`)
-  assert.equal(req3Matches[0], pulses[0].text, "request 3 must contain the exact time pulse from DB")
+  assert.equal(req3Matches[0], pulses[0].description, "request 3 must contain the exact time pulse string")
+  assert.ok(requestText(capturedRequests[2]).includes(`${pulses[0].description}\n`), "time pulse must be followed by newline")
 
   // 第 4 轮与第 5 轮请求：包含历史里的第 1 个时间戳，但不得注入新的时间戳
   assert.equal(requestText(capturedRequests[3]).match(timeRegex)?.length, 1, "request 4 must only contain pulse 1")
@@ -258,7 +260,8 @@ try {
   // 第 6 轮请求：第二次达到步数，模型上下文必须接收到了第 2 个新鲜时间戳！
   const req6Matches = requestText(capturedRequests[5]).match(timeRegex)
   assert.ok(req6Matches && req6Matches.length === 2, `request 6 must contain 2 time pulses, got ${req6Matches?.length}`)
-  assert.equal(req6Matches[1], pulses[1].text, "request 6 must contain pulse 2")
+  assert.equal(req6Matches[1], pulses[1].description, "request 6 must contain pulse 2 string")
+  assert.ok(requestText(capturedRequests[5]).includes(`${pulses[1].description}\n`), "pulse 2 must be followed by newline")
 
   console.log("served:", served)
   console.log("time pulses:", pulses.length)

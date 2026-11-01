@@ -96,6 +96,10 @@ describe("createTimePulse", () => {
         resume: false,
         metadata: { timePulse: true },
       })
+      // 时间串带方括号外壳；注入文本末尾带换行，避免与下一条用户提问粘连。
+      const firstPayload = firstCall[0] as unknown as { text: string; description: string }
+      expect(firstPayload.description).toMatch(/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]$/)
+      expect(firstPayload.text).toBe(`${firstPayload.description}\n`)
 
       // 规则：注入的那一轮本身不算步数！
       // 本轮执行完毕，step.ended 被消费并跳过计步
