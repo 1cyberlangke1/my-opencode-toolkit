@@ -225,8 +225,10 @@ describe("tui plugin setup", () => {
     const zh = resolveMessages("zh")
     const en = resolveMessages("en")
     const footer = footerOf(selects[2], "goal.showInSidebar") ?? ""
-    // 断言完整后缀（从语言文件取，不写死），两个 locale 任一命中即可。
-    expect([zh.menu.inactiveSuffix, en.menu.inactiveSuffix]).toContain(footer.split(/开|off/)[1])
+    // 功能关闭时 footer 末尾带不生效提示（后缀从语言文件取，不写死文案）。
+    expect(
+        footer.endsWith(zh.menu.inactiveSuffix) || footer.endsWith(en.menu.inactiveSuffix),
+      ).toBe(true)
     expect(saved).toHaveLength(1)
     expect(saved[0]?.goal.showInSidebar).toBe(false)
 
