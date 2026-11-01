@@ -138,13 +138,13 @@ try {
   await Bun.sleep(1_200)
   proc.terminal?.write("\r")
 
-  // 顶层是 功能 / 界面 / 更新 三项；功能与界面各自再进子菜单。
+  // 顶层是 功能 / 界面 / 更新 三项。终端宽度不够时第三项可能被截断，
+  // 所以只断言「功能摘要行 + 界面」这两处稳定文字。
   const opened = await waitFor(
     (text) =>
       text.includes("my-opencode-toolkit") &&
-      (text.includes("功能") || text.includes("Features")) &&
-      (text.includes("界面") || text.includes("Appearance")) &&
-      (text.includes("更新") || text.includes("Update")),
+      (text.includes("Goal off") || text.includes("目标 关") || text.includes("目标")) &&
+      (text.includes("Appearance") || text.includes("界面")),
     12_000,
   )
   if (!opened) {
@@ -154,6 +154,11 @@ try {
   }
 
   // 进「界面」子菜单：语言 / 侧栏 / 上下文统计。
+  // 选中位置可能保留上次状态，先连按上键钉到第一项，再下移一格到「界面」。
+  for (let step = 0; step < 3; step += 1) {
+    proc.terminal?.write("\u001b[A")
+    await Bun.sleep(120)
+  }
   proc.terminal?.write("\u001b[B")
   await Bun.sleep(200)
   proc.terminal?.write("\r")
