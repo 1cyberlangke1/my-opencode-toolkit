@@ -4,8 +4,9 @@ import { createEffect, createSignal, For, onCleanup, onMount, Show, type JSX } f
 
 import { localeOf, resolveMessages, type Messages } from "../i18n/index.ts"
 import { formatTokens } from "./format.ts"
+import { EditorHint } from "./editor-hint.tsx"
 import { SETTINGS_COMMAND_ID, SETTINGS_SLASH_NAME, TUI_PLUGIN_ID } from "../shared/identity.ts"
-import { DEFAULT_SETTINGS, type Lang, type Settings } from "../shared/settings.ts"
+import { applyEditorEnvironment, DEFAULT_SETTINGS, type Lang, type Settings } from "../shared/settings.ts"
 import { toolkitRpc, type PanelData, type PanelJob, type PanelSubagent, type PanelSubagentDetail } from "../shared/rpc.ts"
 import { countdownColor, dim, hitRateColor } from "./color.ts"
 import { configFileLayers } from "./config-layers.ts"
@@ -23,7 +24,10 @@ export type { UpdateDeps } from "./update-menu.tsx"
 type MenuChoice = "features" | "appearance" | "update"
 
 /** 功能子菜单条目。 */
-type FeatureChoice = "goal" | "scheduling" | "time" | "notifications"
+type FeatureChoice = "goal" | "scheduling" | "time" | "notifications" | "editor"
+
+/** 外部编辑器子菜单条目。 */
+type EditorChoice = "enabled" | "command" | "showHint" | "openNow"
 
 /** 界面子菜单条目。 */
 type AppearanceChoice = "language" | "sidebar" | "contextStats"
@@ -564,6 +568,7 @@ export default Plugin.define({
     const readPanel = createPanelReader(rpc)
     const layers = await configFileLayers(context)
     const initial = await rpc.settingsGet({ layers }, callOptions()).catch((): Settings => DEFAULT_SETTINGS)
+    applyEditorEnvironment(initial.editor)
     const [settings, setSettings] = createSignal<Settings>(initial)
     const [updateResult, setUpdateResult] = createSignal<UpdateCheckResult | undefined>(undefined)
 
@@ -571,10 +576,14 @@ export default Plugin.define({
     const update = async (next: Settings): Promise<void> => {
       const previous = settings()
       setSettings(next)
+      applyEditorEnvironment(next.editor)
       try {
-        setSettings(await rpc.settingsSet({ ...next, layers }, callOptions()))
+        const saved = await rpc.settingsSet({ ...next, layers }, callOptions())
+        setSettings(saved)
+        applyEditorEnvironment(saved.editor)
       } catch {
         setSettings(previous)
+        applyEditorEnvironment(previous.editor)
       }
     }
 
@@ -720,6 +729,56 @@ export default Plugin.define({
 
     const chooseUpdates = createUpdateMenu(context, copy, { onResult: setUpdateResult })
 
+    /** 外部编辑器子菜单：开关 / 命令编辑 / 底栏提示 / 立即打开。 */
+    const chooseEditor = async (): Promise<void> => {
+      for (;;) {
+        const current = settings()
+        const text = copy()
+        const choice = await context.ui.dialog.select<EditorChoice>({
+          title: text.menu.editor,
+          options: [
+            { title: text.menu.editorEnabled, value: "enabled", footer: onOff(current.editor.enabled) },
+            {
+              title: text.menu.editorCommand,
+              value: "command",
+              footer: current.editor.command.length > 0 ? current.editor.command : text.menu.auto,
+            },
+            { title: text.menu.editorShowHint, value: "showHint", footer: onOff(current.editor.showHint) },
+            { title: text.menu.editorOpenNow, value: "openNow" },
+          ],
+        })
+        if (choice === undefined) return
+        if (choice === "enabled") {
+          await update({
+            ...current,
+            editor: { ...current.editor, enabled: !current.editor.enabled },
+          })
+          continue
+        }
+        if (choice === "command") {
+          const raw = await context.ui.dialog.prompt({
+            title: text.menu.editorPromptCommand,
+            value: current.editor.command,
+          })
+          if (raw === undefined) continue
+          await update({
+            ...current,
+            editor: { ...current.editor, command: raw.trim() },
+          })
+          continue
+        }
+        if (choice === "showHint") {
+          await update({
+            ...current,
+            editor: { ...current.editor, showHint: !current.editor.showHint },
+          })
+          continue
+        }
+        context.keymap.dispatch("prompt.editor")
+        return
+      }
+    }
+
     /** 时间感知子菜单：开关 / 间隔步数 / 格式模板 / 时区。 */
     const chooseTime = async (): Promise<void> => {
       for (;;) {
@@ -843,6 +902,7 @@ export default Plugin.define({
                 onOff(current.scheduling.enabled),
                 onOff(current.time.enabled),
                 onOff(current.notification.enabled),
+                onOff(current.editor.enabled),
               ),
             },
             { title: text.menu.appearance, value: "appearance" },
@@ -881,13 +941,15 @@ export default Plugin.define({
             { title: text.menu.scheduling, value: "scheduling", footer: onOff(current.scheduling.enabled) },
             { title: text.menu.time, value: "time", footer: onOff(current.time.enabled) },
             { title: text.menu.notifications, value: "notifications", footer: onOff(current.notification.enabled) },
+            { title: text.menu.editor, value: "editor", footer: onOff(current.editor.enabled) },
           ],
         })
         if (choice === undefined) return
         if (choice === "goal") await chooseGoal()
         else if (choice === "scheduling") await chooseScheduling()
         else if (choice === "time") await chooseTime()
-        else await chooseNotifications()
+        else if (choice === "notifications") await chooseNotifications()
+        else await chooseEditor()
       }
     }
 
@@ -959,10 +1021,23 @@ export default Plugin.define({
         ),
     })
 
+    const disposeHint = context.ui.slot({
+      prepend: "prompt.footer",
+      render: (input) => (
+        <EditorHint
+          context={context}
+          settings={settings}
+          copy={copy}
+          mode={input.mode}
+        />
+      ),
+    })
+
     return () => {
       offToast()
       for (const dispose of disposeSections) dispose()
       disposeStats()
+      disposeHint()
     }
   },
 })

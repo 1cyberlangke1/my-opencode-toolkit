@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { DEFAULT_SETTINGS, normalizeSettings } from "../src/shared/settings.ts"
+import { DEFAULT_SETTINGS, normalizeSettings, applyEditorEnvironment } from "../src/shared/settings.ts"
 
 describe("normalizeSettings", () => {
   it("无输入时返回默认设置", () => {
@@ -67,7 +67,7 @@ describe("normalizeSettings", () => {
   it("丢弃未知字段", () => {
     const got = normalizeSettings({ unknown: true, notification: { nope: 1 } })
     expect(Object.keys(got).sort()).toEqual(
-      ["contextStats", "enabled", "goal", "lang", "notification", "scheduling", "sidebar", "time"].sort(),
+      ["contextStats", "editor", "enabled", "goal", "lang", "notification", "scheduling", "sidebar", "time"].sort(),
     )
     expect(Object.keys(got.notification).sort()).toEqual(
       ["enabled", "onComplete", "onPermission", "onQuestion", "onlyMainSession"].sort(),
@@ -89,6 +89,59 @@ describe("normalizeSettings", () => {
     expect(got.scheduling).toEqual({ enabled: false, showInSidebar: true })
     expect(normalizeSettings({}).goal.showInSidebar).toBe(true)
     expect(normalizeSettings({}).scheduling.showInSidebar).toBe(true)
+  })
+
+  it("editor 外部编辑器在 Windows 下默认启用且命令为 notepad，非 Windows 默认禁用", () => {
+    const isWin = process.platform === "win32"
+    expect(DEFAULT_SETTINGS.editor.enabled).toBe(isWin)
+    expect(DEFAULT_SETTINGS.editor.showHint).toBe(true)
+    expect(DEFAULT_SETTINGS.editor.command).toBe(isWin ? "notepad" : "")
+
+    const got = normalizeSettings({
+      editor: {
+        enabled: false,
+        command: "code --wait",
+        showHint: false,
+      },
+    })
+    expect(got.editor.enabled).toBe(false)
+    expect(got.editor.command).toBe("code --wait")
+    expect(got.editor.showHint).toBe(false)
+  })
+
+  it("applyEditorEnvironment 仅在启用且命令非空时注入 EDITOR 与 VISUAL", () => {
+    const originalEditor = process.env["EDITOR"]
+    const originalVisual = process.env["VISUAL"]
+
+    try {
+      delete process.env["EDITOR"]
+      delete process.env["VISUAL"]
+
+      // 禁用时不注入
+      applyEditorEnvironment({ enabled: false, command: "notepad", showHint: true })
+      expect(process.env["EDITOR"]).toBeUndefined()
+      expect(process.env["VISUAL"]).toBeUndefined()
+
+      // 命令为空时不注入
+      applyEditorEnvironment({ enabled: true, command: "  ", showHint: true })
+      expect(process.env["EDITOR"]).toBeUndefined()
+      expect(process.env["VISUAL"]).toBeUndefined()
+
+      // 启用且命令有效时注入
+      applyEditorEnvironment({ enabled: true, command: "notepad", showHint: true })
+      expect(process.env["EDITOR"]).toBe("notepad")
+      expect(process.env["VISUAL"]).toBe("notepad")
+
+      // 再次修改时更新
+      applyEditorEnvironment({ enabled: true, command: "code --wait", showHint: false })
+      expect(process.env["EDITOR"]).toBe("code --wait")
+      expect(process.env["VISUAL"]).toBe("code --wait")
+    } finally {
+      if (originalEditor !== undefined) process.env["EDITOR"] = originalEditor
+      else delete process.env["EDITOR"]
+      if (originalVisual !== undefined) process.env["VISUAL"] = originalVisual
+      else delete process.env["VISUAL"]
+    }
   })
 })
 

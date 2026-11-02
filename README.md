@@ -111,6 +111,9 @@ OpenCode v2 插件，提供系统桌面通知、持久目标追踪（Goal）、�
 | `time.intervalSteps` | `3` | 按步数模式下的注入间隔（步数，最小 1 步） |
 | `time.format` | `YYYY-MM-DD HH:mm:ss` | 时间格式模板（token：`YYYY MM DD HH mm ss`） |
 | `time.timezone` | （空） | IANA 时区名；空 = 宿主时区，非法值回落宿主 |
+| `editor.enabled` | Windows 为 `true`，其它为 `false` | 是否启用外部编辑器支持（仅 Windows 默认开启，自动注入环境变量） |
+| `editor.command` | Windows 为 `notepad`，其它为空 | 外部编辑器命令（如 `notepad`、`code --wait`、`nvim`） |
+| `editor.showHint` | `true` | 是否在输入框底栏左侧显示外部编辑器快捷键提示 |
 
 ## 数据与隐私
 

@@ -15,7 +15,7 @@ import { ToolkitRpc, type PanelData, type PanelSubagentDetail } from "./shared/r
 import { globalSerialRegistry, runSerial } from "./shared/serial.ts"
 import { ownsSession } from "./shared/session.ts"
 import { loadSettings, saveSettings } from "./shared/settings-store.ts"
-import { normalizeSettings } from "./shared/settings.ts"
+import { applyEditorEnvironment, normalizeSettings } from "./shared/settings.ts"
 import { buildStats, buildSubagentDetail, hitRatePercent, listSubagents, tokenParts } from "./stats.ts"
 import type { SessionStats } from "./stats.ts"
 import { loadStats, removeStats, saveStats } from "./stats-store.ts"
@@ -119,12 +119,20 @@ export default Plugin.define({
       },
     )
 
+    // 启动时初始化外部编辑器环境变量，使 Windows 下默认可用 notepad。
+    void loadSettings(ctx)
+      .then((settings) => {
+        applyEditorEnvironment(settings.editor)
+      })
+      .catch(() => undefined)
+
     const rpc = await ctx.rpc.register(ToolkitRpc, {
       settingsGet: async (input) => loadSettings(ctx, readLayers(input)),
       settingsSet: async (input) => {
         // RPC 定义是 PortableDefinition，运行时才知道 input 形状；这里再归一化一次兜底。
         const layers = readLayers(input)
         const next = normalizeSettings(input)
+        applyEditorEnvironment(next.editor)
         await saveSettings(ctx, next, layers)
         // 命令描述在注册时生成；语言变了必须重注册，否则 /goal /cron /loop 一直显示旧语言。
         // goal 开关变化要动态注册/注销命令与工具：关 = 命令面板、工具表、续作全部消失。

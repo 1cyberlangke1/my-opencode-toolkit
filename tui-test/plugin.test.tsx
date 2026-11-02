@@ -104,8 +104,8 @@ function fakeContext(options: {
           toasts.push(call)
         },
       },
-      slot: (claim: { readonly append?: string }) => {
-        slots.push(claim.append ?? "")
+      slot: (claim: { readonly append?: string; readonly prepend?: string }) => {
+        slots.push(claim.append ?? claim.prepend ?? "")
         return () => undefined
       },
     },
@@ -141,6 +141,7 @@ describe("tui plugin setup", () => {
       "sidebar.content",
       "sidebar.content",
       "prompt.footer",
+      "prompt.footer",
     ])
     expect(layers).toHaveLength(1)
     expect(layers[0]?.commands?.[0]?.slash?.name).toBe("my-opencode-toolkit")
@@ -159,20 +160,19 @@ describe("tui plugin setup", () => {
     expect(values).toEqual(["features", "appearance", "update"])
     const zh = resolveMessages("zh")
     const en = resolveMessages("en")
-    // 功能分类 footer 是四个开关状态摘要（文案从语言文件取）。
-    // 默认: goal 关 / scheduling 开 / time 开 / notification 开。
+    const isWin = process.platform === "win32"
     const featuresFooter = footerOf(selects[0], "features") ?? ""
     expect(
       [
-        zh.menu.featuresSummary("关", "开", "开", "开"),
-        en.menu.featuresSummary("off", "on", "on", "on"),
+        zh.menu.featuresSummary("关", "开", "开", "开", isWin ? "开" : "关"),
+        en.menu.featuresSummary("off", "on", "on", "on", isWin ? "on" : "off"),
       ],
     ).toContain(featuresFooter)
 
     await cleanup?.()
   })
 
-  test("功能子菜单：目标带弃用标记，四项齐全", async () => {
+  test("功能子菜单：目标带弃用标记，五项齐全", async () => {
     const { context, layers, selects } = fakeContext({ picks: ["features", undefined, undefined] })
     const cleanup = await plugin.setup(context)
 
@@ -191,6 +191,7 @@ describe("tui plugin setup", () => {
       "scheduling",
       "time",
       "notifications",
+      "editor",
     ])
 
     await cleanup?.()
@@ -406,6 +407,49 @@ describe("tui plugin setup", () => {
     const zh = resolveMessages("zh")
     const en = resolveMessages("en")
     expect([zh.menu.timeInvalidTimezone, en.menu.timeInvalidTimezone]).toContain(toasts[0]?.message)
+
+    await cleanup?.()
+  })
+
+  test("主菜单功能分类含外部编辑器项，子菜单四项齐全且支持编辑与立即打开", async () => {
+    const saved: Settings[] = []
+    let dispatchedCommand: string | undefined
+    const { context, layers, selects, promptCalls } = fakeContext({
+      picks: ["features", "editor", "command", "showHint", "openNow", undefined],
+      prompts: ["code --wait"],
+      onSettingsSet: (next) => {
+        saved.push(next)
+        return Promise.resolve(next)
+      },
+    })
+    context.keymap.dispatch = (id: string) => {
+      dispatchedCommand = id
+    }
+
+    const cleanup = await plugin.setup(context)
+    layers[0]?.commands?.[0]?.run()
+    await Bun.sleep(30)
+
+    const zh = resolveMessages("zh")
+    const en = resolveMessages("en")
+    expect([zh.menu.editor, en.menu.editor]).toContain(
+      selects[1]?.options.find((o) => o.value === "editor")?.title,
+    )
+    expect(selects[2]?.title).toMatch(/External editor|外部编辑器/)
+    expect(selects[2]?.options.map((option) => option.value)).toEqual([
+      "enabled",
+      "command",
+      "showHint",
+      "openNow",
+    ])
+
+    // command 修改为 "code --wait"，showHint 切换
+    expect(promptCalls).toHaveLength(1)
+    expect(saved).toHaveLength(2)
+    expect(saved[0]?.editor.command).toBe("code --wait")
+    expect(saved[1]?.editor.showHint).toBe(false)
+    // 立即打开派发 prompt.editor
+    expect(dispatchedCommand).toBe("prompt.editor")
 
     await cleanup?.()
   })

@@ -46,10 +46,23 @@ export type Messages = {
     readonly features: string
     /** 主菜单分类：界面偏好。 */
     readonly appearance: string
-    /** 功能分类 footer：四个功能开关状态摘要。 */
-    readonly featuresSummary: (goal: string, scheduling: string, time: string, notification: string) => string
+    /** 功能分类 footer：功能开关状态摘要。 */
+    readonly featuresSummary: (
+      goal: string,
+      scheduling: string,
+      time: string,
+      notification: string,
+      editor: string,
+    ) => string
     /** 侧栏子菜单里目标/定时显示项在功能关闭时的提示后缀。 */
     readonly inactiveSuffix: string
+    /** 外部编辑器子菜单。 */
+    readonly editor: string
+    readonly editorEnabled: string
+    readonly editorCommand: string
+    readonly editorShowHint: string
+    readonly editorPromptCommand: string
+    readonly editorOpenNow: string
     /** 时间感知子菜单。 */
     readonly time: string
     readonly timeEnabled: string
@@ -116,6 +129,10 @@ export type Messages = {
     readonly permission: string
     readonly user: string
     readonly assistant: string
+  }
+  readonly footer: {
+    /** 输入框底栏左侧的外部编辑器按键提示标签。 */
+    readonly editorHint: string
   }
   /** cron 的人类可读描述；days 是周日到周六的短名。 */
   readonly cron: {

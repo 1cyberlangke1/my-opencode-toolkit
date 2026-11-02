@@ -41,9 +41,15 @@ export const en: Messages = {
     checkUpdates: "Check for updates",
     features: "Features",
     appearance: "Appearance",
-    featuresSummary: (goal, scheduling, time, notification) =>
-      `Goal ${goal} · Scheduling ${scheduling} · Time ${time} · Notifications ${notification}`,
+    featuresSummary: (goal, scheduling, time, notification, editor) =>
+      `Goal ${goal} · Scheduling ${scheduling} · Time ${time} · Notifications ${notification} · Editor ${editor}`,
     inactiveSuffix: " (feature disabled, not in effect)",
+    editor: "External editor",
+    editorEnabled: "Enabled",
+    editorCommand: "Editor command",
+    editorShowHint: "Show footer hint",
+    editorPromptCommand: "Editor command (default: notepad on Windows)",
+    editorOpenNow: "Open external editor now",
     time: "Time awareness",
     timeEnabled: "Enabled",
     timeMode: "Trigger mode",
@@ -115,6 +121,9 @@ export const en: Messages = {
     permission: "Permission required",
     user: "User",
     assistant: "Assistant",
+  },
+  footer: {
+    editorHint: "editor",
   },
   cron: {
     everyMinute: "Every minute",

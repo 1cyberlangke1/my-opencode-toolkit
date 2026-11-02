@@ -41,9 +41,15 @@ export const zh: Messages = {
     checkUpdates: "检查更新",
     features: "功能",
     appearance: "界面",
-    featuresSummary: (goal, scheduling, time, notification) =>
-      `目标 ${goal} · 定时 ${scheduling} · 时间 ${time} · 通知 ${notification}`,
+    featuresSummary: (goal, scheduling, time, notification, editor) =>
+      `目标 ${goal} · 定时 ${scheduling} · 时间 ${time} · 通知 ${notification} · 编辑器 ${editor}`,
     inactiveSuffix: "（功能已关闭，不生效）",
+    editor: "外部编辑器",
+    editorEnabled: "功能开关",
+    editorCommand: "编辑器命令",
+    editorShowHint: "底栏按键提示",
+    editorPromptCommand: "编辑器命令（Windows 默认为 notepad）",
+    editorOpenNow: "立即打开外部编辑",
     time: "时间感知",
     timeEnabled: "功能开关",
     timeMode: "触发模式",
@@ -115,6 +121,9 @@ export const zh: Messages = {
     permission: "需要权限确认",
     user: "用户",
     assistant: "助手",
+  },
+  footer: {
+    editorHint: "外部编辑",
   },
   cron: {
     everyMinute: "每分钟",

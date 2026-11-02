@@ -69,6 +69,22 @@ export type TimeSettings = {
   readonly timezone: string
 }
 
+/** 外部编辑器设置。 */
+export type EditorSettings = {
+  /** 是否启用外部编辑器支持（自动注入环境变量）。 */
+  readonly enabled: boolean
+  /** 编辑器命令（如 notepad、code --wait、nvim）；Windows 默认 notepad。 */
+  readonly command: string
+  /** 是否在输入框底栏左侧显示快捷键提示。 */
+  readonly showHint: boolean
+}
+
+/** 默认外部编辑器开关：仅 Windows 默认启用，非 Windows 平台默认禁用。 */
+export const DEFAULT_EDITOR_ENABLED = process.platform === "win32"
+
+/** 默认编辑器命令：Windows 平台默认为绝对存在的记事本 notepad，其它平台保持为空。 */
+export const DEFAULT_EDITOR_COMMAND = process.platform === "win32" ? "notepad" : ""
+
 /** 插件全部设置。 */
 export type Settings = {
   readonly lang: Lang
@@ -80,6 +96,7 @@ export type Settings = {
   readonly sidebar: SidebarSettings
   readonly contextStats: ContextStatsSettings
   readonly time: TimeSettings
+  readonly editor: EditorSettings
 }
 
 /**
@@ -119,6 +136,11 @@ export const DEFAULT_SETTINGS: Settings = {
     format: "YYYY-MM-DD HH:mm:ss",
     timezone: "",
   },
+  editor: {
+    enabled: DEFAULT_EDITOR_ENABLED,
+    command: DEFAULT_EDITOR_COMMAND,
+    showHint: true,
+  },
 }
 
 /**
@@ -134,6 +156,7 @@ export function normalizeSettings(raw: unknown): Settings {
   const sidebar = asRecord(record["sidebar"]) ?? {}
   const contextStats = asRecord(record["contextStats"]) ?? {}
   const time = asRecord(record["time"]) ?? {}
+  const editor = asRecord(record["editor"]) ?? {}
   const legacyShowCache = typeof sidebar["showCache"] === "boolean" ? sidebar["showCache"] : undefined
 
   return {
@@ -179,7 +202,26 @@ export function normalizeSettings(raw: unknown): Settings {
       format: readString(time["format"], DEFAULT_SETTINGS.time.format),
       timezone: readString(time["timezone"], DEFAULT_SETTINGS.time.timezone),
     },
+    editor: {
+      enabled: readBoolean(editor["enabled"], DEFAULT_SETTINGS.editor.enabled),
+      command: readString(editor["command"], DEFAULT_SETTINGS.editor.command),
+      showHint: readBoolean(editor["showHint"], DEFAULT_SETTINGS.editor.showHint),
+    },
   }
+}
+
+/**
+ * 输入：编辑器设置。
+ * 输出：无。
+ * 预期：如果启用且命令非空，把命令注入 process.env.EDITOR / process.env.VISUAL，
+ *       使 OpenCode 原生的 openEditor 能开箱即用拉起指定的编辑器。
+ */
+export function applyEditorEnvironment(editor: EditorSettings): void {
+  if (!editor.enabled) return
+  const command = editor.command.trim()
+  if (command.length === 0) return
+  process.env["EDITOR"] = command
+  process.env["VISUAL"] = command
 }
 
 /**

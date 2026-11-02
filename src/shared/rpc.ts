@@ -75,6 +75,16 @@ const SettingsFields = {
     required: ["enabled", "mode", "intervalSeconds", "intervalSteps", "format", "timezone"],
     additionalProperties: false,
   },
+  editor: {
+    type: "object",
+    properties: {
+      enabled: { type: "boolean" },
+      command: { type: "string" },
+      showHint: { type: "boolean" },
+    },
+    required: ["enabled", "command", "showHint"],
+    additionalProperties: false,
+  },
 } as const
 
 const SettingsRequired = [
@@ -86,6 +96,7 @@ const SettingsRequired = [
   "sidebar",
   "contextStats",
   "time",
+  "editor",
 ] as const
 
 /** 设置写入的输入：完整设置 + 层路径。 */
