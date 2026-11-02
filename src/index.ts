@@ -262,7 +262,16 @@ export default Plugin.define({
     // 时间感知：step.ended 计数，满 N 步注入一条当前时间（resume:false 不触发新轮）。
     const timePulse = createTimePulse(ctx, roles, async () => {
       const settings = await loadSettings(ctx)
-      if (!settings.enabled) return { enabled: false, intervalSteps: 1, format: "", timezone: "" }
+      if (!settings.enabled) {
+        return {
+          enabled: false,
+          mode: "interval",
+          intervalSeconds: 300,
+          intervalSteps: 1,
+          format: "",
+          timezone: "",
+        }
+      }
       return settings.time
     })
 

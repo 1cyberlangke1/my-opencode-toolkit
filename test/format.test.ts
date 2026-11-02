@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { truncate } from "../src/shared/format.ts"
-import { formatTokens } from "../src/tui/format.ts"
+import { formatIntervalSeconds, formatTokens, parseIntervalSeconds } from "../src/tui/format.ts"
 
 describe("truncate", () => {
   it("默认让省略号占用额外 3 个字符", () => {
@@ -50,5 +50,48 @@ describe("formatTokens", () => {
     expect(formatTokens(-1234)).toBe("-1.2K")
     expect(formatTokens(Number.NaN)).toBe("0")
     expect(formatTokens(Number.POSITIVE_INFINITY)).toBe("0")
+  })
+})
+
+describe("formatIntervalSeconds", () => {
+  it("30 秒以下也按秒输出", () => {
+    expect(formatIntervalSeconds(15)).toBe("15s")
+    expect(formatIntervalSeconds(30)).toBe("30s")
+  })
+
+  it("整分钟或带秒输出", () => {
+    expect(formatIntervalSeconds(60)).toBe("1m")
+    expect(formatIntervalSeconds(300)).toBe("5m")
+    expect(formatIntervalSeconds(90)).toBe("1m30s")
+  })
+
+  it("整小时或带分秒输出", () => {
+    expect(formatIntervalSeconds(3600)).toBe("1h")
+    expect(formatIntervalSeconds(5400)).toBe("1h30m")
+    expect(formatIntervalSeconds(3665)).toBe("1h1m5s")
+  })
+})
+
+describe("parseIntervalSeconds", () => {
+  it("纯秒数（下限 30 秒）", () => {
+    expect(parseIntervalSeconds("300")).toBe(300)
+    expect(parseIntervalSeconds("30")).toBe(30)
+    expect(parseIntervalSeconds("29")).toBeUndefined() // 低于 30 秒拒绝
+    expect(parseIntervalSeconds("-10")).toBeUndefined()
+  })
+
+  it("带单位简写（s/m/h）", () => {
+    expect(parseIntervalSeconds("30s")).toBe(30)
+    expect(parseIntervalSeconds("5m")).toBe(300)
+    expect(parseIntervalSeconds("1h")).toBe(3600)
+    expect(parseIntervalSeconds("1h30m")).toBe(5400)
+    expect(parseIntervalSeconds("1m30s")).toBe(90)
+    expect(parseIntervalSeconds("20s")).toBeUndefined() // 低于 30 秒拒绝
+  })
+
+  it("非法输入回退 undefined", () => {
+    expect(parseIntervalSeconds("")).toBeUndefined()
+    expect(parseIntervalSeconds("abc")).toBeUndefined()
+    expect(parseIntervalSeconds("5x")).toBeUndefined()
   })
 })

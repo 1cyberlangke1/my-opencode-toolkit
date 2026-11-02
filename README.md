@@ -98,15 +98,17 @@ OpenCode v2 插件，提供系统桌面通知、持久目标追踪（Goal）、�
 | `notification.onQuestion` | `true` | 模型提问时通知 |
 | `notification.onPermission` | `true` | 请求授权时通知 |
 | `notification.onlyMainSession` | `true` | 仅通知主会话，忽略子代理事件 |
-| `goal.enabled` | `true` | 是否启用持久目标功能 |
+| `goal.enabled` | `false` | 是否启用持久目标功能（已弃用，官方已内置 `/goal`） |
 | `goal.showInSidebar` | `true` | 是否在侧栏展示目标进度 |
 | `scheduling.enabled` | `true` | 是否启用定时任务与循环功能 |
 | `scheduling.showInSidebar` | `true` | 是否在侧栏展示定时任务 |
-| `sidebar.showTools` | `true` | 是否在侧栏展示工具调用计数 |
-| `sidebar.showSubagents` | `true` | 是否在侧栏展示子代理详情 |
+| `sidebar.showTools` | `false` | 是否在侧栏展示工具调用计数 |
+| `sidebar.showSubagents` | `false` | 是否在侧栏展示子代理详情 |
 | `contextStats.enabled` | `true` | 是否在底部状态栏展示 Token 统计 |
 | `time.enabled` | `true` | 是否启用时间感知注入 |
-| `time.intervalSteps` | `3` | 每隔多少步向会话注入一次当前时间 |
+| `time.mode` | `interval` | 触发模式：`interval` 按时间间隔；`steps` 按步数 |
+| `time.intervalSeconds` | `300` | 按时间间隔模式下的注入间隔（秒数，最短 30 秒） |
+| `time.intervalSteps` | `3` | 按步数模式下的注入间隔（步数，最小 1 步） |
 | `time.format` | `YYYY-MM-DD HH:mm:ss` | 时间格式模板（token：`YYYY MM DD HH mm ss`） |
 | `time.timezone` | （空） | IANA 时区名；空 = 宿主时区，非法值回落宿主 |
 

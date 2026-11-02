@@ -46,9 +46,21 @@ export type ContextStatsSettings = {
   readonly showHitRate: boolean
 }
 
-/** 时间感知：每隔 N 步向会话注入一次当前时间。 */
+/** 时间感知触发模式："interval" 按时间流逝间隔；"steps" 按执行步骤计数。 */
+export type TimeTriggerMode = "interval" | "steps"
+
+/** 时间间隔最短下限：30 秒，防止过度注入产生刷屏噪声。 */
+export const MIN_TIME_INTERVAL_SECONDS = 30
+/** 默认时间注入间隔：300 秒（5 分钟）。 */
+export const DEFAULT_TIME_INTERVAL_SECONDS = 300
+
+/** 时间感知：向会话注入当前时间。 */
 export type TimeSettings = {
   readonly enabled: boolean
+  /** 触发模式："interval" 按时间间隔；"steps" 按步数。 */
+  readonly mode: TimeTriggerMode
+  /** 按时间模式下的注入间隔（秒数）；最小 30。 */
+  readonly intervalSeconds: number
   /** 每隔多少步注入一次；最小 1。 */
   readonly intervalSteps: number
   /** 时间格式模板；token：YYYY MM DD HH mm ss。 */
@@ -90,7 +102,7 @@ export const DEFAULT_SETTINGS: Settings = {
   scheduling: { enabled: true, showInSidebar: true },
   sidebar: {
     showTools: false,
-    showSubagents: true,
+    showSubagents: false,
   },
   contextStats: {
     enabled: true,
@@ -101,6 +113,8 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   time: {
     enabled: true,
+    mode: "interval",
+    intervalSeconds: DEFAULT_TIME_INTERVAL_SECONDS,
     intervalSteps: 3,
     format: "YYYY-MM-DD HH:mm:ss",
     timezone: "",
@@ -159,6 +173,8 @@ export function normalizeSettings(raw: unknown): Settings {
     },
     time: {
       enabled: readBoolean(time["enabled"], DEFAULT_SETTINGS.time.enabled),
+      mode: readTimeMode(time["mode"], DEFAULT_SETTINGS.time.mode),
+      intervalSeconds: readIntervalSeconds(time["intervalSeconds"], DEFAULT_SETTINGS.time.intervalSeconds),
       intervalSteps: readIntervalSteps(time["intervalSteps"], DEFAULT_SETTINGS.time.intervalSteps),
       format: readString(time["format"], DEFAULT_SETTINGS.time.format),
       timezone: readString(time["timezone"], DEFAULT_SETTINGS.time.timezone),
@@ -181,6 +197,24 @@ function readBoolean(value: unknown, fallback: boolean): boolean {
  */
 function readLang(value: unknown, fallback: Lang): Lang {
   return value === "auto" || value === "zh" || value === "en" ? value : fallback
+}
+
+/**
+ * 输入：任意值 + 默认触发模式。
+ * 输出：合法的 TimeTriggerMode 枚举，非合法值回退默认。
+ */
+function readTimeMode(value: unknown, fallback: TimeTriggerMode): TimeTriggerMode {
+  return value === "interval" || value === "steps" ? value : fallback
+}
+
+/**
+ * 输入：任意值 + 默认秒数。
+ * 输出：正整数（向下取整）；小于 MIN_TIME_INTERVAL_SECONDS（30秒）、NaN 或非数字回退默认值。
+ */
+function readIntervalSeconds(value: unknown, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback
+  const rounded = Math.floor(value)
+  return rounded >= MIN_TIME_INTERVAL_SECONDS ? rounded : fallback
 }
 
 /**

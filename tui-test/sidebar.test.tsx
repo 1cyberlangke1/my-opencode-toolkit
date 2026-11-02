@@ -79,8 +79,8 @@ async function mount(lang: "zh" | "en", panel: PanelData = PANEL) {
   const [settings] = createSignal<Settings>({
     ...DEFAULT_SETTINGS,
     lang,
-    // 多数用例断言工具分区内容；默认关闭的行为由 showTools 默认值用例单独验证。
-    sidebar: { ...DEFAULT_SETTINGS.sidebar, showTools: true },
+    // 多数用例断言工具与子代理分区内容；默认关闭的行为由独立用例验证。
+    sidebar: { ...DEFAULT_SETTINGS.sidebar, showTools: true, showSubagents: true },
     // goal 默认关闭（官方 /goal 已内置）；渲染用例显式开启，验证的是侧栏渲染本身。
     goal: { ...DEFAULT_SETTINGS.goal, enabled: true },
   })
@@ -232,7 +232,7 @@ describe("sidebar panel", () => {
   })
 
   test("showTools 默认关闭：不显式开启时工具分区不渲染", async () => {
-    // DEFAULT_SETTINGS.sidebar.showTools=false；mount() 显式开了 true，这里用默认值验证。
+    // DEFAULT_SETTINGS 中 showTools=false 且 showSubagents=false；验证默认均不渲染。
     const [settings] = createSignal<Settings>({ ...DEFAULT_SETTINGS, lang: "en" })
     const app = await testRender(
       () => (
@@ -253,11 +253,12 @@ describe("sidebar panel", () => {
       { width: 80, height: 20 },
     )
     try {
-      // goal 默认关闭不渲染，等子代理分区出现即可。
-      const frame = await app.waitForFrame((text) => text.includes("Subagents"))
+      // 默认设置下：Scheduled 正常渲染，Goal、Tools 和 Subagents 均默认关闭不渲染。
+      const frame = await app.waitForFrame((text) => text.includes("Scheduled"))
       expect(frame).not.toContain("Goal")
       expect(frame).not.toContain("Tools (2)")
       expect(frame).not.toContain("[read](2)")
+      expect(frame).not.toContain("Subagents")
     } finally {
       await app.dispose()
     }

@@ -84,10 +84,15 @@ export type TimeHandle = {
 export function createTimePulse(
   ctx: Plugin.Context,
   roles: SessionRoles,
-  readSettings: () => Promise<Pick<TimeSettings, "enabled" | "intervalSteps" | "format" | "timezone">>,
+  readSettings: () => Promise<
+    Pick<TimeSettings, "enabled" | "mode" | "intervalSeconds" | "intervalSteps" | "format" | "timezone">
+  >,
+  nowProvider: () => number = () => Date.now(),
 ): TimeHandle {
-  /** 输入：会话 ID；输出：当前计数。 */
+  /** 输入：会话 ID；输出：当前计数（steps 模式用）。 */
   const counts = new Map<string, number>()
+  /** 输入：会话 ID；输出：上次注入时间戳毫秒数（interval 模式用）。 */
+  const lastInjectedAt = new Map<string, number>()
   /** 刚刚完成时间注入的会话：注入带出的那一步本身不计入步数。 */
   const skipNextStep = new Set<string>()
 
@@ -110,19 +115,26 @@ export function createTimePulse(
   }
 
   const trigger = async (sessionID: string): Promise<void> => {
-    const currentCount = counts.get(sessionID) ?? 0
-    if (currentCount === 0) return
-
     const settings = await readSettings()
     if (!settings.enabled) return
-    if (currentCount < settings.intervalSteps) return
     if (!(await ownsSession(ctx, sessionID))) return
     if (await roles.isSubagent(sessionID)) return
 
-    counts.delete(sessionID)
+    const now = nowProvider()
+    if (settings.mode === "steps") {
+      const currentCount = counts.get(sessionID) ?? 0
+      if (currentCount < settings.intervalSteps) return
+      counts.delete(sessionID)
+    } else {
+      const last = lastInjectedAt.get(sessionID)
+      // 若已有记录且流逝时间不足设定秒数，则静默跳过；首次记录或达标时注入
+      if (last !== undefined && now - last < settings.intervalSeconds * 1000) return
+      lastInjectedAt.set(sessionID, now)
+    }
+
     // 标记：本次注入所触发的那一轮执行本身不算下次步数
     skipNextStep.add(sessionID)
-    const timeStr = formatTimeSafe(new Date(), settings.format, settings.timezone)
+    const timeStr = formatTimeSafe(new Date(now), settings.format, settings.timezone)
     // 用方括号包裹时间串，形成不可误读的元数据锚点（与 [context-reminder] 同风格）。
     // 注入给模型的文本末尾带换行符，避免与随后进入的用户提问粘连成无间隔字符串；
     // TUI 的 description 同样带外壳，保持单行显示。
@@ -143,10 +155,12 @@ export function createTimePulse(
     trigger,
     forget(sessionID) {
       counts.delete(sessionID)
+      lastInjectedAt.delete(sessionID)
       skipNextStep.delete(sessionID)
     },
     dispose() {
       counts.clear()
+      lastInjectedAt.clear()
       skipNextStep.clear()
     },
   }

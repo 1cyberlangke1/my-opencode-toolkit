@@ -24,10 +24,10 @@ const dataDir = join(root, "data")
 for (const dir of [configDir, dataDir, join(root, "xdg-config"), join(root, "state"), join(root, "cache")]) {
   await mkdir(dir, { recursive: true })
 }
-// time 专属 seed：间隔 2 步注入一次；goal/scheduling 默认关闭，不干扰本用例。
+// time 专属 seed：显式测试 steps 模式（间隔 2 步注入一次）；goal/scheduling 默认关闭，不干扰本用例。
 await writeFile(
   join(configDir, "my-opencode-toolkit.json"),
-  `${JSON.stringify({ time: { enabled: true, intervalSteps: 2 } }, null, 2)}\n`,
+  `${JSON.stringify({ time: { enabled: true, mode: "steps", intervalSteps: 2 } }, null, 2)}\n`,
   "utf8",
 )
 

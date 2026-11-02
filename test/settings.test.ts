@@ -27,6 +27,36 @@ describe("normalizeSettings", () => {
     expect(got.notification.onComplete).toBe(false)
     expect(got.notification.onQuestion).toBe(DEFAULT_SETTINGS.notification.onQuestion)
     expect(got.sidebar.showTools).toBe(DEFAULT_SETTINGS.sidebar.showTools)
+    expect(got.sidebar.showSubagents).toBe(DEFAULT_SETTINGS.sidebar.showSubagents)
+    expect(DEFAULT_SETTINGS.sidebar.showSubagents).toBe(false)
+  })
+
+  it("time 设置支持 interval 与 steps 模式，下限分别为 30 秒和 1 步", () => {
+    expect(DEFAULT_SETTINGS.time.mode).toBe("interval")
+    expect(DEFAULT_SETTINGS.time.intervalSeconds).toBe(300)
+    expect(DEFAULT_SETTINGS.time.intervalSteps).toBe(3)
+
+    const got = normalizeSettings({
+      time: {
+        mode: "steps",
+        intervalSeconds: 20, // 低于 30 秒应回退
+        intervalSteps: 0, // 低于 1 步应回退
+      },
+    })
+    expect(got.time.mode).toBe("steps")
+    expect(got.time.intervalSeconds).toBe(300)
+    expect(got.time.intervalSteps).toBe(3)
+
+    const valid = normalizeSettings({
+      time: {
+        mode: "interval",
+        intervalSeconds: 45,
+        intervalSteps: 5,
+      },
+    })
+    expect(valid.time.mode).toBe("interval")
+    expect(valid.time.intervalSeconds).toBe(45)
+    expect(valid.time.intervalSteps).toBe(5)
   })
 
   it("旧 sidebar.showCache 迁移到 contextStats.enabled", () => {

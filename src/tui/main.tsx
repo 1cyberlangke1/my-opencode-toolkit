@@ -9,7 +9,7 @@ import { DEFAULT_SETTINGS, type Lang, type Settings } from "../shared/settings.t
 import { toolkitRpc, type PanelData, type PanelJob, type PanelSubagent, type PanelSubagentDetail } from "../shared/rpc.ts"
 import { countdownColor, dim, hitRateColor } from "./color.ts"
 import { configFileLayers } from "./config-layers.ts"
-import { formatAgo, formatCountdown, formatDateTime, padRight, truncate } from "./format.ts"
+import { formatAgo, formatCountdown, formatDateTime, formatIntervalSeconds, padRight, parseIntervalSeconds, truncate } from "./format.ts"
 import { createPanelFeed, createPanelReader, panelRpcOptions as rpcOptions } from "./panel-cache.ts"
 import { formatCronHuman } from "../scheduling/cron.ts"
 import type { UpdateCheckResult } from "../shared/update.ts"
@@ -29,7 +29,7 @@ type FeatureChoice = "goal" | "scheduling" | "time" | "notifications"
 type AppearanceChoice = "language" | "sidebar" | "contextStats"
 
 /** 时间感知子菜单条目。 */
-type TimeChoice = "enabled" | "intervalSteps" | "format" | "timezone"
+type TimeChoice = "enabled" | "mode" | "interval" | "format" | "timezone"
 
 /** 侧栏子菜单条目：全部侧栏配置集中在这里（目标/定时/工具/子代理显示开关）。 */
 type SidebarChoice =
@@ -725,11 +725,19 @@ export default Plugin.define({
       for (;;) {
         const current = settings()
         const text = copy()
+        const modeLabel =
+          current.time.mode === "interval" ? text.menu.timeModeInterval : text.menu.timeModeSteps
+        const intervalFooter =
+          current.time.mode === "interval"
+            ? formatIntervalSeconds(current.time.intervalSeconds)
+            : text.menu.timeStepsSuffix(current.time.intervalSteps)
+
         const choice = await context.ui.dialog.select<TimeChoice>({
           title: text.menu.time,
           options: [
             { title: text.menu.timeEnabled, value: "enabled", footer: onOff(current.time.enabled) },
-            { title: text.menu.timeInterval, value: "intervalSteps", footer: String(current.time.intervalSteps) },
+            { title: text.menu.timeMode, value: "mode", footer: modeLabel },
+            { title: text.menu.timeInterval, value: "interval", footer: intervalFooter },
             { title: text.menu.timeFormat, value: "format", footer: current.time.format },
             {
               title: text.menu.timeTimezone,
@@ -746,9 +754,39 @@ export default Plugin.define({
           })
           continue
         }
-        if (choice === "intervalSteps") {
+        if (choice === "mode") {
+          const nextMode = await context.ui.dialog.select<"interval" | "steps">({
+            title: text.menu.timeMode,
+            options: [
+              { title: text.menu.timeModeInterval, value: "interval" },
+              { title: text.menu.timeModeSteps, value: "steps" },
+            ],
+          })
+          if (nextMode === undefined) continue
+          await update({ ...current, time: { ...current.time, mode: nextMode } })
+          continue
+        }
+        if (choice === "interval") {
+          if (current.time.mode === "interval") {
+            const raw = await context.ui.dialog.prompt({
+              title: text.menu.timeIntervalPromptSeconds,
+              value: formatIntervalSeconds(current.time.intervalSeconds),
+            })
+            if (raw === undefined) continue
+            const parsed = parseIntervalSeconds(raw)
+            if (parsed === undefined) {
+              context.ui.toast.show({
+                message: text.menu.timeInvalidIntervalSeconds,
+                variant: "warning",
+              })
+              continue
+            }
+            await update({ ...current, time: { ...current.time, intervalSeconds: parsed } })
+            continue
+          }
+
           const raw = await context.ui.dialog.prompt({
-            title: text.menu.timeInterval,
+            title: text.menu.timeIntervalPromptSteps,
             value: String(current.time.intervalSteps),
           })
           if (raw === undefined) continue

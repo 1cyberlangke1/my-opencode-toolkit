@@ -1,3 +1,5 @@
+import { MIN_TIME_INTERVAL_SECONDS } from "../shared/settings.ts"
+
 /**
  * TUI 文本宽度与时间格式化。
  *
@@ -123,4 +125,54 @@ export function formatTokens(value: number): string {
 /** 输入：`12.0K`；输出：`12K`。预期：只去掉小数部分全零的尾巴。 */
 function trim(text: string): string {
   return text.replace(/\.0([KMBTPE])$/, "$1")
+}
+
+/**
+ * 输入：时间间隔秒数。
+ * 输出：紧凑人类可读文本，例如 `30s`、`5m`、`1h`、`1h30m`、`1h1m5s`。
+ */
+export function formatIntervalSeconds(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds))
+  const sec = total % 60
+  const min = Math.floor(total / 60) % 60
+  const hr = Math.floor(total / 3600)
+  if (hr > 0) {
+    const parts = [`${hr.toString()}h`]
+    if (min > 0) parts.push(`${min.toString()}m`)
+    if (sec > 0) parts.push(`${sec.toString()}s`)
+    return parts.join("")
+  }
+  if (min > 0) {
+    return sec > 0 ? `${min.toString()}m${sec.toString()}s` : `${min.toString()}m`
+  }
+  return `${sec.toString()}s`
+}
+
+/**
+ * 输入：用户在弹窗中输入的文本，支持纯秒数（`300`）或带单位的简写（`30s`、`5m`、`1h`、`1h30m`）。
+ * 输出：秒数（非负正整数）；格式非法或低于 MIN_TIME_INTERVAL_SECONDS（30秒）返回 undefined。
+ */
+export function parseIntervalSeconds(input: string): number | undefined {
+  const trimmed = input.trim().toLowerCase()
+  if (trimmed.length === 0) return undefined
+
+  // 纯数字秒数输入
+  if (/^\d+$/.test(trimmed)) {
+    const parsed = Number.parseInt(trimmed, 10)
+    return Number.isFinite(parsed) && parsed >= MIN_TIME_INTERVAL_SECONDS ? parsed : undefined
+  }
+
+  // 带单位的复合格式（如 1h30m、5m、30s、1h10s）
+  const match = /^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/.exec(trimmed)
+  if (match === null) return undefined
+  const hRaw = match[1]
+  const mRaw = match[2]
+  const sRaw = match[3]
+  if (hRaw === undefined && mRaw === undefined && sRaw === undefined) return undefined
+
+  const hours = hRaw !== undefined ? Number.parseInt(hRaw, 10) : 0
+  const minutes = mRaw !== undefined ? Number.parseInt(mRaw, 10) : 0
+  const seconds = sRaw !== undefined ? Number.parseInt(sRaw, 10) : 0
+  const total = hours * 3600 + minutes * 60 + seconds
+  return total >= MIN_TIME_INTERVAL_SECONDS ? total : undefined
 }

@@ -66,11 +66,13 @@ const SettingsFields = {
     type: "object",
     properties: {
       enabled: { type: "boolean" },
+      mode: { type: "string", enum: ["interval", "steps"] },
+      intervalSeconds: { type: "number" },
       intervalSteps: { type: "number" },
       format: { type: "string" },
       timezone: { type: "string" },
     },
-    required: ["enabled", "intervalSteps", "format", "timezone"],
+    required: ["enabled", "mode", "intervalSeconds", "intervalSteps", "format", "timezone"],
     additionalProperties: false,
   },
 } as const

@@ -40,7 +40,14 @@ const roles = createSessionRoles({
   },
 } as unknown as Plugin.Context)
 
-const DEFAULT_TIME = { enabled: true, intervalSteps: 3, format: "YYYY-MM-DD HH:mm:ss", timezone: "" }
+const DEFAULT_TIME = {
+  enabled: true,
+  mode: "steps" as const,
+  intervalSeconds: 300,
+  intervalSteps: 3,
+  format: "YYYY-MM-DD HH:mm:ss",
+  timezone: "",
+}
 
 describe("formatTime", () => {
   it("按 token 渲染模板，其余字符原样保留", () => {
@@ -229,5 +236,53 @@ describe("createTimePulse", () => {
     await pulse.handle(stepEvent("s1"))
     await pulse.trigger("s1")
     expect(synthetic).toHaveBeenCalledTimes(1)
+  })
+
+  it("interval 模式：按真实流逝时间触发，未达间隔不注入，达标时注入", async () => {
+    let now = 1_000_000
+    const { ctx, synthetic } = fakeCtx()
+    const pulse = createTimePulse(
+      ctx,
+      roles,
+      () =>
+        Promise.resolve({
+          enabled: true,
+          mode: "interval",
+          intervalSeconds: 300, // 5 分钟
+          intervalSteps: 3,
+          format: "YYYY-MM-DD HH:mm:ss",
+          timezone: "",
+        }),
+      () => now,
+    )
+    try {
+      // 首次 trigger：首次见该会话，注入当前时间并设立基线
+      await pulse.trigger("s1")
+      expect(synthetic).toHaveBeenCalledTimes(1)
+
+      // 经过 100 秒（不足 300 秒），无论调多少次 trigger 或走多少步，都不重复注入
+      now += 100_000
+      await pulse.handle(stepEvent("s1"))
+      await pulse.handle(stepEvent("s1"))
+      await pulse.trigger("s1")
+      expect(synthetic).toHaveBeenCalledTimes(1)
+
+      // 经过 200 秒（累计 300 秒，正好达标 5 分钟），新 trigger 注入第二条
+      now += 200_000
+      await pulse.trigger("s1")
+      expect(synthetic).toHaveBeenCalledTimes(2)
+
+      // 注入后立刻再 trigger（间隔未达标），不注入
+      now += 10_000
+      await pulse.trigger("s1")
+      expect(synthetic).toHaveBeenCalledTimes(2)
+
+      // 跨度 301 秒后，又到达下一轮，注入第三条
+      now += 301_000
+      await pulse.trigger("s1")
+      expect(synthetic).toHaveBeenCalledTimes(3)
+    } finally {
+      pulse.dispose()
+    }
   })
 })

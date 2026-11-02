@@ -324,7 +324,8 @@ describe("tui plugin setup", () => {
     expect(selects[2]?.title).toMatch(/Time awareness|时间感知/)
     expect(selects[2]?.options.map((option) => option.value)).toEqual([
       "enabled",
-      "intervalSteps",
+      "mode",
+      "interval",
       "format",
       "timezone",
     ])
@@ -332,12 +333,12 @@ describe("tui plugin setup", () => {
     await cleanup?.()
   })
 
-  test("时间子菜单：切换开关写回；非法间隔弹 toast 不写回；合法间隔写回", async () => {
-    // 进功能分类 → time → 开 → 非法间隔 "abc" → 合法间隔 "5" → Esc 退出。
+  test("时间子菜单：切换开关写回；非法间隔弹 toast 不写回；合法时间间隔写回", async () => {
+    // 进功能分类 → time → 开关 → 非法间隔 "20s"（小于30s）→ 合法间隔 "5m" → Esc 退出。
     const saved: Settings[] = []
     const { context, layers, toasts } = fakeContext({
-      picks: ["features", "time", "enabled", "intervalSteps", "intervalSteps", undefined, undefined],
-      prompts: ["abc", "5"],
+      picks: ["features", "time", "enabled", "interval", "interval", undefined, undefined],
+      prompts: ["20s", "5m"],
       onSettingsSet: (next) => {
         saved.push(next)
         return Promise.resolve(next)
@@ -347,9 +348,35 @@ describe("tui plugin setup", () => {
     layers[0]?.commands?.[0]?.run()
     await Bun.sleep(20)
 
-    // 开关写回一次；非法值被拦；合法值再写一次。
+    // 开关写回一次；非法值被拦；合法值再写一次（5m -> 300 秒）。
     expect(saved).toHaveLength(2)
     expect(saved[0]?.time.enabled).toBe(false)
+    expect(saved[1]?.time.intervalSeconds).toBe(300)
+    const zh = resolveMessages("zh")
+    const en = resolveMessages("en")
+    expect([zh.menu.timeInvalidIntervalSeconds, en.menu.timeInvalidIntervalSeconds]).toContain(
+      toasts[0]?.message,
+    )
+
+    await cleanup?.()
+  })
+
+  test("时间子菜单：模式切换与 steps 步数设置写回", async () => {
+    const saved: Settings[] = []
+    const { context, layers, toasts } = fakeContext({
+      // 进功能分类 → time → 切换到 steps 模式 → 非法步数 "0" → 合法步数 "5" → Esc 退出。
+      picks: ["features", "time", "mode", "steps", "interval", "interval", undefined, undefined],
+      prompts: ["0", "5"],
+      onSettingsSet: (next) => {
+        saved.push(next)
+        return Promise.resolve(next)
+      },
+    })
+    const cleanup = await plugin.setup(context)
+    layers[0]?.commands?.[0]?.run()
+    await Bun.sleep(20)
+
+    expect(saved[0]?.time.mode).toBe("steps")
     expect(saved[1]?.time.intervalSteps).toBe(5)
     const zh = resolveMessages("zh")
     const en = resolveMessages("en")
