@@ -159,11 +159,11 @@ describe("tui plugin setup", () => {
     const values = selects[0]?.options.map((option) => option.value) ?? []
     expect(values).toEqual(["features", "appearance", "update"])
     const isWin = process.platform === "win32"
-    // 功能分类 footer 呈现纯粹开关状态流（如 关 · 开 · 开 · 开 · 开），不带冗长功能名字
+    // 功能分类 footer 呈现纯粹开关状态流（定时 · 时间 · 通知 · 编辑器 · 目标），不带冗长功能名字
     const featuresFooter = footerOf(selects[0], "features") ?? ""
     expect([
-      `关 · 开 · 开 · 开 · ${isWin ? "开" : "关"}`,
-      `off · on · on · on · ${isWin ? "on" : "off"}`,
+      `开 · 开 · 开 · ${isWin ? "开" : "关"} · 关`,
+      `on · on · on · ${isWin ? "on" : "off"} · off`,
     ]).toContain(featuresFooter)
 
     // 界面分类 footer 呈现语言与开关数值（如 auto · 开）
@@ -176,7 +176,7 @@ describe("tui plugin setup", () => {
     await cleanup?.()
   })
 
-  test("功能子菜单：目标带弃用标记，五项齐全", async () => {
+  test("功能子菜单：目标带弃用标记且排在末尾，五项齐全", async () => {
     const { context, layers, selects } = fakeContext({ picks: ["features", undefined, undefined] })
     const cleanup = await plugin.setup(context)
 
@@ -191,17 +191,17 @@ describe("tui plugin setup", () => {
       goalTitle,
     )
     expect(selects[1]?.options.map((option) => option.value)).toEqual([
-      "goal",
       "scheduling",
       "time",
       "notifications",
       "editor",
+      "goal",
     ])
 
     await cleanup?.()
   })
 
-  test("侧栏子菜单四项：目标/定时显示 + 工具/子代理", async () => {
+  test("侧栏子菜单四项：定时/工具/子代理 + 目标（移至最下方）", async () => {
     const { context, layers, selects } = fakeContext({ picks: ["appearance", "sidebar", undefined, undefined, undefined] })
     const cleanup = await plugin.setup(context)
 
@@ -210,12 +210,12 @@ describe("tui plugin setup", () => {
 
     expect(selects[1]?.title).toMatch(/Appearance|界面/)
     expect(selects[2]?.title).toMatch(/Sidebar|侧栏/)
-    // 目标/定时的侧栏显示开关集中在这里。
+    // 目标（已弃用）移至最下方，其余三项在前。
     expect(selects[2]?.options.map((option) => option.value)).toEqual([
-      "goal.showInSidebar",
       "scheduling.showInSidebar",
       "showTools",
       "showSubagents",
+      "goal.showInSidebar",
     ])
 
     await cleanup?.()

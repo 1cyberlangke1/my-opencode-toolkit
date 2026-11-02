@@ -35,12 +35,12 @@ type AppearanceChoice = "language" | "sidebar" | "contextStats"
 /** 时间感知子菜单条目。 */
 type TimeChoice = "enabled" | "mode" | "interval" | "format" | "timezone"
 
-/** 侧栏子菜单条目：全部侧栏配置集中在这里（目标/定时/工具/子代理显示开关）。 */
+/** 侧栏子菜单条目：全部侧栏配置集中在这里（目标已弃用移至最下方）。 */
 type SidebarChoice =
-  | "goal.showInSidebar"
   | "scheduling.showInSidebar"
   | "showTools"
   | "showSubagents"
+  | "goal.showInSidebar"
 
 /** 上下文统计子菜单条目。 */
 type ContextStatsChoice = "enabled" | "showInput" | "showOutput" | "showCache" | "showHitRate"
@@ -652,17 +652,17 @@ export default Plugin.define({
           title: text.menu.sidebar,
           options: [
             {
-              title: text.menu.goal,
-              value: "goal.showInSidebar",
-              footer: `${onOff(current.goal.showInSidebar)}${current.goal.enabled ? "" : text.menu.inactiveSuffix}`,
-            },
-            {
               title: text.menu.scheduling,
               value: "scheduling.showInSidebar",
               footer: `${onOff(current.scheduling.showInSidebar)}${current.scheduling.enabled ? "" : text.menu.inactiveSuffix}`,
             },
             { title: text.menu.showTools, value: "showTools", footer: onOff(current.sidebar.showTools) },
             { title: text.menu.showSubagents, value: "showSubagents", footer: onOff(current.sidebar.showSubagents) },
+            {
+              title: text.menu.goal,
+              value: "goal.showInSidebar",
+              footer: `${onOff(current.goal.showInSidebar)}${current.goal.enabled ? "" : text.menu.inactiveSuffix}`,
+            },
           ],
         })
         if (choice === undefined) return
@@ -892,11 +892,11 @@ export default Plugin.define({
         const current = settings()
         const text = copy()
         const featuresFooter = [
-          current.goal.enabled,
           current.scheduling.enabled,
           current.time.enabled,
           current.notification.enabled,
           current.editor.enabled,
+          current.goal.enabled,
         ]
           .map(onOff)
           .join(" · ")
@@ -926,7 +926,7 @@ export default Plugin.define({
       }
     }
 
-    /** 功能子菜单：目标（弃用）/ 定时任务 / 时间感知 / 通知。 */
+    /** 功能子菜单：定时任务 / 时间感知 / 通知 / 外部编辑器 / 目标（已弃用移至最下方）。 */
     const chooseFeatures = async (): Promise<void> => {
       for (;;) {
         const current = settings()
@@ -934,23 +934,23 @@ export default Plugin.define({
         const choice = await context.ui.dialog.select<FeatureChoice>({
           title: text.menu.features,
           options: [
+            { title: text.menu.scheduling, value: "scheduling", footer: onOff(current.scheduling.enabled) },
+            { title: text.menu.time, value: "time", footer: onOff(current.time.enabled) },
+            { title: text.menu.notifications, value: "notifications", footer: onOff(current.notification.enabled) },
+            { title: text.menu.editor, value: "editor", footer: onOff(current.editor.enabled) },
             {
               title: `${text.menu.goal}${text.menu.deprecatedSuffix}`,
               value: "goal",
               footer: onOff(current.goal.enabled),
             },
-            { title: text.menu.scheduling, value: "scheduling", footer: onOff(current.scheduling.enabled) },
-            { title: text.menu.time, value: "time", footer: onOff(current.time.enabled) },
-            { title: text.menu.notifications, value: "notifications", footer: onOff(current.notification.enabled) },
-            { title: text.menu.editor, value: "editor", footer: onOff(current.editor.enabled) },
           ],
         })
         if (choice === undefined) return
-        if (choice === "goal") await chooseGoal()
-        else if (choice === "scheduling") await chooseScheduling()
+        if (choice === "scheduling") await chooseScheduling()
         else if (choice === "time") await chooseTime()
         else if (choice === "notifications") await chooseNotifications()
-        else await chooseEditor()
+        else if (choice === "editor") await chooseEditor()
+        else await chooseGoal()
       }
     }
 
