@@ -41,8 +41,6 @@ export const zh: Messages = {
     checkUpdates: "检查更新",
     features: "功能",
     appearance: "界面",
-    featuresSummary: (goal, scheduling, time, notification, editor) =>
-      `目标 ${goal} · 定时 ${scheduling} · 时间 ${time} · 通知 ${notification} · 编辑器 ${editor}`,
     inactiveSuffix: "（功能已关闭，不生效）",
     editor: "外部编辑器",
     editorEnabled: "功能开关",

@@ -41,8 +41,6 @@ export const en: Messages = {
     checkUpdates: "Check for updates",
     features: "Features",
     appearance: "Appearance",
-    featuresSummary: (goal, scheduling, time, notification, editor) =>
-      `Goal ${goal} · Scheduling ${scheduling} · Time ${time} · Notifications ${notification} · Editor ${editor}`,
     inactiveSuffix: " (feature disabled, not in effect)",
     editor: "External editor",
     editorEnabled: "Enabled",

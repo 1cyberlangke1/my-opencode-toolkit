@@ -891,21 +891,22 @@ export default Plugin.define({
       for (;;) {
         const current = settings()
         const text = copy()
+        const featuresFooter = [
+          current.goal.enabled,
+          current.scheduling.enabled,
+          current.time.enabled,
+          current.notification.enabled,
+          current.editor.enabled,
+        ]
+          .map(onOff)
+          .join(" · ")
+        const appearanceFooter = `${current.lang} · ${onOff(current.contextStats.enabled)}`
+
         const choice = await context.ui.dialog.select<MenuChoice>({
           title: text.menu.title,
           options: [
-            {
-              title: text.menu.features,
-              value: "features",
-              footer: text.menu.featuresSummary(
-                onOff(current.goal.enabled),
-                onOff(current.scheduling.enabled),
-                onOff(current.time.enabled),
-                onOff(current.notification.enabled),
-                onOff(current.editor.enabled),
-              ),
-            },
-            { title: text.menu.appearance, value: "appearance" },
+            { title: text.menu.features, value: "features", footer: featuresFooter },
+            { title: text.menu.appearance, value: "appearance", footer: appearanceFooter },
             {
               value: "update",
               ...updateEntryState(text, updateResult(), {

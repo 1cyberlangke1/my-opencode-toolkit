@@ -149,7 +149,7 @@ describe("tui plugin setup", () => {
     await cleanup?.()
   })
 
-  test("主菜单三分类：功能/界面/检查更新，无平铺条目", async () => {
+  test("主菜单三分类：功能/界面/检查更新，footer 呈现纯粹状态流与数值", async () => {
     const { context, layers, selects } = fakeContext({ picks: [undefined] })
     const cleanup = await plugin.setup(context)
 
@@ -158,16 +158,20 @@ describe("tui plugin setup", () => {
 
     const values = selects[0]?.options.map((option) => option.value) ?? []
     expect(values).toEqual(["features", "appearance", "update"])
-    const zh = resolveMessages("zh")
-    const en = resolveMessages("en")
     const isWin = process.platform === "win32"
+    // 功能分类 footer 呈现纯粹开关状态流（如 关 · 开 · 开 · 开 · 开），不带冗长功能名字
     const featuresFooter = footerOf(selects[0], "features") ?? ""
-    expect(
-      [
-        zh.menu.featuresSummary("关", "开", "开", "开", isWin ? "开" : "关"),
-        en.menu.featuresSummary("off", "on", "on", "on", isWin ? "on" : "off"),
-      ],
-    ).toContain(featuresFooter)
+    expect([
+      `关 · 开 · 开 · 开 · ${isWin ? "开" : "关"}`,
+      `off · on · on · on · ${isWin ? "on" : "off"}`,
+    ]).toContain(featuresFooter)
+
+    // 界面分类 footer 呈现语言与开关数值（如 auto · 开）
+    const appearanceFooter = footerOf(selects[0], "appearance") ?? ""
+    expect([
+      "auto · 开",
+      "auto · on",
+    ]).toContain(appearanceFooter)
 
     await cleanup?.()
   })
