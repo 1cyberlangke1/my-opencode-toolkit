@@ -190,13 +190,19 @@ async function editProviderDialog(
     models: { ...initialProvider.models },
   }
 
+  const persist = async (): Promise<void> => {
+    const saveRes = await client.providerSave({ provider: draft }, rpcOptions())
+    if (!saveRes.ok) {
+      context.ui.toast.show({
+        message: `${copy().provider.saveFailed}: ${saveRes.error ?? "unknown error"}`,
+        variant: "error",
+      })
+    }
+  }
+
   for (;;) {
     const text = copy()
     const options = [
-      {
-        title: text.provider.save,
-        value: "save",
-      },
       {
         title: text.provider.manageModels,
         value: "models",
@@ -234,43 +240,32 @@ async function editProviderDialog(
         : []),
     ]
 
-    let actionTriggered: string | undefined
     const choice = await context.ui.dialog.select<string>({
       title: `${text.provider.editTitle}: ${draft.name && draft.name.length > 0 ? draft.name : draft.id}`,
       options,
-      actions: [
-        {
-          bind: "ctrl+s",
-          title: text.provider.save,
-          selection: "none",
-          onTrigger: () => {
-            actionTriggered = "save"
-            context.ui.dialog.clear()
-          },
-        },
-      ],
     })
 
-    const effectiveChoice = actionTriggered ?? choice
-    if (effectiveChoice === undefined) return
+    if (choice === undefined) return
 
-    if (effectiveChoice === "name") {
+    if (choice === "name") {
       const newName = await context.ui.dialog.prompt({
         title: text.provider.promptName,
         ...(draft.name !== undefined ? { value: draft.name } : {}),
       })
       if (newName !== undefined) {
         draft.name = newName.trim()
+        await persist()
       }
-    } else if (effectiveChoice === "baseURL") {
+    } else if (choice === "baseURL") {
       const newUrl = await context.ui.dialog.prompt({
         title: text.provider.promptBaseUrl,
         value: draft.options.baseURL,
       })
       if (newUrl !== undefined && newUrl.trim().length > 0) {
         draft.options = { ...draft.options, baseURL: newUrl.trim() }
+        await persist()
       }
-    } else if (effectiveChoice === "apiKey") {
+    } else if (choice === "apiKey") {
       const newKey = await context.ui.dialog.prompt({
         title: text.provider.promptApiKey,
         ...(draft.options.apiKey !== undefined ? { value: draft.options.apiKey } : {}),
@@ -281,8 +276,9 @@ async function editProviderDialog(
           ...draft.options,
           ...(trimmed.length > 0 ? { apiKey: trimmed } : { apiKey: undefined }),
         }
+        await persist()
       }
-    } else if (effectiveChoice === "npm") {
+    } else if (choice === "npm") {
       const selectedNpm = await context.ui.dialog.select<string>({
         title: text.provider.fieldNpm,
         options: [
@@ -298,11 +294,13 @@ async function editProviderDialog(
         })
         if (customNpm !== undefined && customNpm.trim().length > 0) {
           draft.npm = customNpm.trim()
+          await persist()
         }
       } else if (selectedNpm !== undefined) {
         draft.npm = selectedNpm
+        await persist()
       }
-    } else if (effectiveChoice === "refetch") {
+    } else if (choice === "refetch") {
       context.ui.toast.show({ message: text.provider.refetching, variant: "info" })
       const res = await client.providerModelsFetch(
         { baseURL: draft.options.baseURL, ...(draft.options.apiKey ? { apiKey: draft.options.apiKey } : {}) },
@@ -312,6 +310,7 @@ async function editProviderDialog(
         for (const m of res.models) {
           draft.models[m.id] = m
         }
+        await persist()
         context.ui.toast.show({
           message: text.provider.refetchSuccess(res.models.length),
           variant: "success",
@@ -322,22 +321,9 @@ async function editProviderDialog(
           variant: "warning",
         })
       }
-    } else if (effectiveChoice === "models") {
-      await manageModelsDialog(opts, draft)
-    } else if (effectiveChoice === "save") {
-      const saveRes = await client.providerSave({ provider: draft }, rpcOptions())
-      if (saveRes.ok) {
-        context.ui.toast.show({
-          message: text.provider.saveSuccess(draft.name && draft.name.length > 0 ? draft.name : draft.id),
-          variant: "success",
-        })
-        return
-      }
-      context.ui.toast.show({
-        message: `${text.provider.saveFailed}: ${saveRes.error ?? "unknown error"}`,
-        variant: "error",
-      })
-    } else if (effectiveChoice === "delete") {
+    } else if (choice === "models") {
+      await manageModelsDialog(opts, draft, persist)
+    } else if (choice === "delete") {
       const confirmed = await context.ui.dialog.confirm({
         title: text.provider.delete,
         message: text.provider.confirmDelete(draft.name && draft.name.length > 0 ? draft.name : draft.id),
@@ -363,7 +349,11 @@ async function editProviderDialog(
 /**
  * 模型清单列表与微调入口。
  */
-async function manageModelsDialog(opts: ProviderMenuOptions, draft: CustomProviderConfig): Promise<void> {
+async function manageModelsDialog(
+  opts: ProviderMenuOptions,
+  draft: MutableProviderDraft,
+  persist: () => Promise<void>,
+): Promise<void> {
   const { context, client, copy, rpcOptions } = opts
 
   for (;;) {
@@ -409,14 +399,17 @@ async function manageModelsDialog(opts: ProviderMenuOptions, draft: CustomProvid
           capabilities: matchRes.model.capabilities,
         }
         draft.models[cleanID] = addedModel
+        await persist()
         await editSingleModelDialog(
           opts,
           addedModel,
           (updated) => {
             draft.models[cleanID] = updated
+            void persist()
           },
           () => {
             Reflect.deleteProperty(draft.models, cleanID)
+            void persist()
           },
         )
       }
@@ -428,9 +421,11 @@ async function manageModelsDialog(opts: ProviderMenuOptions, draft: CustomProvid
           selectedModel,
           (updated) => {
             draft.models[choice] = updated
+            void persist()
           },
           () => {
             Reflect.deleteProperty(draft.models, choice)
+            void persist()
           },
         )
       }

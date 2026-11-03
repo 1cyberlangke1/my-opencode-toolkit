@@ -2,6 +2,7 @@
  * 模型能力模糊匹配与兜底生成器。
  */
 
+import { formatTokens } from "../shared/format.ts"
 import type {
   CustomModelCapabilities,
   CustomModelLimit,
@@ -150,8 +151,7 @@ export function formatCapabilitiesEmoji(model: {
 
   const context = model.limit?.context
   if (typeof context === "number" && context > 0) {
-    const k = Math.round(context / 1000)
-    parts.push(`🪟 ${k.toString()}k`)
+    parts.push(`🪟 ${formatTokens(context)}`)
   }
 
   if (model.capabilities?.tools !== false) {

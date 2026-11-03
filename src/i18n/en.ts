@@ -172,7 +172,6 @@ export const en: Messages = {
     modelRematch: "Rematch capabilities against known registry",
     modelRematchDesc: "Lookup official capabilities using model name",
     deleteModel: "Delete model from list",
-    save: "Save settings",
     delete: "Delete provider",
     confirmDelete: (name) => `Are you sure you want to delete provider "${name}"?`,
     saveSuccess: (name) => `Provider "${name}" saved`,

@@ -177,7 +177,6 @@ export type Messages = {
     readonly modelRematch: string
     readonly modelRematchDesc: string
     readonly deleteModel: string
-    readonly save: string
     readonly delete: string
     readonly confirmDelete: (name: string) => string
     readonly saveSuccess: (name: string) => string

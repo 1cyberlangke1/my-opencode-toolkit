@@ -59,7 +59,7 @@ describe("provider matcher", () => {
       limit: { context: 65536, output: 8192 },
       capabilities: { tools: true, input: ["text"], output: ["text"] },
     })
-    expect(emoji1).toContain("🪟 66k")
+    expect(emoji1).toContain("🪟 65.5K")
     expect(emoji1).toContain("🛠️")
     expect(emoji1).toContain("💬")
     expect(emoji1).not.toContain("👁️")
@@ -68,10 +68,17 @@ describe("provider matcher", () => {
       limit: { context: 200000, output: 8192 },
       capabilities: { tools: true, input: ["text", "image"], output: ["text"] },
     })
-    expect(emoji2).toContain("🪟 200k")
+    expect(emoji2).toContain("🪟 200K")
     expect(emoji2).toContain("🛠️")
     expect(emoji2).toContain("👁️")
     expect(emoji2).toContain("💬")
+
+    // 百万上下文自动进位为 1M，绝不出现 1000k
+    const emojiMillion = formatCapabilitiesEmoji({
+      limit: { context: 1000000, output: 8192 },
+      capabilities: { tools: true, input: ["text"], output: ["text"] },
+    })
+    expect(emojiMillion).toContain("🪟 1M")
   })
 
   it("从 URL 自动提取域名生成默认名称与 ID", () => {

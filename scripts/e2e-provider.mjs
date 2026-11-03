@@ -222,11 +222,9 @@ try {
   // 7. 直接按回车跳过可选 API Key
   proc.terminal?.write("\r")
 
-  // 8. 真实状态断言：向导完成拉取后自动保存入盘，并弹出提供商配置界面展示模型
+  // 8. 真实状态断言：向导完成拉取后自动保存入盘，并弹出提供商配置界面展示管理模型
   const editOpened = await waitFor(
-    (text) =>
-      shows(text, (copy) => copy.provider.save) &&
-      shows(text, (copy) => copy.provider.manageModels),
+    (text) => shows(text, (copy) => copy.provider.manageModels),
     20_000,
   )
   if (!editOpened) {
@@ -237,6 +235,16 @@ try {
   console.log("real TUI case 4 passed: remote models auto-fetched and provider edit dialog opened")
 
   // 9. 检查磁盘配置：自动保存成功，注释完好！
+  const savedOnDisk = await waitFor(async () => {
+    try {
+      const diskText = await readFile(configPath, "utf8")
+      return diskText.includes("// 用户的核心手写注释：绝不能丢失！") && diskText.includes(mockBaseUrl)
+    } catch {
+      return false
+    }
+  }, 15_000)
+  assert.ok(savedOnDisk, "new provider baseURL must be saved to disk within 15s")
+
   const finalConfig = await readFile(configPath, "utf8")
   assert.ok(finalConfig.includes("// 用户的核心手写注释：绝不能丢失！"), "comments must be preserved 100%")
   assert.ok(finalConfig.includes(mockBaseUrl), "new provider baseURL must be saved to disk")
@@ -244,10 +252,6 @@ try {
 
   // 10. 按 Esc 退出弹窗
   proc.terminal?.write("\u001b")
-  console.log("ALL REAL TUI PROVIDER E2E TESTS PASSED 100%!")
-  assert.ok(finalConfig.includes(mockBaseUrl), "new provider baseURL must be saved to disk")
-  console.log("real TUI case 5 passed: saved to opencode.json with comments 100% intact")
-
   console.log("ALL REAL TUI PROVIDER E2E TESTS PASSED 100%!")
 } finally {
   await cleanup()

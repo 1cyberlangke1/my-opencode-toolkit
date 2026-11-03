@@ -172,7 +172,6 @@ export const zh: Messages = {
     modelRematch: "重新在已知库匹配一次",
     modelRematchDesc: "根据模型名称重新查阅官方已知能力覆盖",
     deleteModel: "从列表中删除该模型",
-    save: "保存设置",
     delete: "删除提供商",
     confirmDelete: (name) => `确定要删除提供商 "${name}" 吗？`,
     saveSuccess: (name) => `提供商 "${name}" 已保存`,
