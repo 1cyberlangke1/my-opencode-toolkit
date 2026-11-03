@@ -990,7 +990,7 @@ export default Plugin.define({
           title: copy().command.title,
           description: copy().command.description,
           group: copy().command.group,
-          slash: { name: SETTINGS_SLASH_NAME },
+          slash: { name: SETTINGS_SLASH_NAME, arguments: true },
           palette: true,
           run() {
             void openMenu()
@@ -1001,7 +1001,7 @@ export default Plugin.define({
           title: copy().provider.commandTitle,
           description: copy().provider.commandDescription,
           group: copy().command.group,
-          slash: { name: PROVIDER_SLASH_NAME },
+          slash: { name: PROVIDER_SLASH_NAME, arguments: true },
           palette: true,
           run() {
             void openProviderMenu({
