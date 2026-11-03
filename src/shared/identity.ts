@@ -18,3 +18,9 @@ export const SETTINGS_COMMAND_ID = `${PLUGIN_ID}.settings`
 
 /** 斜杠命令名（用户输入 `/my-opencode-toolkit`）。 */
 export const SETTINGS_SLASH_NAME = PLUGIN_ID
+
+/** TUI 提供商管理命令 id。 */
+export const PROVIDER_COMMAND_ID = `${PLUGIN_ID}.provider`
+
+/** 提供商管理斜杠命令名（用户输入 `/provider`）。 */
+export const PROVIDER_SLASH_NAME = "provider"

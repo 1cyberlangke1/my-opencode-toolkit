@@ -140,4 +140,50 @@ export type Messages = {
     readonly oneShot: (time: string) => string
     readonly days: readonly string[]
   }
+  /** 自定义提供商管理文案。 */
+  readonly provider: {
+    readonly commandTitle: string
+    readonly commandDescription: string
+    readonly menuTitle: string
+    readonly addProvider: string
+    readonly addProviderDesc: string
+    readonly editTitle: string
+    readonly promptBaseUrl: string
+    readonly promptApiKey: string
+    readonly promptName: string
+    readonly fieldBaseUrl: string
+    readonly fieldApiKey: string
+    readonly fieldName: string
+    readonly fieldNpm: string
+    readonly notSet: string
+    readonly modelsCount: (count: number) => string
+    readonly refetchModels: string
+    readonly refetchModelsDesc: string
+    readonly refetching: string
+    readonly refetchSuccess: (count: number) => string
+    readonly refetchFailed: string
+    readonly manageModels: string
+    readonly manageModelsDesc: string
+    readonly modelsTitle: string
+    readonly addModelManual: string
+    readonly promptModelId: string
+    readonly modelEditTitle: string
+    readonly modelEnabled: string
+    readonly modelName: string
+    readonly modelContextWindow: string
+    readonly modelMaxOutput: string
+    readonly modelTools: string
+    readonly modelVision: string
+    readonly modelRematch: string
+    readonly modelRematchDesc: string
+    readonly deleteModel: string
+    readonly save: string
+    readonly delete: string
+    readonly confirmDelete: (name: string) => string
+    readonly saveSuccess: (name: string) => string
+    readonly saveFailed: string
+    readonly deleteSuccess: string
+    readonly back: string
+    readonly done: string
+  }
 }

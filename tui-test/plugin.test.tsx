@@ -176,7 +176,7 @@ describe("tui plugin setup", () => {
     await cleanup?.()
   })
 
-  test("功能子菜单：目标带弃用标记且排在末尾，五项齐全", async () => {
+  test("功能子菜单：包含自定义提供商，且目标带弃用标记排在末尾", async () => {
     const { context, layers, selects } = fakeContext({ picks: ["features", undefined, undefined] })
     const cleanup = await plugin.setup(context)
 
@@ -195,8 +195,14 @@ describe("tui plugin setup", () => {
       "time",
       "notifications",
       "editor",
+      "provider",
       "goal",
     ])
+
+    // 验证 /provider 命令已注册在全局 keymap layer 中
+    const providerCmd = layers[0]?.commands?.find((c) => c.slash?.name === "provider")
+    expect(providerCmd).toBeDefined()
+    expect(providerCmd?.id).toBe("my-opencode-toolkit.provider")
 
     await cleanup?.()
   })

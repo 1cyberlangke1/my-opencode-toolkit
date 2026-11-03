@@ -5,7 +5,8 @@ import { createEffect, createSignal, For, onCleanup, onMount, Show, type JSX } f
 import { localeOf, resolveMessages, type Messages } from "../i18n/index.ts"
 import { formatTokens } from "./format.ts"
 import { EditorHint } from "./editor-hint.tsx"
-import { SETTINGS_COMMAND_ID, SETTINGS_SLASH_NAME, TUI_PLUGIN_ID } from "../shared/identity.ts"
+import { PROVIDER_COMMAND_ID, PROVIDER_SLASH_NAME, SETTINGS_COMMAND_ID, SETTINGS_SLASH_NAME, TUI_PLUGIN_ID } from "../shared/identity.ts"
+import { openProviderMenu } from "./provider-menu.ts"
 import { applyEditorEnvironment, DEFAULT_SETTINGS, type Lang, type Settings } from "../shared/settings.ts"
 import { toolkitRpc, type PanelData, type PanelJob, type PanelSubagent, type PanelSubagentDetail } from "../shared/rpc.ts"
 import { countdownColor, dim, hitRateColor } from "./color.ts"
@@ -24,7 +25,7 @@ export type { UpdateDeps } from "./update-menu.tsx"
 type MenuChoice = "features" | "appearance" | "update"
 
 /** 功能子菜单条目。 */
-type FeatureChoice = "goal" | "scheduling" | "time" | "notifications" | "editor"
+type FeatureChoice = "goal" | "scheduling" | "time" | "notifications" | "editor" | "provider"
 
 /** 外部编辑器子菜单条目。 */
 type EditorChoice = "enabled" | "command" | "showHint" | "openNow"
@@ -943,6 +944,7 @@ export default Plugin.define({
             { title: text.menu.time, value: "time", footer: onOff(current.time.enabled) },
             { title: text.menu.notifications, value: "notifications", footer: onOff(current.notification.enabled) },
             { title: text.menu.editor, value: "editor", footer: onOff(current.editor.enabled) },
+            { title: text.provider.menuTitle, value: "provider" },
             {
               title: `${text.menu.goal}${text.menu.deprecatedSuffix}`,
               value: "goal",
@@ -955,6 +957,7 @@ export default Plugin.define({
         else if (choice === "time") await chooseTime()
         else if (choice === "notifications") await chooseNotifications()
         else if (choice === "editor") await chooseEditor()
+        else if (choice === "provider") await openProviderMenu({ context, client: rpc, copy, rpcOptions: callOptions })
         else await chooseGoal()
       }
     }
@@ -991,6 +994,22 @@ export default Plugin.define({
           palette: true,
           run() {
             void openMenu()
+          },
+        },
+        {
+          id: PROVIDER_COMMAND_ID,
+          title: copy().provider.commandTitle,
+          description: copy().provider.commandDescription,
+          group: copy().command.group,
+          slash: { name: PROVIDER_SLASH_NAME },
+          palette: true,
+          run() {
+            void openProviderMenu({
+              context,
+              client: rpc,
+              copy,
+              rpcOptions: callOptions,
+            })
           },
         },
       ],

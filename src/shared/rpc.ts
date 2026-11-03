@@ -264,6 +264,156 @@ const ToastEventJson = {
   additionalProperties: false,
 } as const
 
+import type {
+  CustomModelConfig,
+  CustomProviderConfig,
+  MatchedModelResult,
+} from "../provider/types.ts"
+
+/**
+ * 结构化自定义模型 JSON Schema。
+ */
+const CustomModelJson = {
+  type: "object",
+  properties: {
+    id: { type: "string" },
+    name: { type: "string" },
+    enabled: { type: "boolean" },
+    limit: {
+      type: "object",
+      properties: {
+        context: { type: "number" },
+        output: { type: "number" },
+      },
+      required: ["context", "output"],
+      additionalProperties: false,
+    },
+    capabilities: {
+      type: "object",
+      properties: {
+        tools: { type: "boolean" },
+        input: { type: "array", items: { type: "string" } },
+        output: { type: "array", items: { type: "string" } },
+      },
+      required: ["tools", "input", "output"],
+      additionalProperties: false,
+    },
+  },
+  required: ["id"],
+  additionalProperties: true,
+} as const
+
+/**
+ * 结构化自定义提供商 JSON Schema。
+ */
+const CustomProviderJson = {
+  type: "object",
+  properties: {
+    id: { type: "string" },
+    name: { type: "string" },
+    npm: { type: "string" },
+    options: {
+      type: "object",
+      properties: {
+        baseURL: { type: "string" },
+        apiKey: { anyOf: [{ type: "string" }, { type: "null" }] },
+      },
+      required: ["baseURL"],
+      additionalProperties: true,
+    },
+    models: {
+      type: "object",
+      additionalProperties: CustomModelJson,
+    },
+  },
+  required: ["id", "npm", "options", "models"],
+  additionalProperties: true,
+} as const
+
+const ProvidersGetOutputJson = {
+  type: "object",
+  properties: {
+    ok: { type: "boolean" },
+    providers: { type: "array", items: CustomProviderJson },
+    error: { type: "string" },
+  },
+  required: ["ok", "providers"],
+  additionalProperties: true,
+} as const
+
+const ProviderSaveInputJson = {
+  type: "object",
+  properties: {
+    provider: CustomProviderJson,
+  },
+  required: ["provider"],
+  additionalProperties: false,
+} as const
+
+const ProviderDeleteInputJson = {
+  type: "object",
+  properties: {
+    providerID: { type: "string" },
+  },
+  required: ["providerID"],
+  additionalProperties: false,
+} as const
+
+const ProviderModelsFetchInputJson = {
+  type: "object",
+  properties: {
+    baseURL: { type: "string" },
+    apiKey: { type: "string" },
+  },
+  required: ["baseURL"],
+  additionalProperties: false,
+} as const
+
+const ProviderModelsFetchOutputJson = {
+  type: "object",
+  properties: {
+    ok: { type: "boolean" },
+    models: { type: "array", items: CustomModelJson },
+    error: { type: "string" },
+  },
+  required: ["ok"],
+  additionalProperties: true,
+} as const
+
+const ProviderModelMatchInputJson = {
+  type: "object",
+  properties: {
+    modelID: { type: "string" },
+  },
+  required: ["modelID"],
+  additionalProperties: false,
+} as const
+
+const ProviderModelMatchOutputJson = {
+  type: "object",
+  properties: {
+    model: CustomModelJson,
+  },
+  required: ["model"],
+  additionalProperties: true,
+} as const
+
+const OkResultJson = {
+  type: "object",
+  properties: {
+    ok: { type: "boolean" },
+    error: { type: "string" },
+  },
+  required: ["ok"],
+  additionalProperties: true,
+} as const
+
+const EmptyInputJson = {
+  type: "object",
+  properties: {},
+  additionalProperties: true,
+} as const
+
 /**
  * 服务端与 TUI 共用的 RPC 定义。
  *
@@ -278,6 +428,11 @@ export const ToolkitRpc: Rpc.PortableDefinition = {
     settingsSet: { input: SettingsSetInputJson, output: SettingsJson },
     panelGet: { input: PanelInputJson, output: PanelOutputJson },
     subagentGet: { input: PanelInputJson, output: PanelSubagentDetailJson },
+    providersGet: { input: EmptyInputJson, output: ProvidersGetOutputJson },
+    providerSave: { input: ProviderSaveInputJson, output: OkResultJson },
+    providerDelete: { input: ProviderDeleteInputJson, output: OkResultJson },
+    providerModelsFetch: { input: ProviderModelsFetchInputJson, output: ProviderModelsFetchOutputJson },
+    providerModelMatch: { input: ProviderModelMatchInputJson, output: ProviderModelMatchOutputJson },
   },
   events: {
     toast: { schema: ToastEventJson },
@@ -388,6 +543,11 @@ export type ToolkitRpcClient = {
   settingsSet(input: Settings & { readonly layers?: readonly string[] }, options?: RpcCallOptions): Promise<Settings>
   panelGet(input: { readonly sessionID: string }, options?: RpcCallOptions): Promise<PanelData>
   subagentGet(input: { readonly sessionID: string }, options?: RpcCallOptions): Promise<PanelSubagentDetail>
+  providersGet(input: Record<string, never>, options?: RpcCallOptions): Promise<{ readonly ok: boolean; readonly providers: CustomProviderConfig[]; readonly error?: string }>
+  providerSave(input: { readonly provider: CustomProviderConfig }, options?: RpcCallOptions): Promise<{ readonly ok: boolean; readonly error?: string }>
+  providerDelete(input: { readonly providerID: string }, options?: RpcCallOptions): Promise<{ readonly ok: boolean; readonly error?: string }>
+  providerModelsFetch(input: { readonly baseURL: string; readonly apiKey?: string | undefined }, options?: RpcCallOptions): Promise<{ readonly ok: boolean; readonly models?: CustomModelConfig[]; readonly error?: string }>
+  providerModelMatch(input: { readonly modelID: string }, options?: RpcCallOptions): Promise<{ readonly model: MatchedModelResult }>
   events: {
     on(
       name: "toast",

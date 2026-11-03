@@ -21,6 +21,8 @@ import { watchConfigFiles } from "./shared/settings-watcher.ts"
 import { buildStats, buildSubagentDetail, hitRatePercent, listSubagents, tokenParts } from "./stats.ts"
 import type { SessionStats } from "./stats.ts"
 import { loadStats, removeStats, saveStats } from "./stats-store.ts"
+import { ProviderService } from "./provider/service.ts"
+import type { CustomProviderConfig, KnownModelRef } from "./provider/types.ts"
 import { createTimePulse } from "./time/index.ts"
 
 /** 输入：RPC 参数；输出：配置层路径。 */
@@ -131,6 +133,48 @@ export default Plugin.define({
     const directory = ctx.location.directory
     const configFiles = resolveConfigFiles(directory, undefined)
     const selfSaveRef: { mark?: (filePath: string) => void } = {}
+
+    const providerService = new ProviderService({
+      listKnownModels: async (): Promise<readonly KnownModelRef[]> => {
+        try {
+          const listRes: unknown = await ctx.model.list()
+          const raw = Array.isArray(listRes)
+            ? listRes
+            : typeof listRes === "object" && listRes !== null && Array.isArray((listRes as Record<string, unknown>)["data"])
+            ? ((listRes as Record<string, unknown>)["data"] as unknown[])
+            : []
+          const result: KnownModelRef[] = []
+          for (const item of raw) {
+            const m = asRecord(item)
+            if (m === undefined) continue
+            const id = typeof m["id"] === "string" ? m["id"] : ""
+            const name = typeof m["name"] === "string" ? m["name"] : id
+            const rawLimit = asRecord(m["limit"])
+            const limit =
+              rawLimit !== undefined && typeof rawLimit["context"] === "number" && typeof rawLimit["output"] === "number"
+                ? { context: rawLimit["context"], output: rawLimit["output"] }
+                : undefined
+            const rawCap = asRecord(m["capabilities"])
+            const capabilities =
+              rawCap !== undefined
+                ? {
+                    tools: rawCap["tools"] !== false,
+                    input: Array.isArray(rawCap["input"])
+                      ? rawCap["input"].filter((x): x is string => typeof x === "string")
+                      : ["text"],
+                    output: Array.isArray(rawCap["output"])
+                      ? rawCap["output"].filter((x): x is string => typeof x === "string")
+                      : ["text"],
+                  }
+                : undefined
+            result.push({ id, name, limit, capabilities })
+          }
+          return result
+        } catch {
+          return []
+        }
+      },
+    })
 
     const rpc = await ctx.rpc.register(ToolkitRpc, {
       settingsGet: async (input) => loadSettings(ctx, readLayers(input)),
@@ -247,6 +291,55 @@ export default Plugin.define({
         // 子代理会话同样必须属于本实例目录，避免跨 location 读别人的统计。
         if (!(await owns(sessionID))) return emptyDetail()
         return buildSubagentDetail(ctx, sessionID)
+      },
+      providersGet: async () => {
+        return providerService.getProviders()
+      },
+      providerSave: async (input) => {
+        const record = asRecord(input)
+        const provider = record?.["provider"] as CustomProviderConfig | undefined
+        if (provider === undefined) return { ok: false, error: "Missing provider payload" }
+        const saveRes = await providerService.saveProvider(provider)
+        if (saveRes.ok) {
+          await Promise.all([
+            ctx.provider.reload().catch(() => undefined),
+            ctx.model.reload().catch(() => undefined),
+          ])
+        }
+        return saveRes
+      },
+      providerDelete: async (input) => {
+        const record = asRecord(input)
+        const providerID = typeof record?.["providerID"] === "string" ? record["providerID"] : ""
+        if (providerID.length === 0) return { ok: false, error: "Missing providerID" }
+        const delRes = await providerService.deleteProvider(providerID)
+        if (delRes.ok) {
+          await Promise.all([
+            ctx.provider.reload().catch(() => undefined),
+            ctx.model.reload().catch(() => undefined),
+          ])
+        }
+        return delRes
+      },
+      providerModelsFetch: async (input) => {
+        const record = asRecord(input)
+        const baseURL = typeof record?.["baseURL"] === "string" ? record["baseURL"] : ""
+        const apiKey = typeof record?.["apiKey"] === "string" ? record["apiKey"] : undefined
+        return providerService.fetchAndMatchModels(baseURL, apiKey)
+      },
+      providerModelMatch: async (input) => {
+        const record = asRecord(input)
+        const modelID = typeof record?.["modelID"] === "string" ? record["modelID"] : ""
+        const matched = await providerService.rematchModel(modelID)
+        return {
+          model: {
+            id: matched.id,
+            name: matched.name,
+            enabled: true,
+            limit: matched.limit,
+            capabilities: matched.capabilities,
+          },
+        }
       },
     })
 
