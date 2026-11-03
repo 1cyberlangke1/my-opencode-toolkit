@@ -20,21 +20,22 @@ export async function loadSettings(ctx: SettingsContext, layers?: readonly strin
 
 /**
  * 输入：插件上下文 + 完整设置 + 可选层路径。
- * 输出：无；失败抛错。
+ * 输出：实际写入的目标文件路径（无变更返回 undefined）；失败抛错。
  * 预期：只写变化键；优先最近已存在的项目文件，否则全局。
  */
 export async function saveSettings(
   ctx: SettingsContext,
   settings: Settings,
   layers?: readonly string[],
-): Promise<void> {
+): Promise<string | undefined> {
   const paths = resolveConfigFiles(ctx.location?.directory ?? process.cwd(), layers)
+  const target = await nearestExistingConfig(paths)
+  if (target === undefined) throw new Error("no plugin config path")
   const merged = await readMergedConfig(paths)
   const normalized = normalizeSettings(settings)
   const patch = diffConfig(merged.values, { ...normalized })
-  if (patch === undefined) return
-  const target = await nearestExistingConfig(paths)
-  if (target === undefined) throw new Error("no plugin config path")
+  if (patch === undefined) return target
   const result = await writeConfigValues(target, patch)
   if (!result.ok) throw new Error(result.error)
+  return target
 }

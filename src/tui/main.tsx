@@ -599,6 +599,11 @@ export default Plugin.define({
       })
     })
 
+    const offSettingsUpdated = rpc.events.on("settingsUpdated", (event) => {
+      setSettings(event.data)
+      applyEditorEnvironment(event.data.editor)
+    })
+
     /** 选择语言并写回。 */
     const chooseLanguage = async (): Promise<void> => {
       const picked = await context.ui.dialog.select<Lang>({
@@ -1036,6 +1041,7 @@ export default Plugin.define({
 
     return () => {
       offToast()
+      offSettingsUpdated()
       for (const dispose of disposeSections) dispose()
       disposeStats()
       disposeHint()

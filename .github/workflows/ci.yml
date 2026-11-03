@@ -110,6 +110,8 @@ jobs:
       - run: bun scripts/e2e-synthetic.mjs
       - run: bun scripts/e2e-synthetic.mjs --compact
       - run: bun scripts/e2e-time.mjs
+      # 外部文件修改与项目层配置实时自动同步。
+      - run: bun scripts/e2e-settings-sync.mjs
       # 真实 TUI（PTY）：设置菜单必须能在实际客户端里打开并交互。
       - run: bun scripts/e2e-tui.mjs
       # 更新菜单：本地假 registry + 假 opencode，验证确认/进度/失败三条界面路径。

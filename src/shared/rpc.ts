@@ -282,6 +282,7 @@ export const ToolkitRpc: Rpc.PortableDefinition = {
   events: {
     toast: { schema: ToastEventJson },
     panelUpdated: { schema: PanelUpdatedEventJson },
+    settingsUpdated: { schema: SettingsJson },
   },
 }
 
@@ -395,6 +396,10 @@ export type ToolkitRpcClient = {
     on(
       name: "panelUpdated",
       handler: (event: { readonly data: PanelUpdatedEvent }) => void,
+    ): () => void
+    on(
+      name: "settingsUpdated",
+      handler: (event: { readonly data: Settings }) => void,
     ): () => void
   }
 }

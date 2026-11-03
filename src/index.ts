@@ -16,6 +16,8 @@ import { globalSerialRegistry, runSerial } from "./shared/serial.ts"
 import { ownsSession } from "./shared/session.ts"
 import { loadSettings, saveSettings } from "./shared/settings-store.ts"
 import { applyEditorEnvironment, normalizeSettings } from "./shared/settings.ts"
+import { resolveConfigFiles } from "./shared/config-paths.ts"
+import { watchConfigFiles } from "./shared/settings-watcher.ts"
 import { buildStats, buildSubagentDetail, hitRatePercent, listSubagents, tokenParts } from "./stats.ts"
 import type { SessionStats } from "./stats.ts"
 import { loadStats, removeStats, saveStats } from "./stats-store.ts"
@@ -126,6 +128,10 @@ export default Plugin.define({
       })
       .catch(() => undefined)
 
+    const directory = ctx.location.directory
+    const configFiles = resolveConfigFiles(directory, undefined)
+    const selfSaveRef: { mark?: (filePath: string) => void } = {}
+
     const rpc = await ctx.rpc.register(ToolkitRpc, {
       settingsGet: async (input) => loadSettings(ctx, readLayers(input)),
       settingsSet: async (input) => {
@@ -133,7 +139,8 @@ export default Plugin.define({
         const layers = readLayers(input)
         const next = normalizeSettings(input)
         applyEditorEnvironment(next.editor)
-        await saveSettings(ctx, next, layers)
+        const target = await saveSettings(ctx, next, layers)
+        if (target !== undefined) selfSaveRef.mark?.(target)
         // 命令描述在注册时生成；语言变了必须重注册，否则 /goal /cron /loop 一直显示旧语言。
         // goal 开关变化要动态注册/注销命令与工具：关 = 命令面板、工具表、续作全部消失。
         await Promise.all([
@@ -250,6 +257,27 @@ export default Plugin.define({
     // Plan 模式跳过 cron/loop 时通知 TUI 弹 toast；只提示，不改变调度结果。
     emitToast = (kind, sessionID) => {
       void rpc.events.emit("toast", { reason: "planSkipped", kind, sessionID }).catch(() => undefined)
+    }
+
+    const watcher = watchConfigFiles({
+      files: configFiles,
+      onChange: async () => {
+        try {
+          const next = await loadSettings(ctx)
+          applyEditorEnvironment(next.editor)
+          await Promise.all([
+            goal.setEnabled(next.goal.enabled),
+            goal.refreshCommands(next.lang),
+            scheduling.refreshCommands(next.lang),
+          ]).catch(() => undefined)
+          void rpc.events.emit("settingsUpdated", next).catch(() => undefined)
+        } catch {
+          // ignore
+        }
+      },
+    })
+    selfSaveRef.mark = (filePath) => {
+      watcher.markSelfSaved(filePath)
     }
 
     // 功能关闭或子代理会话时，请求发给模型前就把对应工具从工具表移除。
@@ -393,6 +421,7 @@ export default Plugin.define({
       await hook.dispose()
       await scheduling.dispose()
       await goal.dispose()
+      watcher.dispose()
       await rpc.dispose()
     }
   },
