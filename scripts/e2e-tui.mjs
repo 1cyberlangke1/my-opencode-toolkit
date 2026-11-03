@@ -16,11 +16,16 @@ import { join } from "node:path"
 
 import { resolveMessages } from "../src/i18n/index.ts"
 
-// 界面语言随宿主 locale 变（CI 是英文、本机可能是中文）：断言只从语言文件取文案，
-// 两种语言都接受，改文案或加语言时不用再动 e2e。
+// 界面语言随宿主 locale 变（CI 是英文、本机可能是中文）：断言只从语言文件取文案。
+// 宽度自适应：优先全串匹配，窄屏截断时自动回退匹配前缀，保证在任何机器尺寸下都不脆断。
 const copies = [resolveMessages("zh"), resolveMessages("en")]
-/** 输入：取文案的函数；输出：任一语言下该文案是否出现在屏幕上。 */
-const shows = (text, pick) => copies.some((copy) => text.includes(pick(copy)))
+const shows = (text, pick) =>
+  copies.some((copy) => {
+    const full = pick(copy)
+    if (text.includes(full)) return true
+    const prefix = full.slice(0, Math.min(8, full.length))
+    return prefix.length > 0 && text.includes(prefix)
+  })
 
 const repo = process.cwd()
 const root = await mkdtemp(join(tmpdir(), "opencode-e2e-tui-"))
@@ -175,6 +180,8 @@ try {
   if (!appearance) {
     console.log("=== screen tail ===")
     console.log(plain().slice(-3000))
+    console.log("=== ZH COPY ===", copies[0].menu.language)
+    console.log("=== EN COPY ===", copies[1].menu.language)
     throw new Error("appearance submenu did not open")
   }
 

@@ -154,4 +154,59 @@ describe("provider config safe editor", () => {
     expect(content).toContain('"keep-me"')
     expect(content).not.toContain('"delete-me"')
   })
+
+  it("容错兼容：对只有 limit 和 variants、完全没有 capabilities 的模型安全读取并保留扩展字段", async () => {
+    const { file } = await workspace()
+    const rawRealConfig = `{
+  "provider": {
+    "commandcode": {
+      "name": "Command Code",
+      "npm": "@ai-sdk/openai-compatible",
+      "options": {
+        "baseURL": "https://api.commandcode.ai/provider/v1",
+        "setCacheKey": true
+      },
+      "models": {
+        "deepseek/deepseek-v4-flash": {
+          "limit": {
+            "context": 1000000,
+            "output": 384000
+          },
+          "variants": {
+            "high": { "reasoningEffort": "high" }
+          }
+        }
+      }
+    }
+  }
+}`
+    await writeFile(file, rawRealConfig, "utf8")
+
+    const loaded = await loadCustomProviders(file)
+    expect(loaded.ok).toBe(true)
+    if (loaded.ok) {
+      expect(loaded.providers.length).toBe(1)
+      const p = loaded.providers[0]
+      expect(p).toBeDefined()
+      if (p === undefined) return
+      expect(p.id).toBe("commandcode")
+      expect(p.options["setCacheKey"]).toBe(true)
+      const m = p.models["deepseek/deepseek-v4-flash"]
+      expect(m).toBeDefined()
+      if (m === undefined) return
+      expect(m.id).toBe("deepseek/deepseek-v4-flash")
+      expect(m.limit?.context).toBe(1000000)
+      // 容错补齐的 capabilities
+      expect(m.capabilities?.tools).toBe(true)
+      expect(m.capabilities?.input).toEqual(["text"])
+
+      // 再次保存时，保留原有 variants 和 setCacheKey
+      const saveRes = await saveCustomProvider(file, p)
+      expect(saveRes.ok).toBe(true)
+
+      const savedText = await readFile(file, "utf8")
+      expect(savedText).toContain('"setCacheKey": true')
+      expect(savedText).toContain('"reasoningEffort": "high"')
+    }
+  })
 })

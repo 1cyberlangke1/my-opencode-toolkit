@@ -96,7 +96,7 @@ export async function loadCustomProviders(
               context: typeof rawModel["limit"]["context"] === "number" ? rawModel["limit"]["context"] : 128000,
               output: typeof rawModel["limit"]["output"] === "number" ? rawModel["limit"]["output"] : 4096,
             }
-          : undefined
+          : { context: 128000, output: 4096 }
         const capabilities = isRecord(rawModel["capabilities"])
           ? {
               tools: rawModel["capabilities"]["tools"] !== false,
@@ -107,9 +107,10 @@ export async function loadCustomProviders(
                 ? rawModel["capabilities"]["output"].filter((x): x is string => typeof x === "string")
                 : ["text"],
             }
-          : undefined
+          : { tools: true, input: ["text"], output: ["text"] }
 
         models[modelID] = {
+          ...rawModel,
           id: modelID,
           name: modelName,
           enabled: rawModel["enabled"] !== false,
@@ -120,10 +121,12 @@ export async function loadCustomProviders(
     }
 
     providers.push({
+      ...rawEntry,
       id,
       name,
       npm,
       options: {
+        ...options,
         baseURL,
         ...(apiKey !== undefined ? { apiKey } : {}),
       },
@@ -172,10 +175,19 @@ export async function saveCustomProvider(
   }
 
   // 组装要写入 provider.<id> 的规范对象
+  const rawProviderMap = isRecord(preParsed) && isRecord(preParsed["provider"]) ? preParsed["provider"] : undefined
+  const rawTarget =
+    rawProviderMap !== undefined && isRecord(rawProviderMap[provider.id]) ? rawProviderMap[provider.id] : undefined
+  const existingProvider: Record<string, unknown> = (rawTarget ?? {}) as Record<string, unknown>
+  const existingOptions = isRecord(existingProvider["options"]) ? existingProvider["options"] : {}
+  const existingModels = isRecord(existingProvider["models"]) ? existingProvider["models"] : {}
+
   const modelsRecord: Record<string, unknown> = {}
   for (const [modelID, m] of Object.entries(provider.models)) {
     if (m.enabled === false) continue
+    const existingModel = isRecord(existingModels[modelID]) ? existingModels[modelID] : {}
     modelsRecord[modelID] = {
+      ...existingModel,
       name: m.name ?? modelID,
       limit: {
         context: m.limit?.context ?? 128000,
@@ -190,9 +202,11 @@ export async function saveCustomProvider(
   }
 
   const providerEntry = {
+    ...existingProvider,
     npm: provider.npm.length > 0 ? provider.npm : "@ai-sdk/openai-compatible",
     name: provider.name && provider.name.length > 0 ? provider.name : provider.id,
     options: {
+      ...existingOptions,
       baseURL: provider.options.baseURL,
       ...(provider.options.apiKey && provider.options.apiKey.length > 0 ? { apiKey: provider.options.apiKey } : {}),
     },

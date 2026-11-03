@@ -50,46 +50,53 @@ type MutableProviderDraft = {
 export async function openProviderMenu(opts: ProviderMenuOptions): Promise<void> {
   const { context, client, copy, rpcOptions } = opts
 
-  for (;;) {
-    const text = copy()
-    const getRes = await client.providersGet({}, rpcOptions())
-    if (!getRes.ok) {
-      context.ui.toast.show({
-        message: getRes.error ?? text.panel.error,
-        variant: "error",
+  try {
+    for (;;) {
+      const text = copy()
+      const getRes = await client.providersGet({}, rpcOptions())
+      if (!getRes.ok) {
+        context.ui.toast.show({
+          message: getRes.error ?? text.panel.error,
+          variant: "error",
+        })
+        return
+      }
+
+      const providers = getRes.providers
+      const options = [
+        {
+          title: text.provider.addProvider,
+          value: "__add__",
+          description: text.provider.addProviderDesc,
+        },
+        ...providers.map((p) => ({
+          title: p.name && p.name.length > 0 ? p.name : p.id,
+          value: p.id,
+          footer: text.provider.modelsCount(Object.keys(p.models).length),
+        })),
+      ]
+
+      const choice = await context.ui.dialog.select<string>({
+        title: text.provider.menuTitle,
+        options,
       })
-      return
-    }
 
-    const providers = getRes.providers
-    const options = [
-      {
-        title: text.provider.addProvider,
-        value: "__add__",
-        description: text.provider.addProviderDesc,
-      },
-      ...providers.map((p) => ({
-        title: p.name && p.name.length > 0 ? p.name : p.id,
-        value: p.id,
-        footer: text.provider.modelsCount(Object.keys(p.models).length),
-      })),
-    ]
+      if (choice === undefined) return
 
-    const choice = await context.ui.dialog.select<string>({
-      title: text.provider.menuTitle,
-      options,
-    })
-
-    if (choice === undefined) return
-
-    if (choice === "__add__") {
-      await startAddProviderWizard(opts)
-    } else {
-      const selected = providers.find((p) => p.id === choice)
-      if (selected !== undefined) {
-        await editProviderDialog(opts, selected, false)
+      if (choice === "__add__") {
+        await startAddProviderWizard(opts)
+      } else {
+        const selected = providers.find((p) => p.id === choice)
+        if (selected !== undefined) {
+          await editProviderDialog(opts, selected, false)
+        }
       }
     }
+  } catch (error) {
+    context.ui.toast.show({
+      message: error instanceof Error ? error.message : String(error),
+      variant: "error",
+    })
   }
 }
 
@@ -149,7 +156,21 @@ async function startAddProviderWizard(opts: ProviderMenuOptions): Promise<void> 
     models: modelsRecord,
   }
 
-  await editProviderDialog(opts, draft, true)
+  // 首次添加拉取模型后立即自动保存入盘，保证数据即刻生效
+  const saveRes = await client.providerSave({ provider: draft }, rpcOptions())
+  if (saveRes.ok) {
+    context.ui.toast.show({
+      message: text.provider.saveSuccess(draft.name && draft.name.length > 0 ? draft.name : draft.id),
+      variant: "success",
+    })
+  } else {
+    context.ui.toast.show({
+      message: `${text.provider.saveFailed}: ${saveRes.error ?? "unknown error"}`,
+      variant: "error",
+    })
+  }
+
+  await editProviderDialog(opts, draft, false)
 }
 
 /**
@@ -173,6 +194,21 @@ async function editProviderDialog(
     const text = copy()
     const options = [
       {
+        title: text.provider.save,
+        value: "save",
+      },
+      {
+        title: text.provider.manageModels,
+        value: "models",
+        description: text.provider.manageModelsDesc,
+        footer: text.provider.modelsCount(Object.keys(draft.models).length),
+      },
+      {
+        title: text.provider.refetchModels,
+        value: "refetch",
+        description: text.provider.refetchModelsDesc,
+      },
+      {
         title: `${text.provider.fieldName}: ${draft.name && draft.name.length > 0 ? draft.name : draft.id}`,
         value: "name",
       },
@@ -188,21 +224,6 @@ async function editProviderDialog(
         title: `${text.provider.fieldNpm}: ${draft.npm}`,
         value: "npm",
       },
-      {
-        title: text.provider.refetchModels,
-        value: "refetch",
-        description: text.provider.refetchModelsDesc,
-      },
-      {
-        title: text.provider.manageModels,
-        value: "models",
-        description: text.provider.manageModelsDesc,
-        footer: text.provider.modelsCount(Object.keys(draft.models).length),
-      },
-      {
-        title: text.provider.save,
-        value: "save",
-      },
       ...(!isNew
         ? [
             {
@@ -213,14 +234,27 @@ async function editProviderDialog(
         : []),
     ]
 
+    let actionTriggered: string | undefined
     const choice = await context.ui.dialog.select<string>({
       title: `${text.provider.editTitle}: ${draft.name && draft.name.length > 0 ? draft.name : draft.id}`,
       options,
+      actions: [
+        {
+          bind: "ctrl+s",
+          title: text.provider.save,
+          selection: "none",
+          onTrigger: () => {
+            actionTriggered = "save"
+            context.ui.dialog.clear()
+          },
+        },
+      ],
     })
 
-    if (choice === undefined) return
+    const effectiveChoice = actionTriggered ?? choice
+    if (effectiveChoice === undefined) return
 
-    if (choice === "name") {
+    if (effectiveChoice === "name") {
       const newName = await context.ui.dialog.prompt({
         title: text.provider.promptName,
         ...(draft.name !== undefined ? { value: draft.name } : {}),
@@ -228,7 +262,7 @@ async function editProviderDialog(
       if (newName !== undefined) {
         draft.name = newName.trim()
       }
-    } else if (choice === "baseURL") {
+    } else if (effectiveChoice === "baseURL") {
       const newUrl = await context.ui.dialog.prompt({
         title: text.provider.promptBaseUrl,
         value: draft.options.baseURL,
@@ -236,7 +270,7 @@ async function editProviderDialog(
       if (newUrl !== undefined && newUrl.trim().length > 0) {
         draft.options = { ...draft.options, baseURL: newUrl.trim() }
       }
-    } else if (choice === "apiKey") {
+    } else if (effectiveChoice === "apiKey") {
       const newKey = await context.ui.dialog.prompt({
         title: text.provider.promptApiKey,
         ...(draft.options.apiKey !== undefined ? { value: draft.options.apiKey } : {}),
@@ -248,7 +282,7 @@ async function editProviderDialog(
           ...(trimmed.length > 0 ? { apiKey: trimmed } : { apiKey: undefined }),
         }
       }
-    } else if (choice === "npm") {
+    } else if (effectiveChoice === "npm") {
       const selectedNpm = await context.ui.dialog.select<string>({
         title: text.provider.fieldNpm,
         options: [
@@ -268,7 +302,7 @@ async function editProviderDialog(
       } else if (selectedNpm !== undefined) {
         draft.npm = selectedNpm
       }
-    } else if (choice === "refetch") {
+    } else if (effectiveChoice === "refetch") {
       context.ui.toast.show({ message: text.provider.refetching, variant: "info" })
       const res = await client.providerModelsFetch(
         { baseURL: draft.options.baseURL, ...(draft.options.apiKey ? { apiKey: draft.options.apiKey } : {}) },
@@ -288,9 +322,9 @@ async function editProviderDialog(
           variant: "warning",
         })
       }
-    } else if (choice === "models") {
+    } else if (effectiveChoice === "models") {
       await manageModelsDialog(opts, draft)
-    } else if (choice === "save") {
+    } else if (effectiveChoice === "save") {
       const saveRes = await client.providerSave({ provider: draft }, rpcOptions())
       if (saveRes.ok) {
         context.ui.toast.show({
@@ -303,7 +337,7 @@ async function editProviderDialog(
         message: `${text.provider.saveFailed}: ${saveRes.error ?? "unknown error"}`,
         variant: "error",
       })
-    } else if (choice === "delete") {
+    } else if (effectiveChoice === "delete") {
       const confirmed = await context.ui.dialog.confirm({
         title: text.provider.delete,
         message: text.provider.confirmDelete(draft.name && draft.name.length > 0 ? draft.name : draft.id),

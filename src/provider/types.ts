@@ -23,12 +23,14 @@ export type CustomModelConfig = {
   readonly enabled?: boolean | undefined
   readonly limit?: CustomModelLimit | undefined
   readonly capabilities?: CustomModelCapabilities | undefined
+  readonly [key: string]: unknown
 }
 
 /** 提供商选项（Base URL、API Key 等）。 */
 export type CustomProviderOptions = {
   readonly baseURL: string
   readonly apiKey?: string | undefined
+  readonly [key: string]: unknown
 }
 
 /** 自定义提供商配置（对应 opencode.json 中 provider.<id> 的结构）。 */
@@ -39,6 +41,7 @@ export type CustomProviderConfig = {
   readonly npm: string
   readonly options: CustomProviderOptions
   readonly models: Record<string, CustomModelConfig>
+  readonly [key: string]: unknown
 }
 
 /** 已知模型参考信息（通常来自 ctx.model.list()）。 */
