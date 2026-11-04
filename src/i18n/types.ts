@@ -146,7 +146,6 @@ export type Messages = {
     readonly commandDescription: string
     readonly menuTitle: string
     readonly addProvider: string
-    readonly addProviderDesc: string
     readonly editTitle: string
     readonly promptBaseUrl: string
     readonly promptApiKey: string
@@ -158,12 +157,10 @@ export type Messages = {
     readonly notSet: string
     readonly modelsCount: (count: number) => string
     readonly refetchModels: string
-    readonly refetchModelsDesc: string
     readonly refetching: string
     readonly refetchSuccess: (count: number) => string
     readonly refetchFailed: string
     readonly manageModels: string
-    readonly manageModelsDesc: string
     readonly modelsTitle: string
     readonly addModelManual: string
     readonly promptModelId: string
@@ -174,15 +171,14 @@ export type Messages = {
     readonly modelMaxOutput: string
     readonly modelTools: string
     readonly modelVision: string
+    readonly modelAudio: string
+    readonly modelVideo: string
     readonly modelRematch: string
-    readonly modelRematchDesc: string
     readonly deleteModel: string
     readonly delete: string
     readonly confirmDelete: (name: string) => string
     readonly saveSuccess: (name: string) => string
     readonly saveFailed: string
     readonly deleteSuccess: string
-    readonly back: string
-    readonly done: string
   }
 }

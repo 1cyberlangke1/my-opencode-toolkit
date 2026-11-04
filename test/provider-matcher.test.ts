@@ -6,6 +6,7 @@ import {
   FALLBACK_LIMIT,
   formatCapabilitiesEmoji,
   matchModelCapabilities,
+  toggleInputModality,
 } from "../src/provider/matcher.ts"
 import type { KnownModelRef } from "../src/provider/types.ts"
 
@@ -79,6 +80,30 @@ describe("provider matcher", () => {
       capabilities: { tools: true, input: ["text"], output: ["text"] },
     })
     expect(emojiMillion).toContain("🪟 1M")
+
+    // 音频/视频模态也要在 footer 里一眼看得出来。
+    const emojiAv = formatCapabilitiesEmoji({
+      limit: { context: 128000, output: 4096 },
+      capabilities: { tools: true, input: ["text", "image", "audio", "video"], output: ["text"] },
+    })
+    expect(emojiAv).toContain("👁️")
+    expect(emojiAv).toContain("🎙️")
+    expect(emojiAv).toContain("🎬")
+  })
+
+  it("toggleInputModality 追加缺失模态、移除已有模态且不产生重复", () => {
+    const base = { tools: true, input: ["text", "image"], output: ["text"] }
+
+    // 缺失则追加
+    expect(toggleInputModality(base, "audio")).toEqual(["text", "image", "audio"])
+    expect(toggleInputModality(base, "video")).toEqual(["text", "image", "video"])
+    // 已存在则移除
+    expect(toggleInputModality(base, "image")).toEqual(["text"])
+    // 能力缺失时按纯文本兜底
+    expect(toggleInputModality(undefined, "image")).toEqual(["text", "image"])
+    // 连续切换两次回到原状
+    const once = toggleInputModality(base, "audio")
+    expect(toggleInputModality({ ...base, input: once }, "audio")).toEqual(["text", "image"])
   })
 
   it("从 URL 自动提取域名生成默认名称与 ID", () => {

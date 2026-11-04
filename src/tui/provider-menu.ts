@@ -9,6 +9,7 @@ import {
   defaultProviderIdFromName,
   defaultProviderNameFromUrl,
   formatCapabilitiesEmoji,
+  toggleInputModality,
 } from "../provider/matcher.ts"
 import type {
   CustomModelConfig,
@@ -67,7 +68,6 @@ export async function openProviderMenu(opts: ProviderMenuOptions): Promise<void>
         {
           title: text.provider.addProvider,
           value: "__add__",
-          description: text.provider.addProviderDesc,
         },
         ...providers.map((p) => ({
           title: p.name && p.name.length > 0 ? p.name : p.id,
@@ -170,7 +170,7 @@ async function startAddProviderWizard(opts: ProviderMenuOptions): Promise<void> 
     })
   }
 
-  await editProviderDialog(opts, draft, false)
+  await editProviderDialog(opts, draft, true)
 }
 
 /**
@@ -206,13 +206,11 @@ async function editProviderDialog(
       {
         title: text.provider.manageModels,
         value: "models",
-        description: text.provider.manageModelsDesc,
         footer: text.provider.modelsCount(Object.keys(draft.models).length),
       },
       {
         title: text.provider.refetchModels,
         value: "refetch",
-        description: text.provider.refetchModelsDesc,
       },
       {
         title: `${text.provider.fieldName}: ${draft.name && draft.name.length > 0 ? draft.name : draft.id}`,
@@ -370,10 +368,6 @@ async function manageModelsDialog(
         footer: formatCapabilitiesEmoji(m),
         value: m.id,
       })),
-      {
-        title: text.provider.done,
-        value: "__done__",
-      },
     ]
 
     const choice = await context.ui.dialog.select<string>({
@@ -381,7 +375,7 @@ async function manageModelsDialog(
       options,
     })
 
-    if (choice === undefined || choice === "__done__") return
+    if (choice === undefined) return
 
     if (choice === "__add_manual__") {
       const modelID = await context.ui.dialog.prompt({
@@ -473,17 +467,20 @@ async function editSingleModelDialog(
         value: "vision",
       },
       {
+        title: `🎙️ ${text.provider.modelAudio}: ${current.capabilities?.input.includes("audio") ?? false ? text.menu.on : text.menu.off}`,
+        value: "audio",
+      },
+      {
+        title: `🎬 ${text.provider.modelVideo}: ${current.capabilities?.input.includes("video") ?? false ? text.menu.on : text.menu.off}`,
+        value: "video",
+      },
+      {
         title: `🔍 ${text.provider.modelRematch}`,
         value: "rematch",
-        description: text.provider.modelRematchDesc,
       },
       {
         title: `🗑️ ${text.provider.deleteModel}`,
         value: "delete",
-      },
-      {
-        title: `✓ ${text.provider.done}`,
-        value: "done",
       },
     ]
 
@@ -492,7 +489,7 @@ async function editSingleModelDialog(
       options,
     })
 
-    if (choice === undefined || choice === "done") {
+    if (choice === undefined) {
       onUpdate(current)
       return
     }
@@ -552,16 +549,14 @@ async function editSingleModelDialog(
         },
       }
       onUpdate(current)
-    } else if (choice === "vision") {
-      const hasImage = current.capabilities?.input.includes("image") ?? false
-      const input = hasImage
-        ? (current.capabilities?.input ?? ["text"]).filter((x) => x !== "image")
-        : [...(current.capabilities?.input ?? ["text"]), "image"]
+    } else if (choice === "vision" || choice === "audio" || choice === "video") {
+      // 三种输入模态共用一套开关逻辑：vision 对应 image，其余直接用选项名。
+      const modality = choice === "vision" ? "image" : choice
       current = {
         ...current,
         capabilities: {
           tools: current.capabilities?.tools !== false,
-          input,
+          input: toggleInputModality(current.capabilities, modality),
           output: current.capabilities?.output ?? ["text"],
         },
       }

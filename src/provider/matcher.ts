@@ -133,6 +133,23 @@ export function matchModelCapabilities(
 }
 
 /**
+ * 切换模型的一种输入模态。
+ *
+ * 输入：当前能力描述（可为空）+ 模态名（如 "image" / "audio" / "video"）。
+ * 输出：新的输入模态数组。
+ * 预期：已存在则移除，不存在则追加；能力缺失时按纯文本兜底后再追加。
+ */
+export function toggleInputModality(
+  capabilities: CustomModelCapabilities | undefined,
+  modality: string,
+): readonly string[] {
+  const current = capabilities?.input ?? ["text"]
+  return current.includes(modality)
+    ? current.filter((item) => item !== modality)
+    : [...current, modality]
+}
+
+/**
  * 将模型的能力特征格式化为紧凑美观的 Emoji 符号组合。
  *
  * 输入：模型规格。
