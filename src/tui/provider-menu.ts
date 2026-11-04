@@ -11,6 +11,7 @@ import {
   formatCapabilitiesEmoji,
   toggleInputModality,
 } from "../provider/matcher.ts"
+import { npmPresetOptions } from "../provider/npm-presets.ts"
 import type {
   CustomModelConfig,
   CustomProviderConfig,
@@ -24,14 +25,6 @@ export type ProviderMenuOptions = {
   readonly copy: () => Messages
   readonly rpcOptions: () => RpcCallOptions
 }
-
-/** 常用 SDK 驱动包预设选项。 */
-const NPM_PRESETS = [
-  "@ai-sdk/openai-compatible",
-  "@ai-sdk/openai",
-  "@ai-sdk/anthropic",
-  "@ai-sdk/google",
-]
 
 /** 内部可变草稿结构。 */
 type MutableProviderDraft = {
@@ -279,10 +272,7 @@ async function editProviderDialog(
     } else if (choice === "npm") {
       const selectedNpm = await context.ui.dialog.select<string>({
         title: text.provider.fieldNpm,
-        options: [
-          ...NPM_PRESETS.map((p) => ({ title: p, value: p })),
-          { title: "自定义输入...", value: "__custom__" },
-        ],
+        options: [...npmPresetOptions(), { title: "自定义输入...", value: "__custom__" }],
         current: draft.npm,
       })
       if (selectedNpm === "__custom__") {
