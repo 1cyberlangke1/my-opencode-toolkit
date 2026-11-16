@@ -1,10 +1,15 @@
 import type { Plugin } from "@opencode/plugin"
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { MemoryStore } from "./helpers.ts"
 import { createSessionRoles } from "../src/goal/session-role.ts"
 import { ownsSession } from "../src/shared/session.ts"
 import { formatTime, formatTimeSafe, isValidTimezone, createTimePulse } from "../src/time/index.ts"
+
+/** 状态挂在 globalThis 跨热重载共享；测试之间必须清掉，避免互相污染。 */
+afterEach(() => {
+  Reflect.deleteProperty(globalThis, Symbol.for("my-opencode-toolkit.time-state"))
+})
 
 /** 构造一个 step.ended 插件事件。 */
 function stepEvent(sessionID: string) {
@@ -215,7 +220,7 @@ describe("createTimePulse", () => {
     }
   })
 
-  it("forget 清掉会话计数；dispose 清空全部", async () => {
+  it("forget 清掉会话计数；dispose 只清步数游标，保留间隔基线", async () => {
     const { ctx, synthetic } = fakeCtx()
     const pulse = createTimePulse(ctx, roles, () => Promise.resolve(DEFAULT_TIME))
     try {
@@ -283,6 +288,39 @@ describe("createTimePulse", () => {
       expect(synthetic).toHaveBeenCalledTimes(3)
     } finally {
       pulse.dispose()
+    }
+  })
+
+  it("热重载后新实例保留上次注入时间，不会立刻重复注入", async () => {
+    let now = 1_000_000
+    const readInterval = () =>
+      Promise.resolve({
+        enabled: true,
+        mode: "interval" as const,
+        intervalSeconds: 300,
+        intervalSteps: 3,
+        format: "YYYY-MM-DD HH:mm:ss",
+        timezone: "",
+      })
+    const first = fakeCtx()
+    const pulse1 = createTimePulse(first.ctx, roles, readInterval, () => now)
+    await pulse1.trigger("s1")
+    expect(first.synthetic).toHaveBeenCalledTimes(1)
+
+    // 模拟热重载：旧实例 dispose，随后重建新实例（共享 globalThis 状态）。
+    pulse1.dispose()
+    now += 10_000
+    const second = fakeCtx()
+    const pulse2 = createTimePulse(second.ctx, roles, readInterval, () => now)
+    try {
+      await pulse2.trigger("s1")
+      // 只过 10 秒，未达 300 秒；因为基线跨重载保留，不应注入。
+      expect(second.synthetic).not.toHaveBeenCalled()
+      now += 300_000
+      await pulse2.trigger("s1")
+      expect(second.synthetic).toHaveBeenCalledTimes(1)
+    } finally {
+      pulse2.dispose()
     }
   })
 })

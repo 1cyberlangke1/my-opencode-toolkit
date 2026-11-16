@@ -2,6 +2,7 @@ import type { Plugin } from "@opencode/plugin"
 
 import type { SessionRoles } from "../goal/session-role.ts"
 import { readEventSessionID, type PluginEvent } from "../shared/events.ts"
+import { globalRegistry } from "../shared/serial.ts"
 import { ownsSession } from "../shared/session.ts"
 import type { TimeSettings } from "../shared/settings.ts"
 
@@ -62,6 +63,30 @@ export function isValidTimezone(timezone: string): boolean {
   }
 }
 
+/** 时间注入的进程级状态：挂 globalThis，热重载后仍共享上次注入时间。 */
+type TimeState = {
+  readonly counts: Map<string, number>
+  readonly lastInjectedAt: Map<string, number>
+  readonly skipNextStep: Set<string>
+}
+
+/** 进程级状态键；Symbol.for 保证同进程内所有实例拿到同一个。 */
+const TIME_STATE_KEY = Symbol.for("my-opencode-toolkit.time-state")
+
+/**
+ * 输入：无。
+ * 输出：进程级共享状态。
+ * 预期：热重载会重建插件实例并调用 dispose；若状态只在闭包里，dispose 清空后
+ *       下一次工具调用就会立刻重新注入时间。挂到 globalThis 后，间隔状态跨重载保留。
+ */
+function timeState(): TimeState {
+  return globalRegistry<TimeState>(TIME_STATE_KEY, () => ({
+    counts: new Map<string, number>(),
+    lastInjectedAt: new Map<string, number>(),
+    skipNextStep: new Set<string>(),
+  }))
+}
+
 /** 时间注入句柄。 */
 export type TimeHandle = {
   /** 输入：插件事件；输出：无。预期：只在 step.ended 累加步数，绝不在步骤结束时注入。 */
@@ -89,12 +114,7 @@ export function createTimePulse(
   >,
   nowProvider: () => number = () => Date.now(),
 ): TimeHandle {
-  /** 输入：会话 ID；输出：当前计数（steps 模式用）。 */
-  const counts = new Map<string, number>()
-  /** 输入：会话 ID；输出：上次注入时间戳毫秒数（interval 模式用）。 */
-  const lastInjectedAt = new Map<string, number>()
-  /** 刚刚完成时间注入的会话：注入带出的那一步本身不计入步数。 */
-  const skipNextStep = new Set<string>()
+  const { counts, lastInjectedAt, skipNextStep } = timeState()
 
   const handle = async (event: PluginEvent): Promise<void> => {
     if (event.type !== "session.step.ended") return
@@ -159,8 +179,10 @@ export function createTimePulse(
       skipNextStep.delete(sessionID)
     },
     dispose() {
+      // 只清本实例的步数游标；保留 lastInjectedAt。
+      // 本地插件的热重载也会调用 dispose，清空它会让每次保存后立刻重复注入时间。
+      // 进程退出时 globalThis 上的状态自然回收。
       counts.clear()
-      lastInjectedAt.clear()
       skipNextStep.clear()
     },
   }
