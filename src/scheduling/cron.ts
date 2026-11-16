@@ -17,8 +17,8 @@ const FIELD_RANGES: readonly FieldRange[] = [
   { min: 0, max: 6 }, // dayOfWeek（7 也接受为周日）
 ]
 
-/** cron 字段的中文名（诊断用）；下标与 FIELD_RANGES 对齐。 */
-export const CRON_FIELD_NAMES = ["minute", "hour", "dayOfMonth", "month", "dayOfWeek"] as const
+/** cron 字段名（诊断用）；下标与 FIELD_RANGES 对齐。 */
+const CRON_FIELD_NAMES = ["minute", "hour", "dayOfMonth", "month", "dayOfWeek"] as const
 
 /** 一个字段解析失败的原因；带字段序号与出错的逗号分段，供编译器式诊断定位。 */
 export type CronFieldError = {
