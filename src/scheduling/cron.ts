@@ -17,20 +17,39 @@ const FIELD_RANGES: readonly FieldRange[] = [
   { min: 0, max: 6 }, // dayOfWeek（7 也接受为周日）
 ]
 
+/** cron 字段的中文名（诊断用）；下标与 FIELD_RANGES 对齐。 */
+export const CRON_FIELD_NAMES = ["minute", "hour", "dayOfMonth", "month", "dayOfWeek"] as const
+
+/** 一个字段解析失败的原因；带字段序号与出错的逗号分段，供编译器式诊断定位。 */
+export type CronFieldError = {
+  readonly fieldIndex: number
+  readonly fieldName: string
+  readonly partIndex: number
+  readonly part: string
+  readonly reason: string
+  readonly min: number
+  readonly max: number
+}
+
+/** 字段解析结果：成功给升序值，失败给精确定位。 */
+type FieldResult =
+  | { readonly ok: true; readonly values: number[] }
+  | { readonly ok: false; readonly index: number; readonly part: string; readonly reason: string }
+
 /**
  * 输入：单个 cron 字段 + 取值范围。
- * 输出：升序匹配值数组，非法返回 `null`。
+ * 输出：升序匹配值，或带分段下标的失败原因。
  * 预期：支持通配、步进（`*` 后跟斜杠与数字）、单值、范围、范围步进、逗号列表；dayOfWeek 的 7 归一成 0。
  */
-function expandField(field: string, range: FieldRange): number[] | null {
+function expandField(field: string, range: FieldRange): FieldResult {
   const { min, max } = range
   const out = new Set<number>()
 
-  for (const part of field.split(",")) {
+  for (const [index, part] of field.split(",").entries()) {
     const stepMatch = /^\*(?:\/(\d+))?$/.exec(part)
     if (stepMatch !== null) {
       const step = stepMatch[1] === undefined ? 1 : Number.parseInt(stepMatch[1], 10)
-      if (step < 1) return null
+      if (step < 1) return { ok: false, index, part, reason: "step must be >= 1" }
       for (let i = min; i <= max; i += step) out.add(i)
       continue
     }
@@ -43,7 +62,10 @@ function expandField(field: string, range: FieldRange): number[] | null {
       // dayOfWeek: 范围里 7 作为周日别名（5-7 → [5,6,0]）
       const isDow = min === 0 && max === 6
       const effMax = isDow ? 7 : max
-      if (lo > hi || step < 1 || lo < min || hi > effMax) return null
+      if (step < 1) return { ok: false, index, part, reason: "step must be >= 1" }
+      if (lo > hi) return { ok: false, index, part, reason: `range start ${String(lo)} > end ${String(hi)}` }
+      if (lo < min || hi > effMax)
+        return { ok: false, index, part, reason: `range ${String(lo)}-${String(hi)} exceeds ${String(min)}-${String(effMax)}` }
       for (let i = lo; i <= hi; i += step) out.add(isDow && i === 7 ? 0 : i)
       continue
     }
@@ -51,16 +73,44 @@ function expandField(field: string, range: FieldRange): number[] | null {
     if (/^\d+$/.test(part)) {
       let n = Number.parseInt(part, 10)
       if (min === 0 && max === 6 && n === 7) n = 0
-      if (n < min || n > max) return null
+      if (n < min || n > max)
+        return { ok: false, index, part, reason: `${String(n)} is out of range ${String(min)}-${String(max)}` }
       out.add(n)
       continue
     }
 
-    return null
+    return { ok: false, index, part, reason: "not *, */n, a-b, a-b/n, or a comma list" }
   }
 
-  if (out.size === 0) return null
-  return Array.from(out).sort((a, b) => a - b)
+  if (out.size === 0) return { ok: false, index: 0, part: field, reason: "field expands to no values" }
+  return { ok: true, values: Array.from(out).sort((a, b) => a - b) }
+}
+
+/** 输入：表达式；输出：字段数组（已 trim、按空白切分）。 */
+function cronParts(expr: string): string[] {
+  return expr.trim().split(/\s+/).filter((part) => part.length > 0)
+}
+
+/** 输入：表达式；输出：除「字段数不对」以外的首个字段级错误；无错误返回 undefined。 */
+function firstFieldError(expr: string): CronFieldError | undefined {
+  const parts = cronParts(expr)
+  for (const [index, part] of parts.entries()) {
+    const range = FIELD_RANGES[index]
+    const name = CRON_FIELD_NAMES[index]
+    if (range === undefined || name === undefined) continue
+    const result = expandField(part, range)
+    if (result.ok) continue
+    return {
+      fieldIndex: index,
+      fieldName: name,
+      partIndex: result.index,
+      part: result.part,
+      reason: result.reason,
+      min: range.min,
+      max: range.max,
+    }
+  }
+  return undefined
 }
 
 /**
@@ -68,7 +118,7 @@ function expandField(field: string, range: FieldRange): number[] | null {
  * 输出：展开后的字段，非法返回 `null`。
  */
 export function parseCronExpression(expr: string): CronFields | null {
-  const parts = expr.trim().split(/\s+/)
+  const parts = cronParts(expr)
   if (parts.length !== 5) return null
 
   const expanded: number[][] = []
@@ -76,8 +126,8 @@ export function parseCronExpression(expr: string): CronFields | null {
     const range = FIELD_RANGES[index]
     if (range === undefined) return null
     const result = expandField(part, range)
-    if (result === null) return null
-    expanded.push(result)
+    if (!result.ok) return null
+    expanded.push(result.values)
   }
 
   const [minute, hour, dayOfMonth, month, dayOfWeek] = expanded
@@ -91,6 +141,16 @@ export function parseCronExpression(expr: string): CronFields | null {
     return null
   }
   return { minute, hour, dayOfMonth, month, dayOfWeek }
+}
+
+/**
+ * 输入：cron 表达式。
+ * 输出：字段级错误（第几个字段、哪个逗号分段、越界多少）；合法或非字段级问题时返回 undefined。
+ * 预期：字段数不对（不是 5 个）由调用方处理；这里只定位具体字段。
+ */
+export function explainCronError(expr: string): CronFieldError | undefined {
+  if (cronParts(expr).length !== 5) return undefined
+  return firstFieldError(expr)
 }
 
 /**

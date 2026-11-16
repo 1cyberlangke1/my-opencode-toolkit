@@ -1,7 +1,9 @@
 import type { Plugin } from "@opencode/plugin"
 import { Schema } from "effect"
 
+import { diagnostic, diagnosticResult } from "../shared/diagnostic.ts"
 import { loadSettings } from "../shared/settings-store.ts"
+import { ToolOutput } from "../shared/tool-output.ts"
 import type { GoalController } from "./controller.ts"
 import type { SessionRoles } from "./session-role.ts"
 import type { Goal } from "./types.ts"
@@ -39,7 +41,7 @@ const UpdateInput = Schema.Struct({
   block_reason: Schema.optional(Schema.String),
 })
 
-const EmptyOutput = Schema.Struct({})
+const EmptyOutput = ToolOutput
 
 /** 输入：目标；输出：给模型看的 JSON 文本。预期：`null` 也序列化成 `null`。 */
 function formatGoal(goal: Goal | null): string {
@@ -57,11 +59,35 @@ export async function registerGoalTools(
   roles: SessionRoles,
   reset: (sessionID: string) => void,
 ): Promise<{ dispose(): Promise<void> }> {
-  /** 输入：会话 ID；输出：不可用原因，可用时为 `null`。 */
-  const unavailable = async (sessionID: string): Promise<string | null> => {
+  /** 输入：会话 ID + 工具名；输出：不可用时的失败返回体，可用时为 `null`。 */
+  const unavailable = async (tool: string, sessionID: string) => {
     const settings = await loadSettings(ctx)
-    if (!settings.enabled || !settings.goal.enabled) return "Error: the goal feature is disabled in settings."
-    if (await roles.isSubagent(sessionID)) return "Error: goal tools are not available to subagents."
+    if (!settings.enabled || !settings.goal.enabled) {
+      return diagnosticResult(
+        diagnostic({
+          tool,
+          code: "FEATURE_DISABLED",
+          summary: "the goal feature is disabled in settings",
+          expected: "goal.enabled=true",
+          got: "goal.enabled=false",
+          fix: "turn the goal feature on in settings, then call again",
+        }),
+        {},
+      )
+    }
+    if (await roles.isSubagent(sessionID)) {
+      return diagnosticResult(
+        diagnostic({
+          tool,
+          code: "SUBAGENT_DENIED",
+          summary: "goal tools are not available to subagents",
+          expected: "a top-level session",
+          got: "a subagent session (parentID set)",
+          fix: "call goal tools from the main session, not from a subagent",
+        }),
+        {},
+      )
+    }
     return null
   }
 
@@ -74,24 +100,53 @@ export async function registerGoalTools(
       output: EmptyOutput,
       execute: async (input, toolCtx) => {
         const sessionID = toolCtx.sessionID
-        const blocked = await unavailable(sessionID)
-        if (blocked !== null) return { output: {}, content: blocked }
+        const blocked = await unavailable("create_goal", sessionID)
+        if (blocked !== null) return blocked
 
         const objective = input.objective.trim()
         if (objective.length === 0) {
-          return { output: {}, content: "Error: objective cannot be empty." }
+          return diagnosticResult(
+            diagnostic({
+              tool: "create_goal",
+              code: "EMPTY_OBJECTIVE",
+              summary: "objective cannot be empty",
+              at: "input.objective",
+              expected: "a non-empty objective",
+              got: JSON.stringify(input.objective),
+              fix: "describe the desired outcome, e.g. { \"objective\": \"ship the release\" }",
+            }),
+            {},
+          )
         }
         const tokenBudget = input.token_budget ?? undefined
         if (tokenBudget !== undefined && (!Number.isFinite(tokenBudget) || tokenBudget <= 0)) {
-          return { output: {}, content: "Error: token_budget must be a positive number." }
+          return diagnosticResult(
+            diagnostic({
+              tool: "create_goal",
+              code: "BAD_TOKEN_BUDGET",
+              summary: "token_budget must be a positive number",
+              at: "input.token_budget",
+              expected: "a finite number > 0",
+              got: JSON.stringify(tokenBudget),
+              fix: "pass a positive number, or omit token_budget for no budget",
+            }),
+            {},
+          )
         }
 
         const existing = await controller.getGoal(sessionID)
         if (existing !== null && existing.status !== "complete" && existing.status !== "blocked") {
-          return {
-            output: {},
-            content: "Error: this thread has an unfinished goal; complete or clear it before creating a new one.",
-          }
+          return diagnosticResult(
+            diagnostic({
+              tool: "create_goal",
+              code: "UNFINISHED_GOAL",
+              summary: "this thread has an unfinished goal; complete or clear it before creating a new one",
+              expected: "no active goal",
+              got: `an active goal (${existing.status})`,
+              fix: "call update_goal with status complete or cleared first",
+            }),
+            {},
+          )
         }
 
         await controller.setGoal(sessionID, objective, tokenBudget)
@@ -108,8 +163,8 @@ export async function registerGoalTools(
       output: EmptyOutput,
       execute: async (_input, toolCtx) => {
         const sessionID = toolCtx.sessionID
-        const blocked = await unavailable(sessionID)
-        if (blocked !== null) return { output: {}, content: blocked }
+        const blocked = await unavailable("get_goal", sessionID)
+        if (blocked !== null) return blocked
         return { output: {}, content: formatGoal(await controller.getGoal(sessionID)) }
       },
     })
@@ -122,8 +177,22 @@ export async function registerGoalTools(
       output: EmptyOutput,
       execute: async (input, toolCtx) => {
         const sessionID = toolCtx.sessionID
-        const blocked = await unavailable(sessionID)
-        if (blocked !== null) return { output: {}, content: blocked }
+        const blocked = await unavailable("update_goal", sessionID)
+        if (blocked !== null) return blocked
+
+        /** 输入：状态动作名；输出：无目标时的失败返回体。预期：状态类诊断，不编造行列。 */
+        const noGoal = (action: string, fix: string) =>
+          diagnosticResult(
+            diagnostic({
+              tool: "update_goal",
+              code: "NO_GOAL",
+              summary: `no goal to ${action} in this session`,
+              expected: "an existing goal",
+              got: "no goal set",
+              fix,
+            }),
+            {},
+          )
 
         if (input.status === "cleared") {
           await controller.clearGoal(sessionID)
@@ -132,27 +201,38 @@ export async function registerGoalTools(
         }
         if (input.status === "paused") {
           const goal = await controller.pauseGoal(sessionID)
-          if (goal === null) return { output: {}, content: "Error: no active goal to pause." }
+          if (goal === null) return noGoal("pause", "create a goal first, then pause it")
           return { output: {}, content: formatGoal(goal) }
         }
         if (input.status === "active") {
           const goal = await controller.resumeGoal(sessionID)
-          if (goal === null) return { output: {}, content: "Error: no goal set for this session." }
+          if (goal === null) return noGoal("resume", "create a goal first, then resume it")
           return { output: {}, content: formatGoal(goal) }
         }
         if (input.status === "complete") {
           const goal = await controller.markComplete(sessionID)
-          if (goal === null) return { output: {}, content: "Error: no goal set for this session." }
+          if (goal === null) return noGoal("complete", "create a goal first, then complete it")
           reset(sessionID)
           return { output: {}, content: formatGoal(goal) }
         }
 
         const reason = input.block_reason?.trim() ?? ""
         if (reason.length === 0) {
-          return { output: {}, content: "Error: block_reason is required when status is blocked." }
+          return diagnosticResult(
+            diagnostic({
+              tool: "update_goal",
+              code: "MISSING_BLOCK_REASON",
+              summary: "block_reason is required when status is blocked",
+              at: "input.block_reason",
+              expected: "a non-empty reason",
+              got: "empty or missing",
+              fix: "pass block_reason describing the repeated blocking condition",
+            }),
+            {},
+          )
         }
         const goal = await controller.markBlocked(sessionID, reason)
-        if (goal === null) return { output: {}, content: "Error: no goal set for this session." }
+        if (goal === null) return noGoal("block", "create a goal first, then report it blocked")
         return { output: {}, content: formatGoal(goal) }
       },
     })
